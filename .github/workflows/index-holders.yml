@@ -2,8 +2,8 @@ name: Index NFL Holders
 
 # Hourly cron + manual trigger. Persists snapshots to a `data` branch
 # so the deployed app can fetch them via raw.githubusercontent.com
-# without paying for any storage. Deployed app does NOT redeploy when
-# the data branch updates (Vercel only watches main).
+# without paying for any storage. The deployed app does NOT redeploy
+# when the data branch updates (Vercel only watches main).
 
 on:
   schedule:
@@ -22,25 +22,37 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Check out data branch (or initialize from main)
-        uses: actions/checkout@v4
+      # Try to check out the existing `data` branch first (so we get the
+      # accumulated history). If it doesn't exist or is empty, we'll
+      # bootstrap from main below.
+      - uses: actions/checkout@v4
         with:
           ref: data
-          fetch-depth: 1
+          fetch-depth: 0
         continue-on-error: true
 
-      - name: Initialize data branch if missing
+      - name: Bootstrap from main if data branch missing or empty
+        shell: bash
         run: |
-          if [ ! -d ".git" ]; then
-            echo "data branch not present yet — bootstrapping from main"
-            git init
-            git remote add origin "https://github.com/${{ github.repository }}.git"
-            git fetch origin main --depth=1
-            git checkout -b data
+          set -e
+          if [ ! -f "scripts/index-holders.mjs" ]; then
+            echo "data branch missing the script — bootstrapping from main"
+            git init -b data
+            git remote remove origin 2>/dev/null || true
+            git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+            git fetch origin main
+            git reset --hard origin/main
           fi
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
+      - name: Sync latest scripts from main into the data branch
+        shell: bash
+        run: |
+          git fetch origin main
+          # Merge main's scripts/workflow updates without disturbing
+          # data/ — `theirs` strategy means main wins on conflicts.
+          git merge origin/main --no-edit -X theirs --allow-unrelated-histories || true
+
+      - uses: actions/setup-node@v4
         with:
           node-version: "20"
 
@@ -48,7 +60,9 @@ jobs:
         run: node scripts/index-holders.mjs --write
 
       - name: Commit snapshot to data branch
+        shell: bash
         run: |
+          set -e
           git config user.name "Gridiron Indexer"
           git config user.email "indexer@users.noreply.github.com"
           git add data/unique-holders.json
@@ -57,6 +71,8 @@ jobs:
             exit 0
           fi
           git commit -m "Hourly snapshot $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          git push origin data
+          # Use the workflow token; the bootstrap step already wired the
+          # remote URL with it.
+          git push origin HEAD:data
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
