@@ -51,7 +51,7 @@ export function WalletHoldingsTable({
       <div className="py-8 text-center text-sm text-[var(--color-text-muted)]">
         {variant === "nfl"
           ? "No NFL player tokens in this wallet."
-          : "No non-NFL holdings."}
+          : "No Soccer holdings."}
       </div>
     );
   }

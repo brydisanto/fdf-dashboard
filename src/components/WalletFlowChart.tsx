@@ -6,14 +6,21 @@ import {
 import { fmtUsd } from "@/lib/format";
 import type { WalletFlowSummary } from "@/lib/data";
 
-export function WalletFlowChart({ flow }: { flow: WalletFlowSummary }) {
-  // For each day: NFL net (positive above zero, negative below) and Other
-  // net rendered side-by-side. Lets you see at a glance if the wallet
-  // rotated between sports, was net-buying both, or net-selling both.
+export function WalletFlowChart({
+  flow,
+  soccerColor = "var(--color-text-muted)",
+}: {
+  flow: WalletFlowSummary;
+  soccerColor?: string;
+}) {
+  // For each day: NFL net (positive above zero, negative below) and
+  // Soccer net side-by-side. Lets you see at a glance whether the
+  // wallet rotated between sports, was net-buying both, or net-selling
+  // both.
   const data = flow.daily.map((d) => ({
     t: d.t,
     nflNet: d.nflInUsd - d.nflOutUsd,
-    otherNet: d.otherInUsd - d.otherOutUsd,
+    soccerNet: d.otherInUsd - d.otherOutUsd,
   }));
 
   return (
@@ -23,17 +30,17 @@ export function WalletFlowChart({ flow }: { flow: WalletFlowSummary }) {
           <XAxis
             dataKey="t"
             tickFormatter={fmtDay}
-            stroke="var(--color-text-dim)"
+            stroke="var(--color-text-muted)"
             tickLine={false}
             axisLine={false}
             fontSize={11}
             minTickGap={20}
           />
           <YAxis
-            stroke="var(--color-text-dim)"
+            stroke="var(--color-text-muted)"
             tickLine={false}
             axisLine={false}
-            fontSize={10}
+            fontSize={11}
             width={60}
             tickFormatter={(v) => fmtUsd(Number(v), { compact: true })}
           />
@@ -44,13 +51,13 @@ export function WalletFlowChart({ flow }: { flow: WalletFlowSummary }) {
             labelFormatter={(v) => new Date(Number(v)).toLocaleDateString()}
             formatter={(v: unknown, name: unknown) => {
               const n = Number(v);
-              const lbl = name === "nflNet" ? "NFL net" : "Other net";
+              const lbl = name === "nflNet" ? "NFL net" : "Soccer net";
               const display = `${n >= 0 ? "+" : ""}${fmtUsd(n, { compact: true })}`;
               return [display, lbl] as [string, string];
             }}
           />
-          <Bar dataKey="nflNet"   fill="var(--color-brand)"      radius={[3, 3, 0, 0]} isAnimationActive={false} />
-          <Bar dataKey="otherNet" fill="var(--color-text-muted)" radius={[3, 3, 0, 0]} isAnimationActive={false} />
+          <Bar dataKey="nflNet"    fill="var(--color-brand)" radius={[3, 3, 0, 0]} isAnimationActive={false} />
+          <Bar dataKey="soccerNet" fill={soccerColor}        radius={[3, 3, 0, 0]} isAnimationActive={false} />
         </BarChart>
       </ResponsiveContainer>
     </div>
