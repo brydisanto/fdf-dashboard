@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Indexer cache (populated by /api/holders/refresh in dev only).
+# Committed snapshots live on the `data` branch under data/unique-holders.json
+# — written by the GitHub Actions cron, never by main.
+.gridiron-cache/

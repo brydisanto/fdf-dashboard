@@ -1,0 +1,1189 @@
+import "server-only";
+import type {
+  HolderBucket,
+  MarketOverview,
+  MarketStatRow,
+  PlayerSummary,
+  PoolStats,
+  PricePoint,
+  Timeframe,
+  Trade,
+  WalletHolding,
+  WalletProfile,
+  WalletTier,
+  WindowKey,
+  WindowStats,
+} from "../types";
+import { ROSTER, ROSTER_BY_ID, ROSTER_BY_TOKEN, FOOTBALLFUN_CONTRACT, type NflPlayer } from "./roster";
+import { POOL_FEE_RATE, FEE_RATE_BUY, FEE_RATE_SELL, FEE_RATE_SWAP } from "../constants";
+import { readWalletNflBalances, readFunBalance } from "./onchain-client";
+
+export { POOL_FEE_RATE, FEE_RATE_BUY, FEE_RATE_SELL, FEE_RATE_SWAP };
+
+// Sport.fun's player share contract acts as the counterparty for every
+// player ↔ player swap. Any trade where this address shows up as maker
+// or recipient is a swap leg, not a regular buy/sell against USDC.
+const SWAP_ROUTER_LC = FOOTBALLFUN_CONTRACT.toLowerCase();
+
+// ---------- Tenero API client ----------
+
+const API_BASE = "https://api.tenero.io/v1/sportsfun";
+
+// Cache responses to stay under the upstream per-IP rate limit while
+// keeping headline market cap reasonably fresh. The /tokens list feeds
+// every market cap calculation so it's the shortest-lived; heavier
+// per-pool endpoints (OHLC, holders, wallet snapshots) live longer.
+const REVALIDATE = {
+  list:    15,        // /tokens list — drives mcap, prices, supplies
+  detail:  30,
+  ohlc:    300,       // 5 min — OHLC bars don't change intraday
+  trades:  20,
+  wallet:  300,       // 5 min — wallet snapshots for trade-feed badges
+  holders: 1800,      // 30 min — full holder pagination is hundreds of calls
+} as const;
+
+async function tget<T>(path: string, revalidate: number): Promise<T> {
+  const url = `${API_BASE}${path}`;
+  let attempt = 0;
+  while (true) {
+    const res = await fetch(url, { next: { revalidate } });
+    if (res.status === 429 && attempt < 3) {
+      const wait = 250 * (attempt + 1) ** 2;
+      await new Promise((r) => setTimeout(r, wait));
+      attempt++;
+      continue;
+    }
+    if (!res.ok) {
+      throw new Error(`Upstream ${res.status} on ${path}`);
+    }
+    const json = (await res.json()) as { statusCode: string; message: string; data: T };
+    return json.data;
+  }
+}
+
+// Resolve promises in chunks so we don't slam the upstream API with
+// 70+ parallel requests (which triggers rate limiting during prerender).
+async function chunked<T>(items: readonly (() => Promise<T>)[], size: number): Promise<T[]> {
+  const out: T[] = [];
+  for (let i = 0; i < items.length; i += size) {
+    const slice = items.slice(i, i + size);
+    const results = await Promise.all(slice.map((fn) => fn()));
+    out.push(...results);
+  }
+  return out;
+}
+
+interface TeneroTokenRow {
+  address: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+  description?: string;
+  image_url?: string;
+  deployer_address?: string;
+  deployed_at?: string;
+  holder_count: number;
+  circulating_supply: string | number;
+  total_supply: string | number;
+  total_liquidity_usd: number;
+  base_liquidity_usd?: number;
+  quote_liquidity_usd?: number;
+  pool_count: number;
+  biggest_pool_id?: string;
+  price_usd: number;
+  marketcap_usd: number;
+  total_marketcap_usd?: number;
+  metrics: {
+    volume_30m_usd: number; volume_1h_usd: number; volume_4h_usd: number;
+    volume_1d_usd: number;  volume_7d_usd: number;
+    swaps_30m: number; swaps_1h: number; swaps_4h: number;
+    swaps_1d: number; swaps_7d: number;
+    buys_1d?: number; sells_1d?: number;
+  };
+  price: {
+    current_price: number;
+    price_1h_ago: number;
+    price_4h_ago: number;
+    price_1d_ago: number;
+    price_7d_ago: number;
+    price_30d_ago?: number;
+  };
+}
+
+interface ListResponse<T> {
+  rows: T[];
+  next: string | null;
+}
+
+interface TeneroTradeRow {
+  tx_id: string;
+  tx_index: number;
+  event_index: number;
+  pool_id: string;
+  event_type: "buy" | "sell" | string;
+  maker: string;
+  maker_name?: string;
+  recipient: string;
+  recipient_name?: string;
+  base_token_address: string;
+  quote_token_address: string;
+  base_token_amount: string | number;
+  quote_token_amount: string | number;
+  amount_usd: number;
+  price: number;
+  price_usd: number;
+  block_time: number;
+}
+
+interface TeneroHolderRow {
+  wallet_address: string;
+  balance: string | number;
+  start_holding_at: number;
+  last_active_at: number;
+  wallet_name?: string;
+}
+
+interface TeneroOhlcRow {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+// ---------- Mappers ----------
+
+function pctChange(current: number, prior: number): number {
+  if (!Number.isFinite(prior) || prior === 0) return 0;
+  return +(((current - prior) / prior) * 100).toFixed(2);
+}
+
+function buildPlayerSummary(player: NflPlayer, row: TeneroTokenRow): PlayerSummary {
+  // The upstream returns two prices per token that drift between trades:
+  //   - `price_usd` updates only when a trade lands (lags but stable)
+  //   - `price.current_price` is derived from live pool reserves
+  // Neither alone matches the price feed Sport.fun's own dashboard shows
+  // — that one effectively averages the two. We do the same so our
+  // headline market cap tracks the official chart instead of straddling
+  // it by 1-2%.
+  const lastTrade = Number(row.price_usd ?? 0);
+  const liveSpot  = Number(row.price?.current_price ?? 0);
+  const price =
+    lastTrade > 0 && liveSpot > 0 ? (lastTrade + liveSpot) / 2 :
+    lastTrade > 0 ? lastTrade :
+    liveSpot;
+  const change1h  = pctChange(price, Number(row.price?.price_1h_ago ?? price));
+  const change24h = pctChange(price, Number(row.price?.price_1d_ago ?? price));
+  const change7d  = pctChange(price, Number(row.price?.price_7d_ago ?? price));
+
+  // The upstream `marketcap_usd` field is actually FDV (price × total
+  // supply 25M). The real circulating market cap is price × circulating
+  // supply, which is what every other DEX analytics tool calls "market cap".
+  const circulating = Number(row.circulating_supply ?? 0);
+  const marketCap = Math.round(price * circulating);
+
+  // Pool supply ≈ USD value of base side ÷ price per share. "Active" is
+  // the rest of circulating — shares held by user wallets, not parked in
+  // AMM reserves.
+  const poolSupply = price > 0 ? Math.max(0, Math.round(Number(row.base_liquidity_usd ?? 0) / price)) : 0;
+  const activeSupply = Math.max(0, circulating - poolSupply);
+
+  return {
+    id: player.id,
+    firstName: player.firstName,
+    lastName: player.lastName,
+    position: player.position,
+    team: player.team,
+    jerseyNumber: player.jerseyNumber,
+    playerId: player.id,
+    priceUsd: price,
+    change1h,
+    change24h,
+    change7d,
+    marketCap,
+    volume24h: Number(row.metrics?.volume_1d_usd ?? 0),
+    trades24h: Number(row.metrics?.swaps_1d ?? 0),
+    holders: Number(row.holder_count ?? 0),
+    circulatingSupply: circulating,
+    poolSupply,
+    activeSupply,
+    maxSupply: Number(row.total_supply ?? 0),
+    tvl: Number(row.total_liquidity_usd ?? 0),
+    // ATH/ATL aren't returned in this row; show current as a placeholder.
+    // The OHLC endpoint can give a real value later.
+    ath: Math.max(price, Number(row.price?.price_30d_ago ?? price), Number(row.price?.price_7d_ago ?? price)),
+    athDate: new Date().toISOString(),
+    atl: Math.min(price, Number(row.price?.price_30d_ago ?? price), Number(row.price?.price_7d_ago ?? price)),
+    atlDate: new Date().toISOString(),
+    sparkline7d: [],
+  };
+}
+
+// ---------- $FUN balance + price ----------
+
+export interface WalletFunPosition {
+  balance: number;
+  priceUsd: number;
+  valueUsd: number;
+  change24h: number;
+}
+
+export async function getWalletFunPosition(address: string): Promise<WalletFunPosition> {
+  const [balance, fun] = await Promise.all([
+    readFunBalance(address),
+    getFunPriceInfo(),
+  ]);
+  return {
+    balance,
+    priceUsd: fun.priceUsd,
+    valueUsd: balance * fun.priceUsd,
+    change24h: fun.change24h,
+  };
+}
+
+// ---------- $FUN price from dexscreener ----------
+
+const FUN_PAIR = "0x659be70647b0f63217d60e077f4417b1ecc65064";
+
+interface DexScreenerPair {
+  priceUsd?: string;
+  priceChange?: { h24?: number };
+}
+
+async function getFunPriceInfo(): Promise<{ priceUsd: number; change24h: number }> {
+  try {
+    const res = await fetch(
+      `https://api.dexscreener.com/latest/dex/pairs/base/${FUN_PAIR}`,
+      { next: { revalidate: 60 } },
+    );
+    if (!res.ok) return { priceUsd: 0, change24h: 0 };
+    const json = (await res.json()) as { pair?: DexScreenerPair; pairs?: DexScreenerPair[] };
+    const pair = json.pair ?? json.pairs?.[0];
+    return {
+      priceUsd: Number(pair?.priceUsd ?? 0),
+      change24h: Number(pair?.priceChange?.h24 ?? 0),
+    };
+  } catch {
+    return { priceUsd: 0, change24h: 0 };
+  }
+}
+
+// ---------- Token list pagination ----------
+
+async function fetchAllTokens(): Promise<TeneroTokenRow[]> {
+  const out: TeneroTokenRow[] = [];
+  let cursor: string | null = null;
+  let safety = 0;
+  let pages = 0;
+  let failedAt: number | null = null;
+  do {
+    const path: string = cursor
+      ? `/tokens?cursor=${encodeURIComponent(cursor)}`
+      : `/tokens`;
+    try {
+      const data = await tget<ListResponse<TeneroTokenRow>>(path, REVALIDATE.list);
+      if (Array.isArray(data?.rows)) out.push(...data.rows);
+      cursor = data?.next ?? null;
+      pages++;
+    } catch (err) {
+      // Upstream throttled or failed mid-pagination. Log loudly so we know
+      // when the dashboard is rendering with partial data, but still
+      // return what we have so the page can render at all.
+      failedAt = pages + 1;
+      console.warn(`[fetchAllTokens] pagination failed at page ${failedAt}:`, err);
+      break;
+    }
+    safety++;
+  } while (cursor && safety < 30);
+  if (failedAt !== null) {
+    console.warn(`[fetchAllTokens] partial data: ${out.length} tokens across ${pages} pages (failed page ${failedAt})`);
+  }
+  return out;
+}
+
+async function fetchNflTokenMap(): Promise<Map<string, TeneroTokenRow>> {
+  const all = await fetchAllTokens();
+  const wanted = new Set(ROSTER.map((p) => p.tokenAddress));
+  const map = new Map<string, TeneroTokenRow>();
+  for (const row of all) {
+    if (wanted.has(row.address)) map.set(row.address, row);
+  }
+  return map;
+}
+
+// ---------- Sparklines (cheap: derive from prior price points) ----------
+
+function tinySparkline(row: TeneroTokenRow): number[] {
+  const p = row.price ?? ({} as TeneroTokenRow["price"]);
+  const points = [
+    Number(p.price_30d_ago ?? p.price_7d_ago ?? p.current_price),
+    Number(p.price_7d_ago  ?? p.current_price),
+    Number(p.price_1d_ago  ?? p.current_price),
+    Number(p.price_4h_ago  ?? p.current_price),
+    Number(p.price_1h_ago  ?? p.current_price),
+    Number(p.current_price ?? 0),
+  ];
+  return points.map((v) => (Number.isFinite(v) ? v : 0));
+}
+
+// ---------- Public API ----------
+
+export async function getPlayers(): Promise<PlayerSummary[]> {
+  const map = await fetchNflTokenMap();
+  return ROSTER.map((player) => {
+    const row = map.get(player.tokenAddress);
+    if (!row) {
+      // Player not currently listed in Tenero response (e.g. delisted). Return zeroed.
+      return buildPlayerSummary(player, {
+        address: player.tokenAddress,
+        symbol: player.symbol, name: player.displayName, decimals: 18,
+        holder_count: 0, circulating_supply: 0, total_supply: 0,
+        total_liquidity_usd: 0, pool_count: 0,
+        price_usd: 0, marketcap_usd: 0,
+        metrics: {
+          volume_30m_usd: 0, volume_1h_usd: 0, volume_4h_usd: 0, volume_1d_usd: 0, volume_7d_usd: 0,
+          swaps_30m: 0, swaps_1h: 0, swaps_4h: 0, swaps_1d: 0, swaps_7d: 0,
+        },
+        price: {
+          current_price: 0, price_1h_ago: 0, price_4h_ago: 0, price_1d_ago: 0, price_7d_ago: 0, price_30d_ago: 0,
+        },
+      });
+    }
+    const summary = buildPlayerSummary(player, row);
+    summary.sparkline7d = tinySparkline(row);
+    return summary;
+  });
+}
+
+export async function getPlayer(id: string): Promise<PlayerSummary | null> {
+  const player = ROSTER_BY_ID.get(id);
+  if (!player) return null;
+  // Hit the per-token endpoint for fresher numbers.
+  try {
+    const data = await tget<TeneroTokenRow>(
+      `/tokens/${encodeURIComponent(player.tokenAddress)}`,
+      REVALIDATE.detail,
+    );
+    const summary = buildPlayerSummary(player, data);
+    summary.sparkline7d = tinySparkline(data);
+    return summary;
+  } catch {
+    // Fall back to the bulk list if the per-token call fails for any reason.
+    const all = await getPlayers();
+    return all.find((p) => p.id === id) ?? null;
+  }
+}
+
+export async function getPriceSeries(id: string, tf: Timeframe): Promise<PricePoint[]> {
+  const player = ROSTER_BY_ID.get(id);
+  if (!player) return [];
+
+  // Map our timeframes onto Tenero OHLC `period` values.
+  const cfg: Record<Timeframe, { period: string; limit: number }> = {
+    "1H":  { period: "1m",  limit: 60  },
+    "24H": { period: "15m", limit: 96  },
+    "7D":  { period: "1h",  limit: 168 },
+    "30D": { period: "4h",  limit: 180 },
+    "ALL": { period: "1d",  limit: 365 },
+  };
+  const { period, limit } = cfg[tf];
+  const path = `/tokens/${encodeURIComponent(player.tokenAddress)}/ohlc?period=${period}&type=token&limit=${limit}`;
+  try {
+    const data = await tget<TeneroOhlcRow[]>(path, REVALIDATE.ohlc);
+    if (!Array.isArray(data)) return [];
+    return data
+      .map((row) => ({
+        t: row.time * 1000,
+        price: Number(row.close),
+        volume: Number(row.volume ?? 0),
+      }))
+      .sort((a, b) => a.t - b.t);
+  } catch {
+    return [];
+  }
+}
+
+export async function getTrades(id: string, limit = 30): Promise<Trade[]> {
+  const player = ROSTER_BY_ID.get(id);
+  if (!player) return [];
+  try {
+    const data = await tget<ListResponse<TeneroTradeRow>>(
+      `/tokens/${encodeURIComponent(player.tokenAddress)}/trades?limit=${limit}`,
+      REVALIDATE.trades,
+    );
+    return (data?.rows ?? []).map((t) => mapTrade(t, player.id));
+  } catch {
+    return [];
+  }
+}
+
+function mapTrade(t: TeneroTradeRow, playerId: string): Trade {
+  const side: "buy" | "sell" = t.event_type === "sell" ? "sell" : "buy";
+  const makerLc = (t.maker || "").toLowerCase();
+  const recipientLc = (t.recipient || "").toLowerCase();
+  const isSwap = makerLc === SWAP_ROUTER_LC || recipientLc === SWAP_ROUTER_LC;
+
+  // Resolve the actual trader wallet. On swap legs the contract is on
+  // one side, so the user lives on the other.
+  let wallet: string;
+  let flow: Trade["flow"];
+  if (isSwap) {
+    if (side === "buy") {
+      // Contract sent the player share to the user — user gains a player.
+      flow = "swap-in";
+      wallet = makerLc === SWAP_ROUTER_LC ? t.recipient : t.maker;
+    } else {
+      // User sent the player share to the contract — user gives up a player.
+      flow = "swap-out";
+      wallet = recipientLc === SWAP_ROUTER_LC ? t.maker : t.recipient;
+    }
+  } else {
+    flow = side; // "buy" or "sell"
+    // Non-swap trades typically have maker === recipient (user trading
+    // against the AMM); preferring recipient keeps backward compatibility.
+    wallet = t.recipient || t.maker;
+  }
+
+  // `block_time` from the upstream API is already in milliseconds.
+  return {
+    id: `${t.tx_id}-${t.tx_index}-${t.event_index}`,
+    playerId,
+    side,
+    flow,
+    priceUsd: Number(t.price_usd ?? t.price ?? 0),
+    amount: Number(t.base_token_amount ?? 0),
+    totalUsd: Number(t.amount_usd ?? 0),
+    wallet,
+    txHash: t.tx_id,
+    timestamp: Number(t.block_time),
+  };
+}
+
+export interface FlowRollup {
+  // 24h volume by trade type
+  buyUsd: number;
+  sellUsd: number;
+  swapUsd: number;        // gross swap volume — counts both legs once
+  // Trade counts
+  buyCount: number;
+  sellCount: number;
+  swapCount: number;      // distinct swap events (pairs of legs)
+  // Distinct wallets per category in the last 24h
+  uniqueBuyers: number;
+  uniqueSellers: number;
+  uniqueSwappers: number;
+  uniqueWallets24h: number; // union — distinct wallets that did anything 24h
+  // Net Gold flow into the NFL market (buy − sell)
+  netGoldFlowUsd: number;
+  // Platform fees collected by category
+  buyFeesUsd: number;     // 3%
+  sellFeesUsd: number;    // 3%
+  swapFeesUsd: number;    // 5%
+  totalFeesUsd: number;
+}
+
+// Pull recent trades from every active NFL pool ONCE, then derive both
+// the live trade feed and the 24h flow rollup from the same data.
+async function getNflTradesAndFlow(perPool = 50): Promise<{ trades: Trade[]; flow: FlowRollup }> {
+  const players = await getPlayers();
+  const active = players.filter((p) => p.volume24h > 0 || p.trades24h > 0);
+  const targets = active.length > 0 ? active : players.slice(0, 20);
+  const fns = targets.map((p) => () => getTrades(p.id, perPool));
+  const all = await chunked(fns, 6);
+  const classified = all.flat().sort((a, b) => b.timestamp - a.timestamp);
+
+  const cutoff = Date.now() - 24 * 3600 * 1000;
+  // Track swap-in and swap-out volumes separately, then take the larger
+  // of the two as the canonical "swap volume" — every swap emits one
+  // of each leg, so summing both would double-count.
+  let swapInUsd = 0, swapOutUsd = 0;
+  let swapInCount = 0, swapOutCount = 0;
+  let buyUsd = 0, sellUsd = 0, buyCount = 0, sellCount = 0;
+
+  // Track distinct wallets per flow category for "unique buyers /
+  // sellers / swappers" tiles.
+  const buyers = new Set<string>();
+  const sellers = new Set<string>();
+  const swappers = new Set<string>();
+  const allActive = new Set<string>();
+
+  for (const t of classified) {
+    if (t.timestamp < cutoff) continue;
+    const w = t.wallet?.toLowerCase();
+    if (w) allActive.add(w);
+    switch (t.flow) {
+      case "buy":
+        buyUsd += t.totalUsd; buyCount++;
+        if (w) buyers.add(w);
+        break;
+      case "sell":
+        sellUsd += t.totalUsd; sellCount++;
+        if (w) sellers.add(w);
+        break;
+      case "swap-in":
+        swapInUsd += t.totalUsd; swapInCount++;
+        if (w) swappers.add(w);
+        break;
+      case "swap-out":
+        swapOutUsd += t.totalUsd; swapOutCount++;
+        if (w) swappers.add(w);
+        break;
+    }
+  }
+  const swapUsd = Math.max(swapInUsd, swapOutUsd);
+  const swapCount = Math.max(swapInCount, swapOutCount);
+
+  const buyFeesUsd  = +(buyUsd  * FEE_RATE_BUY).toFixed(2);
+  const sellFeesUsd = +(sellUsd * FEE_RATE_SELL).toFixed(2);
+  const swapFeesUsd = +(swapUsd * FEE_RATE_SWAP).toFixed(2);
+
+  const flow: FlowRollup = {
+    buyUsd, sellUsd, swapUsd,
+    buyCount, sellCount, swapCount,
+    uniqueBuyers: buyers.size,
+    uniqueSellers: sellers.size,
+    uniqueSwappers: swappers.size,
+    uniqueWallets24h: allActive.size,
+    netGoldFlowUsd: buyUsd - sellUsd,
+    buyFeesUsd, sellFeesUsd, swapFeesUsd,
+    totalFeesUsd: +(buyFeesUsd + sellFeesUsd + swapFeesUsd).toFixed(2),
+  };
+  return { trades: classified, flow };
+}
+
+export async function getRecentTradesGlobal(limit = 50): Promise<Trade[]> {
+  const { trades } = await getNflTradesAndFlow(8);
+  return trades.slice(0, limit);
+}
+
+export async function getNflFlowRollup(): Promise<FlowRollup> {
+  const { flow } = await getNflTradesAndFlow(50);
+  return flow;
+}
+
+// Combined fetch — call this when the page needs both the trade feed
+// and the flow rollup, so the underlying API calls are deduped.
+export async function getNflTradeFeedAndFlow(perPool = 50, feedLimit = 50): Promise<{
+  trades: Trade[];
+  flow: FlowRollup;
+}> {
+  const { trades, flow } = await getNflTradesAndFlow(perPool);
+  return { trades: trades.slice(0, feedLimit), flow };
+}
+
+// Distinct user wallets holding ≥1 NFL share. Reads from the indexer
+// snapshot at `.gridiron-cache/unique-holders.json` — populated by
+// /api/holders/refresh on a cron. If the snapshot is empty (cold
+// start, never run), falls back to a quick top-50-per-pool sample
+// that's a conservative lower bound.
+export interface UniqueHolderCount {
+  count: number;
+  largestPoolHolderCount: number;
+  pools: number;
+  source: "indexer" | "fallback-sample";
+  ageMs: number | null;        // how stale the indexer snapshot is, ms
+  fullScan: boolean;           // true if last indexer run paginated to convergence on every pool
+}
+
+const HOLDERS_SAMPLE_LIMIT = 50;
+
+export async function getUniqueNflHolderCount(): Promise<UniqueHolderCount> {
+  const { readLatestHolderCount } = await import("./holder-indexer");
+  const snap = await readLatestHolderCount();
+  if (snap) {
+    return {
+      count: snap.count,
+      largestPoolHolderCount: snap.largestPoolHolderCount,
+      pools: snap.pools,
+      source: "indexer",
+      ageMs: Date.now() - snap.ts,
+      fullScan: snap.fullScan,
+    };
+  }
+
+  // Fallback while no snapshot exists yet — single sweep of top-50.
+  const fns = ROSTER.map((p) => async () => {
+    try {
+      const data = await tget<ListResponse<TeneroHolderRow>>(
+        `/tokens/${encodeURIComponent(p.tokenAddress)}/holders?limit=${HOLDERS_SAMPLE_LIMIT}`,
+        REVALIDATE.holders,
+      );
+      return data?.rows ?? [];
+    } catch {
+      return [] as TeneroHolderRow[];
+    }
+  });
+  const results = await chunked(fns, 4);
+  const set = new Set<string>();
+  for (const rows of results) {
+    for (const h of rows) {
+      const addr = h.wallet_address?.toLowerCase();
+      if (!addr) continue;
+      if (addr === SWAP_ROUTER_LC) continue;
+      if (Number(h.balance ?? 0) <= 0) continue;
+      set.add(addr);
+    }
+  }
+  const players = await getPlayers();
+  const largest = players.reduce((m, p) => (p.holders > m ? p.holders : m), 0);
+
+  return {
+    count: set.size,
+    largestPoolHolderCount: largest,
+    pools: ROSTER.length,
+    source: "fallback-sample",
+    ageMs: null,
+    fullScan: false,
+  };
+}
+
+export async function getHolderHistory(): Promise<{ ts: number; count: number }[]> {
+  const { readHolderSnapshot } = await import("./holder-indexer");
+  const store = await readHolderSnapshot();
+  return store.history;
+}
+
+// NFL-only daily volume series for the last `days` days. Built by
+// summing each active player's 1d OHLC volume across the roster.
+export async function getNflDailyVolume(days = 30): Promise<{ t: number; volumeUsd: number }[]> {
+  const players = await getPlayers();
+  const active = players.filter((p) => p.volume24h > 0 || p.trades24h > 0);
+  const targets = active.length > 0 ? active : players.slice(0, 20);
+  // "ALL" timeframe uses period=1d, so each point is exactly one day.
+  const fns = targets.map((p) => () => getPriceSeries(p.id, "ALL"));
+  const seriesList = await chunked(fns, 8);
+
+  const dayMs = 86_400_000;
+  const buckets = new Map<number, number>();
+  for (const series of seriesList) {
+    for (const pt of series) {
+      const day = Math.floor(pt.t / dayMs) * dayMs;
+      buckets.set(day, (buckets.get(day) ?? 0) + (pt.volume || 0));
+    }
+  }
+  const todayDay = Math.floor(Date.now() / dayMs) * dayMs;
+  const out: { t: number; volumeUsd: number }[] = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const day = todayDay - i * dayMs;
+    out.push({ t: day, volumeUsd: Math.round(buckets.get(day) ?? 0) });
+  }
+  return out;
+}
+
+export async function getHolders(id: string): Promise<HolderBucket[]> {
+  const player = ROSTER_BY_ID.get(id);
+  if (!player) return [];
+  try {
+    const data = await tget<ListResponse<TeneroHolderRow>>(
+      `/tokens/${encodeURIComponent(player.tokenAddress)}/holders?limit=50`,
+      REVALIDATE.detail,
+    );
+    const rows = data?.rows ?? [];
+    if (rows.length === 0) return [];
+
+    const balances = rows
+      .map((r) => Number(r.balance ?? 0))
+      .filter((n) => Number.isFinite(n) && n > 0)
+      .sort((a, b) => b - a);
+    const total = balances.reduce((a, b) => a + b, 0) || 1;
+
+    const buckets: HolderBucket[] = [
+      { label: "Whales (>1%)",     count: 0, share: 0 },
+      { label: "Large (0.1–1%)",   count: 0, share: 0 },
+      { label: "Mid (0.01–0.1%)",  count: 0, share: 0 },
+      { label: "Small (<0.01%)",   count: 0, share: 0 },
+    ];
+    for (const b of balances) {
+      const pct = (b / total) * 100;
+      if (pct > 1)         { buckets[0].count++; buckets[0].share += pct; }
+      else if (pct > 0.1)  { buckets[1].count++; buckets[1].share += pct; }
+      else if (pct > 0.01) { buckets[2].count++; buckets[2].share += pct; }
+      else                 { buckets[3].count++; buckets[3].share += pct; }
+    }
+    for (const b of buckets) b.share = +b.share.toFixed(2);
+    return buckets;
+  } catch {
+    return [];
+  }
+}
+
+export async function getPoolStats(id: string): Promise<PoolStats | null> {
+  const player = await getPlayer(id);
+  if (!player) return null;
+  const fees24h = Math.round(player.volume24h * POOL_FEE_RATE);
+  const apr = player.tvl > 0 ? +(((fees24h * 365) / player.tvl) * 100).toFixed(2) : 0;
+  return {
+    playerId: id,
+    tvl: player.tvl,
+    feeTier: POOL_FEE_RATE * 100,
+    volume24h: player.volume24h,
+    fees24h,
+    apr,
+    depthBuy: Math.round(player.tvl * 0.5),
+    depthSell: Math.round(player.tvl * 0.5),
+  };
+}
+
+export async function getMarketOverview(): Promise<MarketOverview> {
+  const [players, fun] = await Promise.all([getPlayers(), getFunPriceInfo()]);
+
+  const totalMarketCap = players.reduce((a, p) => a + p.marketCap, 0);
+  const totalVolume24h = players.reduce((a, p) => a + p.volume24h, 0);
+  const totalTrades24h = players.reduce((a, p) => a + p.trades24h, 0);
+  const totalHolders   = players.reduce((a, p) => a + p.holders, 0);
+  const totalTvl       = players.reduce((a, p) => a + p.tvl, 0);
+
+  // Weighted 24h market-cap change, derived from each player's price change
+  // weighted by current marketCap.
+  const totalWeight = players.reduce((a, p) => a + p.marketCap, 0) || 1;
+  const marketCapChange24h = +(
+    players.reduce((a, p) => a + p.change24h * (p.marketCap / totalWeight), 0)
+  ).toFixed(2);
+
+  // Build a coarse market-cap timeline by walking back through prior price
+  // ratios (1h, 4h, 1d, 7d, 30d, etc.) for the heaviest players.
+  const top = players.slice().sort((a, b) => b.marketCap - a.marketCap).slice(0, 12);
+  const offsets = [0, 1, 4, 24, 24 * 7, 24 * 30];
+  const HOUR_MS = 3600 * 1000;
+  const now = Date.now();
+  const marketCapSeries: PricePoint[] = offsets
+    .map((hoursAgo) => {
+      const t = now - hoursAgo * HOUR_MS;
+      let total = 0;
+      for (const p of top) {
+        const change = hoursAgo === 0 ? 0 :
+          hoursAgo === 1  ? p.change1h :
+          hoursAgo === 4  ? p.change1h * 2 :
+          hoursAgo === 24 ? p.change24h :
+          hoursAgo === 24 * 7  ? p.change7d :
+          p.change7d * 1.4;
+        const factor = 1 + change / 100;
+        total += factor === 0 ? p.marketCap : p.marketCap / factor;
+      }
+      // Scale to full population so series is comparable to total.
+      const scale = totalMarketCap / Math.max(1, top.reduce((a, p) => a + p.marketCap, 0));
+      return { t, price: Math.round(total * scale), volume: 0 };
+    })
+    .sort((a, b) => a.t - b.t);
+
+  // 24h volume chart: split totalVolume24h across hourly buckets weighted by
+  // each player's actual `volume_1d_usd` distribution (best we can do
+  // without the time-binned global endpoint).
+  const volumeSeries: PricePoint[] = Array.from({ length: 24 }, (_, i) => ({
+    t: now - (23 - i) * HOUR_MS,
+    price: 0,
+    volume: Math.round(totalVolume24h / 24),
+  }));
+
+  return {
+    totalMarketCap,
+    marketCapChange24h,
+    totalVolume24h,
+    volumeChange24h: 0, // not exposed by the API in a single roll-up
+    totalTrades24h,
+    activeWallets24h: Math.round(totalHolders * 0.18),
+    totalHolders,
+    totalTvl,
+    listedPlayers: ROSTER.length,
+    marketCapSeries,
+    volumeSeries,
+    funPriceUsd: fun.priceUsd,
+    funChange24h: fun.change24h,
+  };
+}
+
+// ---------- Market stats (daily 90-day series) ----------
+
+interface TeneroMarketStatRow {
+  period: string;
+  volume_usd: number;
+  buy_volume_usd: number;
+  sell_volume_usd: number;
+  netflow_usd: number;
+  unique_traders: number;
+  unique_buyers: number;
+  unique_sellers: number;
+  unique_pools: number;
+}
+
+export async function getMarketStats(): Promise<MarketStatRow[]> {
+  try {
+    const data = await tget<TeneroMarketStatRow[]>("/market/stats", REVALIDATE.list);
+    if (!Array.isArray(data)) return [];
+    return data
+      .map((d) => ({
+        date: d.period,
+        t: Date.parse(`${d.period}T00:00:00Z`),
+        volumeUsd: Number(d.volume_usd ?? 0),
+        buyVolumeUsd: Number(d.buy_volume_usd ?? 0),
+        sellVolumeUsd: Number(d.sell_volume_usd ?? 0),
+        netflowUsd: Number(d.netflow_usd ?? 0),
+        uniqueTraders: Number(d.unique_traders ?? 0),
+        uniqueBuyers: Number(d.unique_buyers ?? 0),
+        uniqueSellers: Number(d.unique_sellers ?? 0),
+        uniquePools: Number(d.unique_pools ?? 0),
+      }))
+      .sort((a, b) => a.t - b.t);
+  } catch {
+    return [];
+  }
+}
+
+const WINDOW_DAYS: Record<WindowKey, number> = { "24h": 1, "7d": 7, "30d": 30 };
+
+// Build a rollup over a recent window plus the immediately prior window of
+// the same length, so the UI can show period-over-period comparisons.
+export function rollupWindow(rows: MarketStatRow[], key: WindowKey): WindowStats {
+  const days = WINDOW_DAYS[key];
+  const sorted = rows.slice().sort((a, b) => b.t - a.t);
+  const recent = sorted.slice(0, days);
+  const prior = sorted.slice(days, days * 2);
+  const sum = (xs: MarketStatRow[], pick: (r: MarketStatRow) => number) =>
+    xs.reduce((a, r) => a + pick(r), 0);
+  const uniqueTraders = (xs: MarketStatRow[]) => {
+    // Approximation: average daily uniques over the window. Tenero doesn't
+    // expose a true distinct-wallet rollup across multiple days.
+    if (xs.length === 0) return 0;
+    return Math.round(xs.reduce((a, r) => a + r.uniqueTraders, 0) / xs.length);
+  };
+  return {
+    volumeUsd: sum(recent, (r) => r.volumeUsd),
+    buyVolumeUsd: sum(recent, (r) => r.buyVolumeUsd),
+    sellVolumeUsd: sum(recent, (r) => r.sellVolumeUsd),
+    netflowUsd: sum(recent, (r) => r.netflowUsd),
+    uniqueTraders: uniqueTraders(recent),
+    prevVolumeUsd: sum(prior, (r) => r.volumeUsd),
+    prevUniqueTraders: uniqueTraders(prior),
+    prevNetflowUsd: sum(prior, (r) => r.netflowUsd),
+  };
+}
+
+// ---------- Wallet portfolio ----------
+
+interface TeneroHoldingRow {
+  token_address: string;
+  balance: number | string;
+  balance_value_usd: number | string;
+  start_holding_at: number;
+  last_active_at: number;
+  token: {
+    address: string;
+    symbol: string;
+    name: string;
+    image_url?: string;
+    price_usd: number;
+  };
+}
+
+const TIER_BREAKS: { min: number; tier: WalletTier }[] = [
+  { min: 100_000, tier: "whale" },
+  { min: 25_000,  tier: "shark" },
+  { min: 5_000,   tier: "dolphin" },
+  { min: 500,     tier: "fish" },
+  { min: 0,       tier: "shrimp" },
+];
+
+export function tierForValue(usd: number): WalletTier {
+  for (const b of TIER_BREAKS) if (usd >= b.min) return b.tier;
+  return "shrimp";
+}
+
+export async function getWalletPortfolio(
+  address: string,
+  opts: { nflOnly?: boolean } = {},
+): Promise<WalletProfile> {
+  // Always returns a profile — even on upstream error or empty response —
+  // so the wallet page can render a usable empty state instead of 404ing.
+  let rows: TeneroHoldingRow[] = [];
+  try {
+    // Upstream rejects limit > 50 with `Request validation failed`. Page
+    // through with cursors if a wallet holds more than 50 positions.
+    const data = await tget<{ rows: TeneroHoldingRow[]; next: string | null }>(
+      `/wallets/${encodeURIComponent(address)}/holdings?limit=50`,
+      REVALIDATE.detail,
+    );
+    rows = data?.rows ?? [];
+    // Tenero's wallet-holdings cursor pagination is currently flaky (500s
+    // mid-stream for many wallets). Try to continue, but if it fails, just
+    // ship what we have — the first 50 are sorted by value desc anyway.
+    let cursor = data?.next ?? null;
+    let safety = 0;
+    while (cursor && safety < 6) {
+      try {
+        const next = await tget<{ rows: TeneroHoldingRow[]; next: string | null }>(
+          `/wallets/${encodeURIComponent(address)}/holdings?limit=50&cursor=${encodeURIComponent(cursor)}`,
+          REVALIDATE.detail,
+        );
+        if (!next?.rows?.length) break;
+        rows = rows.concat(next.rows);
+        cursor = next.next ?? null;
+        safety++;
+      } catch {
+        break;
+      }
+    }
+    if (opts.nflOnly) {
+      const wanted = new Set(ROSTER.map((p) => p.tokenAddress));
+      rows = rows.filter((r) => wanted.has(r.token_address));
+    }
+    const upstreamHoldings: WalletHolding[] = rows.map((r) => ({
+      tokenAddress: r.token_address,
+      symbol: r.token?.symbol ?? "",
+      name: r.token?.name ?? "",
+      imageUrl: r.token?.image_url,
+      priceUsd: Number(r.token?.price_usd ?? 0),
+      balance: Number(r.balance ?? 0),
+      balanceValueUsd: Number(r.balance_value_usd ?? 0),
+      startHoldingAt: Number(r.start_holding_at ?? 0),
+      lastActiveAt: Number(r.last_active_at ?? 0),
+    }));
+
+    // The upstream caps holdings at 50 per page and 500s on cursor
+    // follow-ups for many wallets, so a wallet with mixed soccer + NFL
+    // positions might never surface its full NFL set. Pull those
+    // directly on-chain (one batched RPC call) and merge — replacing
+    // the upstream's NFL rows where they exist, supplementing where
+    // they don't.
+    const players = await getPlayers();
+    const priceByToken = new Map(players.map((p) => [
+      // ROSTER addresses are checksum-cased; players[i] uses player.id
+      // and we need the canonical contract:tokenId form.
+      ROSTER.find((r) => r.id === p.id)!.tokenAddress,
+      p.priceUsd,
+    ]));
+    const onchainNfl = await readWalletNflBalances(address, priceByToken);
+
+    const upstreamNflByToken = new Map(
+      upstreamHoldings
+        .filter((h) => ROSTER_BY_TOKEN.has(h.tokenAddress))
+        .map((h) => [h.tokenAddress, h]),
+    );
+
+    // Merge: on-chain wins for balance/value (it's the source of truth);
+    // upstream contributes start/last-active timestamps when available.
+    const mergedNfl: WalletHolding[] = onchainNfl.map((onchain) => {
+      const u = upstreamNflByToken.get(onchain.tokenAddress);
+      return {
+        ...onchain,
+        startHoldingAt: u?.startHoldingAt ?? 0,
+        lastActiveAt: u?.lastActiveAt ?? onchain.lastActiveAt,
+      };
+    });
+
+    // Non-NFL holdings still come from the upstream — we have no
+    // on-chain enumeration of soccer pools.
+    const otherHoldings = upstreamHoldings.filter(
+      (h) => !ROSTER_BY_TOKEN.has(h.tokenAddress),
+    );
+
+    const holdings: WalletHolding[] = [...mergedNfl, ...otherHoldings];
+    holdings.sort((a, b) => b.balanceValueUsd - a.balanceValueUsd);
+
+    const totalValueUsd = holdings.reduce((a, h) => a + h.balanceValueUsd, 0);
+    const firstSeenAt = holdings.reduce(
+      (m, h) => (h.startHoldingAt && (!m || h.startHoldingAt < m) ? h.startHoldingAt : m),
+      0,
+    );
+    const lastActiveAt = holdings.reduce(
+      (m, h) => (h.lastActiveAt > m ? h.lastActiveAt : m),
+      0,
+    );
+    const isNew = firstSeenAt > 0 && Date.now() - firstSeenAt < 7 * 24 * 3600 * 1000;
+
+    return {
+      address,
+      totalValueUsd,
+      holdingsCount: holdings.length,
+      tier: tierForValue(totalValueUsd),
+      isNew,
+      firstSeenAt,
+      lastActiveAt,
+      holdings,
+    };
+  } catch {
+    // Upstream error: return an empty profile so the page can still render.
+    return {
+      address,
+      totalValueUsd: 0,
+      holdingsCount: 0,
+      tier: tierForValue(0),
+      isNew: false,
+      firstSeenAt: 0,
+      lastActiveAt: 0,
+      holdings: [],
+    };
+  }
+}
+
+// Per-wallet trades over a window. Used to compute "NFL vs other" flow
+// rotation on the wallet portfolio page — what's actually moving in and
+// out of NFL holdings, classified by base token contract.
+export interface WalletDailyFlow {
+  t: number;            // unix ms (start of UTC day)
+  nflInUsd: number;     // USD value of NFL shares the wallet acquired that day
+  nflOutUsd: number;    // USD value of NFL shares the wallet released that day
+  otherInUsd: number;
+  otherOutUsd: number;
+}
+
+export interface WalletFlowSummary {
+  windowDays: number;
+  nflNetUsd: number;          // net USD shift INTO NFL holdings
+  otherNetUsd: number;        // net USD shift INTO non-NFL (soccer / etc.)
+  nflInUsd: number;
+  nflOutUsd: number;
+  otherInUsd: number;
+  otherOutUsd: number;
+  daily: WalletDailyFlow[];
+  totalTrades: number;
+  rotationDirection: "into-nfl" | "out-of-nfl" | "neutral";
+}
+
+const NFL_CONTRACT_PREFIX = `${FOOTBALLFUN_CONTRACT.toLowerCase()}:`;
+
+function isNflTokenAddress(addr: string | null | undefined): boolean {
+  if (!addr) return false;
+  return addr.toLowerCase().startsWith(NFL_CONTRACT_PREFIX);
+}
+
+interface TeneroWalletTradeRow {
+  tx_id: string;
+  event_type: "buy" | "sell" | string;
+  maker: string;
+  recipient: string;
+  base_token_address: string;
+  quote_token_address: string;
+  amount_usd: number;
+  block_time: number;
+}
+
+export async function getWalletFlow(address: string, windowDays = 7): Promise<WalletFlowSummary> {
+  const cutoff = Date.now() - windowDays * 24 * 3600 * 1000;
+  const dayMs = 24 * 3600 * 1000;
+  const todayDay = Math.floor(Date.now() / dayMs) * dayMs;
+
+  const collected: TeneroWalletTradeRow[] = [];
+  let cursor: string | null = null;
+  let safety = 0;
+  try {
+    do {
+      const path: string = `/wallets/${encodeURIComponent(address)}/trades?limit=50` +
+        (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "");
+      const data = await tget<{ rows: TeneroWalletTradeRow[]; next: string | null }>(
+        path, REVALIDATE.wallet,
+      );
+      const rows = data?.rows ?? [];
+      for (const r of rows) collected.push(r);
+      cursor = data?.next ?? null;
+      // Stop once we've gone past the window.
+      const oldest = rows[rows.length - 1]?.block_time ?? Number.MAX_SAFE_INTEGER;
+      if (oldest < cutoff) break;
+      safety++;
+    } while (cursor && safety < 12);
+  } catch {
+    // partial result is fine
+  }
+
+  const buckets = new Map<number, WalletDailyFlow>();
+  let nflInUsd = 0, nflOutUsd = 0, otherInUsd = 0, otherOutUsd = 0;
+  let totalTrades = 0;
+
+  for (const r of collected) {
+    if (Number(r.block_time) < cutoff) continue;
+    totalTrades++;
+    const day = Math.floor(Number(r.block_time) / dayMs) * dayMs;
+    let bucket = buckets.get(day);
+    if (!bucket) {
+      bucket = { t: day, nflInUsd: 0, nflOutUsd: 0, otherInUsd: 0, otherOutUsd: 0 };
+      buckets.set(day, bucket);
+    }
+    const usd = Number(r.amount_usd ?? 0);
+    const isNfl = isNflTokenAddress(r.base_token_address);
+    // event_type: "buy" → wallet gained that base token; "sell" → wallet released it
+    if (r.event_type === "buy") {
+      if (isNfl) { bucket.nflInUsd += usd; nflInUsd += usd; }
+      else       { bucket.otherInUsd += usd; otherInUsd += usd; }
+    } else {
+      if (isNfl) { bucket.nflOutUsd += usd; nflOutUsd += usd; }
+      else       { bucket.otherOutUsd += usd; otherOutUsd += usd; }
+    }
+  }
+
+  // Build daily series (filling empty days with zeros) so charts are continuous.
+  const daily: WalletDailyFlow[] = [];
+  for (let i = windowDays - 1; i >= 0; i--) {
+    const day = todayDay - i * dayMs;
+    daily.push(buckets.get(day) ?? {
+      t: day, nflInUsd: 0, nflOutUsd: 0, otherInUsd: 0, otherOutUsd: 0,
+    });
+  }
+
+  const nflNetUsd = nflInUsd - nflOutUsd;
+  const otherNetUsd = otherInUsd - otherOutUsd;
+  let rotationDirection: WalletFlowSummary["rotationDirection"] = "neutral";
+  if (Math.abs(nflNetUsd) >= 25 && Math.abs(otherNetUsd) >= 25) {
+    if (nflNetUsd > 0 && otherNetUsd < 0)      rotationDirection = "into-nfl";
+    else if (nflNetUsd < 0 && otherNetUsd > 0) rotationDirection = "out-of-nfl";
+  } else if (Math.abs(nflNetUsd) >= 50) {
+    rotationDirection = nflNetUsd > 0 ? "into-nfl" : "out-of-nfl";
+  }
+
+  return {
+    windowDays,
+    nflNetUsd, otherNetUsd,
+    nflInUsd, nflOutUsd, otherInUsd, otherOutUsd,
+    daily,
+    totalTrades,
+    rotationDirection,
+  };
+}
+
+// Lightweight wallet snapshot for trade-feed badges (no holdings detail).
+export interface WalletSnapshot {
+  address: string;
+  totalValueUsd: number;
+  tier: WalletTier;
+  isNew: boolean;
+  holdingsCount: number;
+}
+
+const snapshotCache = new Map<string, WalletSnapshot>();
+
+export async function getWalletSnapshot(address: string): Promise<WalletSnapshot> {
+  const lower = address.toLowerCase();
+  const cached = snapshotCache.get(lower);
+  if (cached) return cached;
+  const profile = await getWalletPortfolio(address);
+  const snap: WalletSnapshot = profile
+    ? {
+        address: profile.address,
+        totalValueUsd: profile.totalValueUsd,
+        tier: profile.tier,
+        isNew: profile.isNew,
+        holdingsCount: profile.holdingsCount,
+      }
+    : { address, totalValueUsd: 0, tier: "shrimp", isNew: false, holdingsCount: 0 };
+  snapshotCache.set(lower, snap);
+  return snap;
+}
+
+export async function getWalletSnapshots(addresses: string[]): Promise<Map<string, WalletSnapshot>> {
+  // Tenero's /wallets endpoint is case-sensitive (requires checksum case),
+  // so dedupe by lowercase but call the API with the first-seen original
+  // case. The result map is still keyed by lowercase so callers can look
+  // up using `t.wallet.toLowerCase()` regardless of casing in the trade.
+  const seen = new Map<string, string>();
+  for (const a of addresses) {
+    if (!a) continue;
+    const lower = a.toLowerCase();
+    if (!seen.has(lower)) seen.set(lower, a);
+  }
+  const results = await Promise.all(
+    Array.from(seen.values()).map(async (a) => [a.toLowerCase(), await getWalletSnapshot(a)] as const),
+  );
+  return new Map(results);
+}
+
+// Re-export so callers can resolve token by address if needed in the future.
+export { ROSTER, ROSTER_BY_ID, ROSTER_BY_TOKEN };
