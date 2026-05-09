@@ -179,24 +179,20 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
         </div>
       </div>
 
-      {/* Stat strip — 5-cell hairline grid */}
+      {/* Stat strip — 4-cell hairline grid (NFL Dominance lives in the
+          dedicated card below, so it's not duplicated here). */}
       <div
         className="stat-strip mt-4 grid"
-        style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}
+        style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}
       >
         <StatCell
           label="Holdings"
           value={fmtNum(profile.holdingsCount)}
-          sub={`NFL ${nflHoldings.length} · SOCCER ${soccerHoldings.length} · $FUN ${fun.balance > 0 ? "Y" : "N"}`}
-        />
-        <StatCell
-          label="NFL Dominance"
-          value={`${nflDominance.toFixed(0)}%`}
-          sub="OF SPORT VALUE"
+          sub={`NFL ${nflHoldings.length} · SOCCER ${soccerHoldings.length}`}
         />
         <StatCell
           label="Top Holding"
-          value={topNflHolding ? topShortName(topNflHolding) : "—"}
+          value={topNflHolding ? topPlayerName(topNflHolding) : "—"}
           sub={topNflHolding ? `${fmtUsd(topNflHolding.balanceValueUsd, { compact: true })} VALUE` : "NO NFL POSITIONS"}
         />
         <StatCell
@@ -393,13 +389,13 @@ function fmtDate(ts: number): string {
   });
 }
 
-// "JAL HU" → ticker-ish 5-char stub for the TOP HOLDING stat cell.
-function topShortName(h: { name: string; symbol?: string }): string {
-  if (h.symbol) return h.symbol.toUpperCase();
-  const upper = h.name.toUpperCase().replace(/[^A-Z\s]/g, "");
-  const parts = upper.split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) return `${parts[parts.length - 1].slice(0, 6)}`;
-  return upper.slice(0, 6);
+// Resolve the actual NFL player display name from the roster
+// (tokenAddress → roster entry). Falls back to whatever the holding
+// row carries if we can't match.
+function topPlayerName(h: { tokenAddress: string; name: string }): string {
+  const player = ROSTER_BY_TOKEN.get(h.tokenAddress);
+  if (player) return `${player.firstName} ${player.lastName}`.toUpperCase();
+  return h.name.toUpperCase();
 }
 
 function Breadcrumb({ items }: { items: { label: string; href?: string }[] }) {
