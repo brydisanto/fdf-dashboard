@@ -90,10 +90,10 @@ export function ValueTable({ rows }: { rows: ValueRow[] }) {
           <thead style={{ background: "color-mix(in oklab, var(--color-press) 60%, transparent)" }}>
             <tr className="border-b border-[var(--color-line)]">
               <Th onClick={() => onSort("name")}          active={sortKey === "name"}          dir={sortDir}>Player</Th>
-              <Th onClick={() => onSort("marketPosRank")} active={sortKey === "marketPosRank"} dir={sortDir} align="right" tip="Sport.fun market positional rank by price">FDF Ranking</Th>
-              <Th onClick={() => onSort("fpPosRank")}     active={sortKey === "fpPosRank"}     dir={sortDir} align="right" tip="FantasyPros consensus PPR positional rank">FP Ranking</Th>
-              <Th onClick={() => onSort("posRankDelta")}  active={sortKey === "posRankDelta"}  dir={sortDir} align="right" tip="FP rank − market rank (negative = market may be undervaluing)">Difference</Th>
-              <Th align="right" className="pr-5">Verdict</Th>
+              <Th onClick={() => onSort("marketPosRank")} active={sortKey === "marketPosRank"} dir={sortDir} align="center" tip="Sport.fun market positional rank by price">FDF Ranking</Th>
+              <Th onClick={() => onSort("fpPosRank")}     active={sortKey === "fpPosRank"}     dir={sortDir} align="center" tip="FantasyPros consensus PPR positional rank">FP Ranking</Th>
+              <Th onClick={() => onSort("posRankDelta")}  active={sortKey === "posRankDelta"}  dir={sortDir} align="center" tip="FP rank − market rank (negative = market may be undervaluing)">Difference</Th>
+              <Th align="center" className="pr-5">Verdict</Th>
             </tr>
           </thead>
           <tbody>
@@ -152,7 +152,7 @@ export function ValueTable({ rows }: { rows: ValueRow[] }) {
                   <NumCell>
                     <RankDelta value={p.posRankDelta} verdict={p.verdict} />
                   </NumCell>
-                  <Cell className="pr-5 text-right">
+                  <Cell className="pr-5 text-center">
                     <VerdictBadge verdict={p.verdict} delta={p.posRankDelta} />
                   </Cell>
                 </tr>
@@ -183,7 +183,7 @@ function Cell({ children, className }: { children: React.ReactNode; className?: 
 function NumCell({ children }: { children: React.ReactNode }) {
   return (
     <td
-      className="text-right"
+      className="text-center"
       style={{
         padding: "10px 12px",
         fontFamily: "var(--font-mono)",
@@ -290,7 +290,7 @@ function Th({
   onClick?: () => void;
   active?: boolean;
   dir?: "asc" | "desc";
-  align?: "left" | "right";
+  align?: "left" | "center" | "right";
   className?: string;
   tip?: string;
 }) {
@@ -314,6 +314,7 @@ function Th({
           className={clsx(
             "inline-flex items-center gap-1 hover:text-[var(--color-text)]",
             align === "right" && "ml-auto",
+            align === "center" && "mx-auto",
           )}
         >
           <span>{children}</span>
