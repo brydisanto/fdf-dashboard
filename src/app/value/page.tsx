@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Info } from "lucide-react";
 import { getPlayers } from "@/lib/data";
 import {
   getFantasyProsRankings,
@@ -130,30 +130,35 @@ export default async function ValuePage() {
         Back to market
       </Link>
 
-      {/* Hero */}
+      {/* Hero — decoration layer is clipped (so the radial glow stays
+          inside the panel) but the content layer is overflow-visible
+          so the InfoTooltip popover can extend past the hero bounds
+          when its content is taller than the available space below. */}
       <div
-        className="mt-3 relative overflow-hidden rounded-[var(--r-14)] border border-[var(--color-line)]"
+        className="mt-3 relative rounded-[var(--r-14)] border border-[var(--color-line)]"
         style={{ background: "linear-gradient(135deg, var(--color-bench) 0%, var(--color-press) 100%)" }}
       >
-        <div
-          className="pointer-events-none absolute inset-0 opacity-60"
-          style={{
-            backgroundImage:
-              "linear-gradient(to right, color-mix(in oklab, var(--color-text) 4%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in oklab, var(--color-text) 4%, transparent) 1px, transparent 1px)",
-            backgroundSize: "48px 48px",
-          }}
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute"
-          style={{
-            right: -100,
-            top: -100,
-            width: 480,
-            height: 480,
-            background: "radial-gradient(circle, var(--accent-tint), transparent 70%)",
-          }}
-        />
+        <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[var(--r-14)]">
+          <div
+            className="absolute inset-0 opacity-60"
+            style={{
+              backgroundImage:
+                "linear-gradient(to right, color-mix(in oklab, var(--color-text) 4%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in oklab, var(--color-text) 4%, transparent) 1px, transparent 1px)",
+              backgroundSize: "48px 48px",
+            }}
+          />
+          <div
+            aria-hidden
+            className="absolute"
+            style={{
+              right: -100,
+              top: -100,
+              width: 480,
+              height: 480,
+              background: "radial-gradient(circle, var(--accent-tint), transparent 70%)",
+            }}
+          />
+        </div>
         <div className="relative flex flex-col gap-6" style={{ padding: "32px 32px 28px" }}>
           <div className="flex flex-wrap items-center gap-2">
             <Pill tone="brand">Rank Disparity</Pill>
@@ -173,23 +178,15 @@ export default async function ValuePage() {
             Where do market and consensus disagree?
           </h1>
           <p
-            className="m-0 max-w-[68ch] text-[var(--color-text-muted)]"
+            className="m-0 max-w-[100ch] text-[var(--color-text-muted)]"
             style={{ fontSize: "15px", lineHeight: 1.55 }}
-            // Long-form explanation in title attr — rendered as a
-            // native tooltip on hover for users who want the detail.
-            title={
-              "How it's built:\n" +
-              "• FDF rank — Sport.fun market positional rank, sorted by current token price.\n" +
-              "• Industry rank — average of 3 PPR sources: FantasyPros consensus ECR, Underdog Sports rankings, ESPN preseason AVG (mean of 8 ESPN experts).\n" +
-              "• Difference — industry avg − FDF rank. Negative = industry ranks them higher than the market (potentially undervalued). Positive = market ranks them higher than industry (potentially overvalued).\n" +
-              `• Fair band — |Δ| ≤ ${FAIR_BAND} treated as no-signal.`
-            }
           >
             Each player&apos;s FDF market positional rank is compared against multiple
             industry-consensus ranks. The result is a directional indicator that shows which
             players are potentially{" "}
             <span className="text-[var(--color-penalty)]">overvalued</span> and{" "}
-            <span className="text-[var(--color-turf)]">undervalued</span>.
+            <span className="text-[var(--color-turf)]">undervalued</span>
+            <InfoTooltip />.
           </p>
           <div
             className="flex flex-wrap items-center gap-x-5 gap-y-2"
@@ -234,6 +231,69 @@ export default async function ValuePage() {
 
       <ValuePageBody rows={rows} total={rows.length} matched={matched} />
     </div>
+  );
+}
+
+// Inline `i` icon that reveals a hover popover explaining the
+// rank-disparity model. Uses a Tailwind `group` parent so the
+// popover toggles via CSS `group-hover` (no JS state needed).
+function InfoTooltip() {
+  return (
+    <span className="group relative ml-1 inline-flex align-middle">
+      <Info
+        className="h-4 w-4 cursor-help text-[var(--color-text-dim)] transition-colors group-hover:text-[var(--accent-soft)]"
+        strokeWidth={1.75}
+        aria-label="More about how this is calculated"
+      />
+      <span
+        role="tooltip"
+        className="invisible absolute left-1/2 top-full z-30 mt-2 -translate-x-1/2 opacity-0 transition-opacity duration-150 group-hover:visible group-hover:opacity-100"
+        style={{ pointerEvents: "none" }}
+      >
+        <span
+          className="block rounded-[var(--r-8)] border border-[var(--color-line-strong)] bg-[var(--color-press)] p-4 text-[var(--color-text-muted)] shadow-[0_12px_40px_rgba(0,0,0,0.6)]"
+          style={{
+            width: 380,
+            fontSize: 12.5,
+            lineHeight: 1.55,
+            textTransform: "none",
+            letterSpacing: "normal",
+            fontFamily: "var(--font-ui)",
+          }}
+        >
+          <span
+            className="mb-2 block text-[var(--color-text)]"
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: "0.18em",
+              textTransform: "uppercase",
+            }}
+          >
+            How it&apos;s built
+          </span>
+          <span className="block">
+            <strong className="text-[var(--color-text)]">FDF rank</strong> is the player&apos;s
+            Sport.fun market positional rank, sorted by current token price.
+          </span>
+          <span className="mt-2 block">
+            <strong className="text-[var(--color-text)]">Industry rank</strong> averages three
+            PPR sources: FantasyPros consensus ECR, Underdog Sports rankings, and ESPN&apos;s
+            preseason AVG (mean of 8 ESPN expert rankers).
+          </span>
+          <span className="mt-2 block">
+            <strong className="text-[var(--color-text)]">Difference</strong> = industry avg −
+            FDF rank. Negative means the industry ranks them higher than the market
+            (potentially undervalued); positive means the market ranks them higher than
+            the industry says they belong (potentially overvalued).
+          </span>
+          <span className="mt-2 block text-[var(--color-text-dim)]">
+            Fair band: |Δ| ≤ {FAIR_BAND} is treated as no-signal.
+          </span>
+        </span>
+      </span>
+    </span>
   );
 }
 
