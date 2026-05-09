@@ -13,8 +13,8 @@ export interface ValueRow extends PlayerSummary {
   marketPosRank: number;             // 1-indexed market price rank within position
   posPlayers: number;                // total roster players at this position
   auctionValue: number | null;       // Draft Sharks PPR auction $
-  auctionPosRank: number | null;     // 1-indexed auction-value rank within position
-  posRankDelta: number | null;       // auction − market (positive = market overvalues vs auction)
+  fpPosRank: number | null;          // FantasyPros consensus PPR positional rank
+  posRankDelta: number | null;       // fpPosRank − marketPosRank (positive = market ranks higher than FP)
   ratio: number | null;              // playerAuction / anchorAuction
   expectedPriceUsd: number | null;   // anchor.marketPrice × ratio
   priceVsExpectedUsd: number | null; // priceUsd − expected
@@ -25,7 +25,7 @@ export interface ValueRow extends PlayerSummary {
 
 type SortKey =
   | "priceVsExpectedPct" | "priceVsExpectedUsd" | "expectedPriceUsd"
-  | "priceUsd" | "auctionValue" | "auctionPosRank" | "marketPosRank"
+  | "priceUsd" | "auctionValue" | "fpPosRank" | "marketPosRank"
   | "posRankDelta" | "name";
 
 const POSITIONS: (Position | "ALL")[] = ["ALL", "QB", "RB", "WR", "TE"];
@@ -66,7 +66,7 @@ export function ValueTable({ rows }: { rows: ValueRow[] }) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else {
       setSortKey(key);
-      setSortDir(key === "name" || key === "marketPosRank" || key === "auctionPosRank" ? "asc" : "desc");
+      setSortDir(key === "name" || key === "marketPosRank" || key === "fpPosRank" ? "asc" : "desc");
     }
   };
 
@@ -100,8 +100,8 @@ export function ValueTable({ rows }: { rows: ValueRow[] }) {
             <tr className="border-b border-[var(--color-line)]">
               <Th onClick={() => onSort("name")}             active={sortKey === "name"}             dir={sortDir}>Player</Th>
               <Th onClick={() => onSort("marketPosRank")}    active={sortKey === "marketPosRank"}    dir={sortDir} align="right" tip="Market positional rank by price">MKT</Th>
-              <Th onClick={() => onSort("auctionPosRank")}   active={sortKey === "auctionPosRank"}   dir={sortDir} align="right" tip="Draft Sharks auction positional rank">AUC</Th>
-              <Th onClick={() => onSort("posRankDelta")}     active={sortKey === "posRankDelta"}     dir={sortDir} align="right" tip="Auction rank − market rank (positive = market ranks higher than auction)">Δ</Th>
+              <Th onClick={() => onSort("fpPosRank")}        active={sortKey === "fpPosRank"}        dir={sortDir} align="right" tip="FantasyPros consensus PPR positional rank">FP</Th>
+              <Th onClick={() => onSort("posRankDelta")}     active={sortKey === "posRankDelta"}     dir={sortDir} align="right" tip="FP rank − market rank (positive = market ranks higher than FP, potentially overvalued)">Δ</Th>
               <Th onClick={() => onSort("priceUsd")}         active={sortKey === "priceUsd"}         dir={sortDir} align="right">Price</Th>
               <Th onClick={() => onSort("auctionValue")}     active={sortKey === "auctionValue"}     dir={sortDir} align="right" tip="Draft Sharks PPR auction value">Auction Val</Th>
               <Th onClick={() => onSort("expectedPriceUsd")} active={sortKey === "expectedPriceUsd"} dir={sortDir} align="right" tip="Anchor price × auction-value ratio">Exp Price</Th>
@@ -168,10 +168,10 @@ export function ValueTable({ rows }: { rows: ValueRow[] }) {
                     )}
                   </NumCell>
                   <NumCell>
-                    {p.auctionPosRank != null ? (
+                    {p.fpPosRank != null ? (
                       <span style={{ color: "var(--color-text)" }}>
                         {p.position}
-                        {p.auctionPosRank}
+                        {p.fpPosRank}
                       </span>
                     ) : (
                       <span style={{ color: "var(--color-text-dim)" }}>—</span>

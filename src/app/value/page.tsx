@@ -6,6 +6,7 @@ import {
   indexDsByName,
   normalizeName,
 } from "@/lib/data/draftsharks";
+import { getFantasyProsRankings, indexFpByName } from "@/lib/data/fantasypros";
 import { Card, CardHeader, Pill } from "@/components/ui";
 import { ValueTable, type ValueRow } from "@/components/ValueTable";
 import { fmtNum, fmtPrice } from "@/lib/format";
@@ -25,8 +26,13 @@ const POS: Position[] = ["QB", "RB", "WR", "TE"];
 const FAIR_BAND_PCT = 10;
 
 export default async function ValuePage() {
-  const [players, ds] = await Promise.all([getPlayers(), getDsAuctionValues()]);
+  const [players, ds, fp] = await Promise.all([
+    getPlayers(),
+    getDsAuctionValues(),
+    getFantasyProsRankings(),
+  ]);
   const dsByName = indexDsByName(ds);
+  const fpByName = indexFpByName(fp);
 
   // Group roster players by position so we can compute market positional
   // rank within each group.
@@ -66,27 +72,29 @@ export default async function ValuePage() {
     }
   }
 
-  // Build rows with the new metrics. Per design discussion:
-  //   ratio       = playerAuctionVal / anchorAuctionVal  (≤ 1 typically)
-  //   expectedPx  = anchor.marketPrice × ratio
-  //   ΔPriceUsd   = priceUsd − expectedPx   (negative = undervalued)
-  //   ΔPricePct   = ΔPriceUsd / expectedPx × 100
-  // We also surface positional rank disparity:
-  //   posRankDelta = auctionPosRank − marketPosRank
-  // Negative disparity means the market ranks the player higher than
-  // the auction sheet does (overvalued positionally); positive means
-  // the auction sheet ranks them higher than the market (undervalued).
+  // Build rows. Two-source model:
+  //   - Draft Sharks PPR auction value drives the expected-price math
+  //     (ratio = playerAuctionVal / anchorAuctionVal; expected =
+  //     anchor.marketPrice × ratio).
+  //   - FantasyPros consensus PPR positional rank drives the
+  //     positional-disparity columns (FP, Δ).
+  // Δ = fpPosRank − marketPosRank. Negative = market ranks them
+  // lower than FP does (FP says they're better than the market) →
+  // potentially undervalued. Positive = market ranks them higher
+  // than FP → potentially overvalued.
   const rows: ValueRow[] = players
     .filter((p) => POS.includes(p.position as Position))
     .map((p) => {
       const market = marketPosRank.get(p.id) ?? { rank: 0, size: 0 };
-      const ds = dsByName.get(normalizeName(`${p.firstName} ${p.lastName}`));
+      const nameKey = normalizeName(`${p.firstName} ${p.lastName}`);
+      const ds = dsByName.get(nameKey);
+      const fp = fpByName.get(nameKey);
       const anchor = anchorByPos.get(p.position as Position) ?? null;
 
       const auctionVal = ds?.dsAuctionValue ?? null;
-      const auctionPosRank = ds?.posRank ?? null;
+      const fpPosRank = fp?.posRankNum && fp.posRankNum > 0 ? fp.posRankNum : null;
       const posRankDelta =
-        auctionPosRank != null && market.rank > 0 ? auctionPosRank - market.rank : null;
+        fpPosRank != null && market.rank > 0 ? fpPosRank - market.rank : null;
 
       let expectedPriceUsd: number | null = null;
       let priceVsExpectedUsd: number | null = null;
@@ -113,7 +121,7 @@ export default async function ValuePage() {
         marketPosRank: market.rank,
         posPlayers: market.size,
         auctionValue: auctionVal,
-        auctionPosRank,
+        fpPosRank,
         posRankDelta,
         ratio,
         expectedPriceUsd,
