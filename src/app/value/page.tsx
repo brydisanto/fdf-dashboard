@@ -16,7 +16,7 @@ import type { Position } from "@/lib/types";
 export const metadata = {
   title: "Value Score · Gridiron",
   description:
-    "FantasyPros consensus positional rank vs Sport.fun market rank — surfaces NFL player tokens the market ranks above or below the consensus.",
+    "Sport.fun market rank vs an industry-consensus rank averaged across FantasyPros, Underdog Sports, and ESPN — surfaces NFL player tokens the market may be over- or undervaluing.",
 };
 
 export const revalidate = 600;
@@ -156,7 +156,7 @@ export default async function ValuePage() {
         <div className="relative flex flex-col gap-6" style={{ padding: "32px 32px 28px" }}>
           <div className="flex flex-wrap items-center gap-2">
             <Pill tone="brand">Rank Disparity</Pill>
-            <Pill tone="muted">PPR · FantasyPros consensus</Pill>
+            <Pill tone="muted">PPR · 3-source industry consensus</Pill>
           </div>
           <h1
             className="m-0 text-[var(--color-text)]"
@@ -171,12 +171,34 @@ export default async function ValuePage() {
           >
             Where do market and consensus disagree?
           </h1>
-          <p className="m-0 max-w-[64ch] text-[var(--color-text-muted)]" style={{ fontSize: "15px" }}>
-            Comparing each player&apos;s <strong>Sport.fun market positional rank</strong> against
-            their <strong>FantasyPros consensus PPR positional rank</strong>. A negative <strong>Δ</strong>
-            means FP ranks them higher than the market does — a candidate the market may be
-            undervaluing. Positive Δ — the inverse.
+          <p className="m-0 max-w-[68ch] text-[var(--color-text-muted)]" style={{ fontSize: "15px", lineHeight: 1.55 }}>
+            Each player&apos;s <strong>Sport.fun market positional rank</strong> (FDF, sorted by
+            current price) is compared against an <strong>industry-consensus rank</strong> averaged
+            across three PPR sources: <strong>FantasyPros</strong> consensus ECR,{" "}
+            <strong>Underdog</strong> Sports rankings, and <strong>ESPN</strong>&apos;s preseason
+            AVG (mean of 8 ESPN expert rankers). The <strong>Difference</strong> column is{" "}
+            <em>industry avg − FDF rank</em> — negative means the industry ranks them higher than
+            the market does (potentially <span className="text-[var(--color-turf)]">undervalued</span>),
+            positive means the market ranks them higher than the industry says they belong
+            (potentially <span className="text-[var(--color-penalty)]">overvalued</span>).
           </p>
+          <div
+            className="flex flex-wrap items-center gap-x-5 gap-y-2"
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "10.5px",
+              fontWeight: 600,
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              color: "var(--color-text-dim)",
+            }}
+          >
+            <span>FP · live · hourly</span>
+            <span>UD · static snapshot</span>
+            <span>ESPN · static snapshot</span>
+            <span>·</span>
+            <span>Fair band: |Δ| ≤ {FAIR_BAND}</span>
+          </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
             <ExtremeCard
@@ -204,7 +226,7 @@ export default async function ValuePage() {
       <Card className="mt-6">
         <CardHeader
           title="Rank Disparity Table"
-          hint="Sort by Δ to surface biggest market-vs-consensus disagreements"
+          hint="FDF market rank vs FP / UD / ESPN industry consensus · sort any column"
           right={<Pill tone="muted">{fmtNum(matched)} matched · {fmtNum(rows.length - matched)} unranked</Pill>}
         />
         <ValueTable rows={rows} />
