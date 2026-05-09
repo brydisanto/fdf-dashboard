@@ -57,13 +57,13 @@ export function ValueScatter({
       }));
   }, [rows, pos]);
 
-  // X-domain: symmetric around 0, padded ±2 from the most extreme Δ
-  // (clamped to [-15, +15] so a single outlier doesn't dwarf the
-  // rest of the cloud).
+  // X-domain: symmetric around 0, padded ~+1 from the most extreme Δ.
+  // No upper cap — we'd rather show outliers correctly than clip
+  // them off the axis (and their shading along with them).
   const maxAbs = useMemo(() => {
     if (data.length === 0) return 5;
     const m = data.reduce((acc, d) => Math.max(acc, Math.abs(d.x)), 0);
-    return Math.max(3, Math.min(15, Math.ceil(m) + 1));
+    return Math.max(3, Math.ceil(m) + 1);
   }, [data]);
 
   // Y-domain: 1..max industry rank seen (rank 1 at top via reversed).

@@ -24,6 +24,15 @@ export function ValuePageBody({
     <>
       <Card className="mt-6">
         <CardHeader
+          title="Rank Disparity Table"
+          hint="FDF market rank vs FP / UD / ESPN industry consensus"
+          right={<Pill tone="muted">{matched} matched · {total - matched} unranked</Pill>}
+        />
+        <ValueTable rows={rows} pos={pos} onPosChange={setPos} />
+      </Card>
+
+      <Card className="mt-6">
+        <CardHeader
           title="Rank Disparity Spectrum"
           hint="Each dot is a player · X = industry − FDF rank · Y = industry rank · click to drill in"
           right={
@@ -52,15 +61,6 @@ export function ValuePageBody({
           }
         />
         <ValueScatter rows={rows} pos={pos} />
-      </Card>
-
-      <Card className="mt-6">
-        <CardHeader
-          title="Rank Disparity Table"
-          hint="FDF market rank vs FP / UD / ESPN industry consensus"
-          right={<Pill tone="muted">{matched} matched · {total - matched} unranked</Pill>}
-        />
-        <ValueTable rows={rows} pos={pos} onPosChange={setPos} />
       </Card>
     </>
   );
