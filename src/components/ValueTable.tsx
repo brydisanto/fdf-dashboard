@@ -5,7 +5,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { PlayerAvatar } from "./PlayerAvatar";
-import { TEAM_NAMES, TEAM_COLORS } from "@/lib/data/players";
+import { TEAM_NAMES } from "@/lib/data/players";
 import type { PlayerSummary, Position } from "@/lib/types";
 
 export interface ValueRow extends PlayerSummary {
@@ -98,13 +98,11 @@ export function ValueTable({ rows }: { rows: ValueRow[] }) {
           </thead>
           <tbody>
             {filtered.map((p) => {
-              const teamColor = TEAM_COLORS[p.team] ?? "var(--accent)";
               return (
                 <tr
                   key={p.id}
                   className="transition-colors duration-[180ms] ease-out hover:bg-[color-mix(in_oklab,var(--color-press)_50%,transparent)]"
                   style={{
-                    boxShadow: `inset 4px 0 0 0 ${teamColor}`,
                     borderBottom: "1px solid var(--color-line)",
                   }}
                 >

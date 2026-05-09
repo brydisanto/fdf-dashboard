@@ -8,7 +8,7 @@ import { Sparkline } from "./Sparkline";
 import { PlayerAvatar } from "./PlayerAvatar";
 import { Delta } from "./ui";
 import { fmtNum, fmtPrice, fmtUsd } from "@/lib/format";
-import { TEAM_COLORS, TEAM_NAMES } from "@/lib/data/players";
+import { TEAM_NAMES } from "@/lib/data/players";
 import type { PlayerSummary, Position } from "@/lib/types";
 
 type SortKey =
@@ -121,13 +121,11 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
           </thead>
           <tbody>
             {rows.map((p) => {
-              const teamColor = TEAM_COLORS[p.team] ?? "var(--accent)";
               return (
                 <tr
                   key={p.id}
                   className="group transition-colors duration-[180ms] ease-out hover:bg-[color-mix(in_oklab,var(--color-press)_50%,transparent)]"
                   style={{
-                    boxShadow: `inset 4px 0 0 0 ${teamColor}`,
                     borderBottom: "1px solid var(--color-line)",
                   }}
                 >
