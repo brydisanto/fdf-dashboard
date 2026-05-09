@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, ExternalLink, Fish, Sparkles } from "lucide-react";
+import { ArrowLeft, ChevronRight, ExternalLink, Sparkles } from "lucide-react";
 import { getWalletPortfolio, getWalletFlow, getWalletFunPosition } from "@/lib/data";
 import { ROSTER_BY_TOKEN } from "@/lib/data/roster";
 import { Card, CardHeader, Pill } from "@/components/ui";
@@ -11,9 +11,9 @@ import { fmtNum, fmtTimeAgo, fmtUsd, shortAddr } from "@/lib/format";
 
 export const revalidate = 60;
 
-// Soccer slice color — distinct from the NFL brand orange and the
-// $FUN green. Picked from the wallet-tier palette so it feels native.
-const COLOR_SOCCER = "#7aa6ff";
+// Soccer slice color — broadcast-blue, distinct from amber + turf so
+// the dominance bar / composition donut read at a glance.
+const COLOR_SOCCER = "var(--color-broadcast)";
 
 export default async function WalletPage(props: PageProps<"/wallet/[address]">) {
   const { address } = await props.params;
@@ -27,76 +27,126 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
   const nflValue = nflHoldings.reduce((a, h) => a + h.balanceValueUsd, 0);
   const soccerValue = soccerHoldings.reduce((a, h) => a + h.balanceValueUsd, 0);
   const totalPortfolioValue = profile.totalValueUsd + fun.valueUsd;
-  // NFL Dominance = how much of this wallet's *sport allocation* sits
-  // in NFL vs Soccer. We deliberately exclude $FUN here — it's a
-  // utility/treasury token, not a sport bet, so mixing it in dilutes
-  // the signal of which sport this wallet is positioned on.
+  // NFL Dominance = NFL share of sport allocation (NFL + Soccer).
+  // $FUN excluded since it's a utility token, not a sport bet.
   const sportValue = nflValue + soccerValue;
   const nflDominance = sportValue > 0 ? (nflValue / sportValue) * 100 : 0;
-  // Earliest currently-held NFL position. Approximates "first NFL buy"
-  // for wallets that haven't fully exited and re-entered NFL — the
-  // holdings table's "First Held" column derives from the same field.
   const firstNflHoldAt = nflHoldings.reduce<number>(
     (m, h) => (h.startHoldingAt && (!m || h.startHoldingAt < m) ? h.startHoldingAt : m),
     0,
   );
 
+  // Top NFL holding by USD — drives the TOP HOLDING stat cell.
+  const topNflHolding = nflHoldings.slice().sort((a, b) => b.balanceValueUsd - a.balanceValueUsd)[0];
+
   const slices: CompositionSlice[] = [
-    { key: "nfl",    label: "NFL",    value: nflValue,    color: "var(--color-brand)" },
+    { key: "nfl", label: "NFL", value: nflValue, color: "var(--accent)" },
     { key: "soccer", label: "Soccer", value: soccerValue, color: COLOR_SOCCER },
-    { key: "fun",    label: "$FUN",   value: fun.valueUsd, color: "var(--color-gain)" },
+    { key: "fun", label: "$FUN", value: fun.valueUsd, color: "var(--color-turf)" },
   ];
 
+  const tier = TIER_META[profile.tier];
+  const tierGlyph = profile.tier === "whale" ? "🐋"
+    : profile.tier === "shark" ? "🦈"
+    : profile.tier === "dolphin" ? "🐬"
+    : profile.tier === "fish" ? "🐟"
+    : "🦐";
+
   return (
-    <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 sm:py-8">
-      <Link
-        href="/"
-        className="inline-flex items-center gap-1.5 text-xs uppercase tracking-wider text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-      >
-        <ArrowLeft className="h-3 w-3" />
-        Back to market
-      </Link>
+    <div className="mx-auto max-w-[var(--max-w)] px-5 sm:px-8 py-6 sm:py-8">
+      <Breadcrumb
+        items={[
+          { label: "Market", href: "/" },
+          { label: "Wallets" },
+          { label: shortAddr(address, 6, 6) },
+        ]}
+      />
 
       {/* Hero */}
-      <div className="mt-3 relative overflow-hidden rounded-2xl border border-[var(--color-border)] bg-gradient-to-br from-[var(--color-surface)] to-[var(--color-surface-2)]">
-        <div className="absolute inset-0 field-grid opacity-50" />
-        <div className="relative flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:p-7">
+      <div className="detail-hero wallet-hero-stripe relative mt-3">
+        <div className="detail-hero-grid" />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute"
+          style={{
+            right: -100,
+            top: -100,
+            width: 480,
+            height: 480,
+            background: `radial-gradient(circle, color-mix(in oklab, var(--color-broadcast) 15%, transparent), transparent 70%)`,
+          }}
+        />
+        <div className="relative grid items-center gap-8 p-7 sm:grid-cols-[auto_1fr_auto] sm:p-9">
+          {/* Tier glyph */}
           <div
-            className="flex h-20 w-20 items-center justify-center rounded-2xl bg-[var(--color-surface-2)] ring-1"
-            style={{ borderColor: TIER_META[profile.tier].color, boxShadow: `0 0 0 1px ${TIER_META[profile.tier].color}40` }}
+            className="flex items-center justify-center rounded-full bg-[var(--color-press)]"
+            style={{
+              width: 92,
+              height: 92,
+              boxShadow: `inset 0 0 0 2px ${tier.color}`,
+              fontSize: 44,
+              lineHeight: 1,
+            }}
+            aria-hidden
           >
-            <Fish className="h-10 w-10" style={{ color: TIER_META[profile.tier].color }} />
+            {tierGlyph}
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-2 text-[11px]">
+
+          {/* Meta column */}
+          <div className="flex min-w-0 flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
               <span
-                className={`rounded-md border px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.12em] ${TIER_META[profile.tier].pillBg} ${TIER_META[profile.tier].pillBorder} ${TIER_META[profile.tier].pillText}`}
-                title={`Tier based on total portfolio USD`}
+                className={`inline-flex items-center rounded-[var(--r-4)] border px-2 py-1 ${tier.pillBg} ${tier.pillBorder} ${tier.pillText}`}
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase",
+                }}
               >
                 {tierLabel(profile.tier)}
               </span>
               {profile.isNew ? (
-                <Pill tone="gain">
+                <Pill tone="warn">
                   <Sparkles className="mr-1 inline h-3 w-3" />
-                  New wallet
+                  NEW WALLET
                 </Pill>
               ) : null}
-              <Pill tone="muted">{profile.holdingsCount} holdings</Pill>
-              {flow.rotationDirection === "into-nfl" ? <Pill tone="gain">Rotating into NFL</Pill> : null}
-              {flow.rotationDirection === "out-of-nfl" ? <Pill tone="loss">Rotating out of NFL</Pill> : null}
+              <Pill tone="muted">{profile.holdingsCount} HOLDINGS</Pill>
+              {flow.rotationDirection === "into-nfl" ? <Pill tone="gain">ROTATING INTO NFL</Pill> : null}
+              {flow.rotationDirection === "out-of-nfl" ? <Pill tone="loss">ROTATING OUT OF NFL</Pill> : null}
             </div>
-            <h1 className="mt-2 font-mono text-xl font-semibold tracking-tight sm:text-2xl">
-              {shortAddr(address, 6, 6)}
+            <h1
+              className="m-0"
+              style={{
+                fontFamily: "var(--font-display)",
+                fontWeight: 800,
+                fontSize: "clamp(28px, 3.5vw, 48px)",
+                lineHeight: 1,
+                letterSpacing: "0.005em",
+              }}
+            >
+              {shortAddr(address, 6, 6).toUpperCase()}
             </h1>
-            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]">
-              <span>First seen {profile.firstSeenAt ? fmtTimeAgo(profile.firstSeenAt) : "—"}</span>
+            <div
+              className="flex flex-wrap items-center gap-x-4 gap-y-1"
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: "var(--color-text-dim)",
+              }}
+            >
+              <span>FIRST SEEN {profile.firstSeenAt ? fmtTimeAgo(profile.firstSeenAt) : "—"}</span>
               <span>·</span>
-              <span>Last active {profile.lastActiveAt ? fmtTimeAgo(profile.lastActiveAt) : "—"}</span>
+              <span>LAST ACTIVE {profile.lastActiveAt ? fmtTimeAgo(profile.lastActiveAt) : "—"}</span>
               {firstNflHoldAt > 0 ? (
                 <>
                   <span>·</span>
                   <span>
-                    First NFL position{" "}
+                    FIRST NFL POSITION{" "}
                     <span className="text-[var(--color-text)]">{fmtDate(firstNflHoldAt)}</span>
                   </span>
                 </>
@@ -107,83 +157,133 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
                 rel="noreferrer"
                 className="inline-flex items-center gap-1 hover:text-[var(--color-text)]"
               >
-                Basescan <ExternalLink className="h-3 w-3" />
+                BASESCAN <ExternalLink className="h-3 w-3" />
               </a>
             </div>
           </div>
 
-          {/* Twin headline values: NFL Portfolio + Total Portfolio. */}
+          {/* Twin value boxes */}
           <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-end">
-            <div className="rounded-lg border border-[var(--color-brand)]/40 bg-[var(--color-brand)]/10 px-4 py-3">
-              <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-brand-soft)]">
-                NFL Portfolio Value
-              </div>
-              <div className="tabular text-3xl font-bold leading-none text-[var(--color-brand-soft)] sm:text-[34px]">
-                {fmtUsd(nflValue, { compact: true })}
-              </div>
-              <div className="mt-1 text-[11px] text-[var(--color-text-muted)]">
-                {nflHoldings.length} player position{nflHoldings.length === 1 ? "" : "s"}
-              </div>
-            </div>
-            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3">
-              <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-dim)]">
-                Total Portfolio
-              </div>
-              <div className="tabular text-3xl font-bold leading-none sm:text-[34px]">
-                {fmtUsd(totalPortfolioValue, { compact: true })}
-              </div>
-              <div className="mt-1 text-[11px] text-[var(--color-text-muted)]">
-                NFL + Soccer + $FUN
-              </div>
-            </div>
+            <ValueBox
+              label="NFL Portfolio Value"
+              value={fmtUsd(nflValue, { compact: true })}
+              sub={`${nflHoldings.length} player position${nflHoldings.length === 1 ? "" : "s"}`}
+              accent
+            />
+            <ValueBox
+              label="Total Portfolio"
+              value={fmtUsd(totalPortfolioValue, { compact: true })}
+              sub="NFL + Soccer + $FUN"
+            />
           </div>
         </div>
       </div>
 
-      {/* NFL Dominance — slim horizontal card with split bar */}
+      {/* Stat strip — 5-cell hairline grid */}
+      <div
+        className="stat-strip mt-4 grid"
+        style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}
+      >
+        <StatCell
+          label="Holdings"
+          value={fmtNum(profile.holdingsCount)}
+          sub={`NFL ${nflHoldings.length} · SOCCER ${soccerHoldings.length} · $FUN ${fun.balance > 0 ? "Y" : "N"}`}
+        />
+        <StatCell
+          label="NFL Dominance"
+          value={`${nflDominance.toFixed(0)}%`}
+          sub="OF SPORT VALUE"
+        />
+        <StatCell
+          label="Top Holding"
+          value={topNflHolding ? topShortName(topNflHolding) : "—"}
+          sub={topNflHolding ? `${fmtUsd(topNflHolding.balanceValueUsd, { compact: true })} VALUE` : "NO NFL POSITIONS"}
+        />
+        <StatCell
+          label="7D Net Flow · NFL"
+          value={`${flow.nflNetUsd >= 0 ? "+" : ""}${fmtUsd(flow.nflNetUsd, { compact: true })}`}
+          sub={
+            flow.rotationDirection === "into-nfl" ? "ROTATING IN"
+              : flow.rotationDirection === "out-of-nfl" ? "ROTATING OUT"
+              : "STEADY"
+          }
+          tone={flow.nflNetUsd >= 0 ? "gain" : "loss"}
+        />
+        <StatCell
+          label="Wallet Age"
+          value={profile.firstSeenAt ? fmtTimeAgo(profile.firstSeenAt).replace(" ago", "").toUpperCase() : "—"}
+          sub="FIRST SEEN"
+        />
+      </div>
+
+      {/* Dominance bar */}
       {sportValue > 0 ? (
-        <div className="mt-5 rounded-xl border border-[var(--color-brand)]/30 bg-[var(--color-brand)]/5 p-4 sm:p-5">
+        <Card className="mt-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
             <div className="sm:min-w-[200px]">
-              <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-brand-soft)]">
-                NFL Dominance
+              <div className="mono-eyebrow text-[var(--accent-soft)]" style={{ fontSize: 10 }}>
+                NFL DOMINANCE
               </div>
-              <div className="tabular text-4xl font-bold leading-none text-[var(--color-brand-soft)]">
+              <div
+                className="mt-1 leading-none text-[var(--accent-soft)]"
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontWeight: 700,
+                  fontSize: 36,
+                  letterSpacing: "-0.03em",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
                 {nflDominance.toFixed(0)}%
               </div>
               <div className="mt-1 text-[11px] leading-snug text-[var(--color-text-muted)]">
-                Share of this wallet&rsquo;s sport allocation in NFL vs Soccer. $FUN excluded.
+                NFL share of this wallet&apos;s sport allocation. $FUN excluded.
               </div>
             </div>
             <div className="flex-1">
-              <div className="flex items-center justify-between text-[10px] uppercase tracking-wider">
-                <span className="text-[var(--color-brand-soft)]">
+              <div
+                className="flex items-center justify-between"
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 10,
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase",
+                }}
+              >
+                <span className="text-[var(--accent-soft)]">
                   NFL · {fmtUsd(nflValue, { compact: true })}
                 </span>
-                <span className="text-[var(--color-text-muted)]">
-                  {fmtUsd(soccerValue, { compact: true })} · Soccer
+                <span className="text-[var(--color-broadcast)]">
+                  {fmtUsd(soccerValue, { compact: true })} · SOCCER
                 </span>
               </div>
-              <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-[var(--color-surface-2)] ring-1 ring-[var(--color-border)]">
-                <div
-                  className="h-full rounded-full bg-[var(--color-brand)]"
-                  style={{ width: `${nflDominance}%` }}
-                />
+              {/* Two-segment bar — NFL accent + Soccer broadcast-blue */}
+              <div className="mt-2 flex h-3 overflow-hidden rounded-full bg-[var(--color-press)] ring-1 ring-[var(--color-line)]">
+                <div className="h-full bg-[var(--accent)]" style={{ width: `${nflDominance}%` }} />
+                <div className="h-full bg-[var(--color-broadcast)]" style={{ width: `${100 - nflDominance}%` }} />
               </div>
-              <div className="mt-1.5 flex items-center justify-between text-[11px] text-[var(--color-text-muted)]">
+              <div
+                className="mt-1.5 flex items-center justify-between"
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  fontVariantNumeric: "tabular-nums",
+                  color: "var(--color-text-muted)",
+                }}
+              >
                 <span>{nflDominance.toFixed(1)}% NFL</span>
                 <span>{(100 - nflDominance).toFixed(1)}% Soccer</span>
               </div>
             </div>
           </div>
-        </div>
+        </Card>
       ) : null}
 
-      {/* Portfolio Composition */}
-      <Card className="mt-5">
+      {/* Composition donut */}
+      <Card className="mt-4">
         <CardHeader
           title="Portfolio Composition"
-          hint="Where this wallet's value sits across NFL player shares, Soccer shares, and $FUN"
+          hint="Where this wallet's value sits across NFL shares, Soccer shares, and $FUN"
         />
         <div className="grid items-center gap-6 sm:grid-cols-[auto_1fr]">
           <div className="flex justify-center">
@@ -195,7 +295,7 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
               value={fmtUsd(nflValue, { compact: true })}
               pct={pct(nflValue, totalPortfolioValue)}
               sub={`${nflHoldings.length} player position${nflHoldings.length === 1 ? "" : "s"}`}
-              color="var(--color-brand)"
+              color="var(--accent)"
             />
             <SliceTile
               label="Soccer"
@@ -209,10 +309,11 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
               value={fmtUsd(fun.valueUsd, { compact: true })}
               pct={pct(fun.valueUsd, totalPortfolioValue)}
               sub={`${fmtNum(fun.balance, { compact: true, digits: 2 })} @ ${fmtUsd(fun.priceUsd, { digits: 4 })}`}
-              color="var(--color-gain)"
+              color="var(--color-turf)"
               extra={
-                <span className={fun.change24h >= 0 ? "text-[var(--color-gain)]" : "text-[var(--color-loss)]"}>
-                  {fun.change24h >= 0 ? "+" : ""}{fun.change24h.toFixed(1)}% 24h
+                <span style={{ color: fun.change24h >= 0 ? "var(--color-turf)" : "var(--color-penalty)" }}>
+                  {fun.change24h >= 0 ? "+" : ""}
+                  {fun.change24h.toFixed(1)}% 24H
                 </span>
               }
             />
@@ -220,55 +321,32 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
         </div>
       </Card>
 
-      {/* 7d flow stats */}
-      <div className="mt-5 grid gap-3 sm:grid-cols-3">
-        <FlowStat
-          label="7d into NFL"
-          value={fmtUsd(flow.nflInUsd, { compact: true })}
-          sub={`${flow.totalTrades} trades total · 7d`}
-          tone="gain"
-        />
-        <FlowStat
-          label="7d out of NFL"
-          value={fmtUsd(flow.nflOutUsd, { compact: true })}
-          sub="Sells from NFL holdings"
-          tone="loss"
-        />
-        <FlowStat
-          label="7d Net NFL Shift"
-          value={`${flow.nflNetUsd >= 0 ? "+" : ""}${fmtUsd(flow.nflNetUsd, { compact: true })}`}
-          sub={
-            flow.rotationDirection === "into-nfl"
-              ? "Rotating Gold from Soccer → NFL"
-              : flow.rotationDirection === "out-of-nfl"
-                ? "Rotating Gold from NFL → Soccer"
-                : "No clear rotation pattern"
-          }
-          tone={flow.nflNetUsd >= 0 ? "gain" : "loss"}
-        />
-      </div>
-
-      {/* 7d flow chart */}
-      <Card className="mt-5">
+      {/* 7-day flow chart */}
+      <Card className="mt-4">
         <CardHeader
           title="7-Day Holding Flow · NFL vs Soccer"
-          hint="Daily net dollar shift between NFL and Soccer player shares (buys − sells)"
+          hint="Daily net dollar shift between NFL and Soccer positions (buys − sells)"
           right={
-            <div className="flex items-center gap-3 text-[11px] uppercase tracking-wider">
+            <div
+              className="flex items-center gap-3"
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+              }}
+            >
               <span className="inline-flex items-center gap-1.5">
-                <span className="inline-block h-2 w-2 rounded-sm bg-[var(--color-brand)]" /> NFL
+                <span className="inline-block h-2 w-2 rounded-sm bg-[var(--accent)]" /> NFL
               </span>
               <span className="inline-flex items-center gap-1.5">
-                <span
-                  className="inline-block h-2 w-2 rounded-sm"
-                  style={{ background: COLOR_SOCCER }}
-                /> Soccer
+                <span className="inline-block h-2 w-2 rounded-sm bg-[var(--color-broadcast)]" /> Soccer
               </span>
             </div>
           }
         />
         <WalletFlowChart flow={flow} soccerColor={COLOR_SOCCER} />
-        <div className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <FootStat label="NFL bought" value={fmtUsd(flow.nflInUsd, { compact: true })} />
           <FootStat label="NFL sold" value={fmtUsd(flow.nflOutUsd, { compact: true })} />
           <FootStat label="Soccer bought" value={fmtUsd(flow.otherInUsd, { compact: true })} />
@@ -276,25 +354,29 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
         </div>
       </Card>
 
-      {/* NFL holdings */}
-      <Card className="mt-5">
-        <CardHeader
+      {/* NFL holdings — press card */}
+      <div className="mt-4">
+        <SectionHead
           title="NFL Holdings"
           hint={`${nflHoldings.length} of ${profile.holdingsCount} positions · sortable & paginated`}
           right={<Pill tone="brand">{fmtUsd(nflValue, { compact: true })}</Pill>}
         />
-        <WalletHoldingsTable rows={nflHoldings} variant="nfl" />
-      </Card>
+        <Card variant="press" padded={false}>
+          <WalletHoldingsTable rows={nflHoldings} variant="nfl" />
+        </Card>
+      </div>
 
-      {/* Soccer holdings */}
-      <Card className="mt-5">
-        <CardHeader
+      {/* Soccer holdings — press card */}
+      <div className="mt-4">
+        <SectionHead
           title="Soccer Holdings"
           hint={`${soccerHoldings.length} non-NFL positions on Sport.fun`}
-          right={<Pill tone="muted">{fmtUsd(soccerValue, { compact: true })}</Pill>}
+          right={<Pill tone="info">{fmtUsd(soccerValue, { compact: true })}</Pill>}
         />
-        <WalletHoldingsTable rows={soccerHoldings} variant="other" />
-      </Card>
+        <Card variant="press" padded={false}>
+          <WalletHoldingsTable rows={soccerHoldings} variant="other" />
+        </Card>
+      </div>
     </div>
   );
 }
@@ -311,8 +393,157 @@ function fmtDate(ts: number): string {
   });
 }
 
+// "JAL HU" → ticker-ish 5-char stub for the TOP HOLDING stat cell.
+function topShortName(h: { name: string; symbol?: string }): string {
+  if (h.symbol) return h.symbol.toUpperCase();
+  const upper = h.name.toUpperCase().replace(/[^A-Z\s]/g, "");
+  const parts = upper.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return `${parts[parts.length - 1].slice(0, 6)}`;
+  return upper.slice(0, 6);
+}
+
+function Breadcrumb({ items }: { items: { label: string; href?: string }[] }) {
+  return (
+    <nav
+      className="inline-flex items-center gap-1.5 rounded-[var(--r-4)] border border-[var(--color-line)] bg-[var(--color-bench)] px-3 py-1.5"
+      aria-label="Breadcrumb"
+    >
+      {items.map((it, i) => (
+        <span key={i} className="inline-flex items-center gap-1.5">
+          {i > 0 ? <ChevronRight className="h-3 w-3 text-[var(--color-text-dim)]" strokeWidth={1.5} /> : <ArrowLeft className="h-3 w-3 text-[var(--color-text-dim)]" strokeWidth={1.5} />}
+          {it.href ? (
+            <Link
+              href={it.href}
+              className="mono-eyebrow hover:text-[var(--color-text)]"
+              style={{ fontSize: 10 }}
+            >
+              {it.label}
+            </Link>
+          ) : (
+            <span className="mono-eyebrow text-[var(--color-text)]" style={{ fontSize: 10 }}>
+              {it.label}
+            </span>
+          )}
+        </span>
+      ))}
+    </nav>
+  );
+}
+
+function ValueBox({
+  label,
+  value,
+  sub,
+  accent,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  accent?: boolean;
+}) {
+  const accentBox = accent
+    ? {
+        background: "var(--accent-tint)",
+        borderColor: "var(--accent-line)",
+        color: "var(--accent-soft)",
+      }
+    : {
+        background: "var(--color-press)",
+        borderColor: "var(--color-line)",
+        color: "var(--color-text)",
+      };
+  return (
+    <div
+      className="rounded-[var(--r-8)] border px-4 py-3"
+      style={{ background: accentBox.background, borderColor: accentBox.borderColor }}
+    >
+      <div className="mono-eyebrow" style={{ fontSize: 10, color: accent ? "var(--accent-soft)" : "var(--color-text-dim)" }}>
+        {label}
+      </div>
+      <div
+        className="leading-none"
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontWeight: 700,
+          fontSize: 36,
+          letterSpacing: "-0.04em",
+          color: accentBox.color,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {value}
+      </div>
+      <div className="mt-1 text-[11px] text-[var(--color-text-muted)]">{sub}</div>
+    </div>
+  );
+}
+
+function StatCell({
+  label,
+  value,
+  sub,
+  tone,
+}: {
+  label: string;
+  value: React.ReactNode;
+  sub?: string;
+  tone?: "gain" | "loss";
+}) {
+  const fg = tone === "gain" ? "var(--color-turf)" : tone === "loss" ? "var(--color-penalty)" : "var(--color-text)";
+  return (
+    <div className="stat-cell">
+      <div className="flex items-center gap-2">
+        <span className="block h-px w-4 bg-[var(--accent)]" />
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.18em",
+            textTransform: "uppercase",
+            color: "var(--color-text-muted)",
+          }}
+        >
+          {label}
+        </span>
+      </div>
+      <span
+        className="leading-none"
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontWeight: 700,
+          fontSize: 22,
+          letterSpacing: "-0.03em",
+          color: fg,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {value}
+      </span>
+      {sub ? (
+        <div
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            letterSpacing: "0.14em",
+            color: "var(--color-text-dim)",
+            textTransform: "uppercase",
+          }}
+        >
+          {sub}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function SliceTile({
-  label, value, pct, sub, color, extra,
+  label,
+  value,
+  pct,
+  sub,
+  color,
+  extra,
 }: {
   label: string;
   value: string;
@@ -322,14 +553,26 @@ function SliceTile({
   extra?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/40 p-3.5">
+    <div className="rounded-[var(--r-8)] border border-[var(--color-line)] bg-[var(--color-press)] p-3.5">
       <div className="flex items-center gap-1.5">
         <span className="inline-block h-2 w-2 rounded-sm" style={{ background: color }} />
-        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-dim)]">{label}</span>
+        <span className="mono-eyebrow" style={{ fontSize: 10 }}>
+          {label}
+        </span>
       </div>
       <div className="mt-1 flex items-baseline gap-2">
-        <div className="tabular text-lg font-semibold leading-tight">{value}</div>
-        <div className="text-[11px] text-[var(--color-text-muted)]">{pct.toFixed(1)}%</div>
+        <span
+          className="leading-tight"
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 18,
+            fontWeight: 700,
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {value}
+        </span>
+        <span className="text-[11px] text-[var(--color-text-muted)]">{pct.toFixed(1)}%</span>
       </div>
       <div className="mt-1 text-[11px] text-[var(--color-text-muted)]">
         {sub}
@@ -339,36 +582,62 @@ function SliceTile({
   );
 }
 
-function FlowStat({
-  label, value, sub, tone,
-}: {
-  label: string;
-  value: string;
-  sub: string;
-  tone: "gain" | "loss";
-}) {
+function FootStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/40 p-3.5">
-      <div className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-dim)]">{label}</div>
+    <div className="rounded-[var(--r-4)] border border-[var(--color-line)] bg-[var(--color-press)] px-3 py-2">
       <div
-        className={
-          tone === "gain"
-            ? "mt-1 tabular text-lg font-semibold text-[var(--color-gain)]"
-            : "mt-1 tabular text-lg font-semibold text-[var(--color-loss)]"
-        }
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 10,
+          letterSpacing: "0.16em",
+          color: "var(--color-text-dim)",
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        className="mt-0.5"
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 14,
+          fontWeight: 700,
+          fontVariantNumeric: "tabular-nums",
+        }}
       >
         {value}
       </div>
-      <div className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">{sub}</div>
     </div>
   );
 }
 
-function FootStat({ label, value }: { label: string; value: string }) {
+function SectionHead({
+  title,
+  hint,
+  right,
+}: {
+  title: string;
+  hint?: string;
+  right?: React.ReactNode;
+}) {
   return (
-    <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)]/30 px-3 py-2">
-      <div className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-dim)]">{label}</div>
-      <div className="mt-0.5 tabular text-sm font-semibold">{value}</div>
+    <div className="mb-4 flex items-end justify-between gap-4">
+      <div>
+        <h2
+          style={{
+            fontFamily: "var(--font-display)",
+            fontWeight: 800,
+            fontSize: 22,
+            letterSpacing: "0.02em",
+            textTransform: "uppercase",
+            lineHeight: 1.1,
+          }}
+        >
+          {title}
+        </h2>
+        {hint ? <p className="mt-1 text-[12px] text-[var(--color-text-dim)]">{hint}</p> : null}
+      </div>
+      {right}
     </div>
   );
 }

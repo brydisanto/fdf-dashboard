@@ -119,6 +119,98 @@ html, body {
   animation: pulse-dot 1.6s ease-in-out infinite;
 }
 
+/* ── Page-detail hero / stat strip ──────────────────────────────── */
+
+/* Hero panel base — 1px line border, rounded card, gradient bench → press,
+   48px field-grid + glow. Used by player + wallet detail pages. */
+.detail-hero {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: var(--r-14);
+  background: linear-gradient(135deg, var(--color-bench) 0%, var(--color-press) 100%);
+}
+.detail-hero-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image:
+    linear-gradient(to right, color-mix(in oklab, var(--color-text) 3%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--color-text) 3%, transparent) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+/* Player hero gets a 4px team-color stripe at top (fades to transparent
+   at 30% across) and a 520px team-color radial glow top-right. */
+.player-hero-stripe::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--team-color, var(--accent)) 0%,
+    var(--team-color, var(--accent)) 30%,
+    transparent 100%
+  );
+}
+.player-hero-glow {
+  position: absolute;
+  right: -120px;
+  top: -120px;
+  width: 520px;
+  height: 520px;
+  pointer-events: none;
+  background: radial-gradient(circle at center, color-mix(in oklab, var(--team-color, var(--accent)) 20%, transparent) 0%, transparent 60%);
+}
+/* Wallet hero gets a thin broadcast-blue → transparent top hairline. */
+.wallet-hero-stripe::before {
+  content: "";
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  top: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--color-broadcast), transparent);
+}
+
+/* Stat strip — N-cell hairline-divided grid. Container paints
+   --color-line as a 1px gap; cells paint --color-bench. */
+.stat-strip {
+  display: grid;
+  gap: 1px;
+  background: var(--color-line);
+  border: 1px solid var(--color-line);
+  border-radius: var(--r-14);
+  overflow: hidden;
+}
+.stat-strip > .stat-cell {
+  background: var(--color-bench);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Holdings progress bar (used in NFL Holdings table %-of-NFL column). */
+.holdings-bar {
+  position: relative;
+  display: inline-block;
+  height: 5px;
+  min-width: 64px;
+  background: var(--color-press);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.holdings-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--accent);
+  border-radius: 999px;
+}
+
 /* ── Live ticker scroll ─────────────────────────────────────────── */
 @keyframes ticker-scroll {
   from { transform: translateX(0); }
