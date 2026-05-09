@@ -39,13 +39,13 @@ export function LiveTicker({ movers }: { movers: PlayerSummary[] }) {
             </span>
           </div>
           {/* Track */}
-          <div className="ticker-mask relative flex-1 overflow-hidden">
-            <div className="ticker-track flex items-center gap-7 whitespace-nowrap" style={{ padding: "0 24px" }}>
+          <div className="ticker-mask relative flex h-full flex-1 items-center overflow-hidden">
+            <div className="ticker-track flex h-full items-center gap-7 whitespace-nowrap" style={{ padding: "0 24px" }}>
               {items.map((p, i) => (
                 <Link
                   key={`${p.id}-${i}`}
                   href={`/player/${p.id}`}
-                  className="inline-flex shrink-0 items-center gap-2 hover:text-[var(--accent-soft)]"
+                  className="inline-flex h-full shrink-0 items-center gap-2 hover:text-[var(--accent-soft)]"
                 >
                   <span
                     style={{
@@ -55,6 +55,7 @@ export function LiveTicker({ movers }: { movers: PlayerSummary[] }) {
                       letterSpacing: "0.06em",
                       textTransform: "uppercase",
                       color: "var(--color-text)",
+                      lineHeight: 1,
                     }}
                   >
                     {tickerSymbol(p)}
@@ -70,11 +71,8 @@ export function LiveTicker({ movers }: { movers: PlayerSummary[] }) {
   );
 }
 
-// Build a 4–5 char "ticker symbol" from the player name + position.
-// Mirrors the convention sportsbook tickers use (e.g. JEAN-RB,
-// HENRY-RB, MAHO-QB).
+// Last name only, uppercase. Tickers stay scannable without the
+// position suffix.
 function tickerSymbol(p: PlayerSummary): string {
-  const last = p.lastName.toUpperCase().replace(/[^A-Z]/g, "");
-  const stub = last.slice(0, 4);
-  return `${stub}-${p.position}`;
+  return p.lastName.toUpperCase();
 }

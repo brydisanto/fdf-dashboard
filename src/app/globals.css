@@ -90,12 +90,14 @@ html, body {
   scrollbar-color: var(--color-line-strong) transparent;
 }
 
-/* Field-grid background pattern (used on press cards + hero glow) */
+/* Field-grid background pattern. Tuned subtle to match the hero
+   panel's grid (48px cells, ~2% text-color hairlines) so press
+   cards don't fight with row content. */
 .field-grid {
   background-image:
-    linear-gradient(to right, color-mix(in oklab, var(--color-text) 4%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in oklab, var(--color-text) 4%, transparent) 1px, transparent 1px);
-  background-size: 32px 32px;
+    linear-gradient(to right, color-mix(in oklab, var(--color-text) 2.5%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--color-text) 2.5%, transparent) 1px, transparent 1px);
+  background-size: 48px 48px;
 }
 
 /* Mono eyebrow — section + stat labels */

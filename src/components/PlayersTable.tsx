@@ -128,7 +128,7 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
                   className="group transition-colors duration-[180ms] ease-out hover:bg-[color-mix(in_oklab,var(--color-press)_50%,transparent)]"
                   style={{
                     boxShadow: `inset 4px 0 0 0 ${teamColor}`,
-                    borderBottom: "1px solid color-mix(in oklab, var(--color-line) 50%, transparent)",
+                    borderBottom: "1px solid var(--color-line)",
                   }}
                 >
                   <td
