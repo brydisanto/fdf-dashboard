@@ -95,6 +95,12 @@ export function WalletBadge({
   // holding 0 NFL displays $0 here even if it has Soccer / $FUN
   // balances; the badge is specifically the NFL portfolio value.
   const displayedUsd = nflValueUsd ?? 0;
+  // Sub-$1k values round to whole dollars (no cents). $1k+ uses
+  // the compact form ($1.26K, $11.26K, etc.).
+  const displayedUsdLabel =
+    displayedUsd >= 1000
+      ? fmtUsd(displayedUsd, { compact: true })
+      : fmtUsd(displayedUsd, { digits: 0 });
   // NEW trumps tier visual.
   const isNewVisual = isNew;
   return (
@@ -146,7 +152,7 @@ export function WalletBadge({
           paddingLeft: "2px",
         }}
       >
-        {isNewVisual ? "NEW" : fmtUsd(displayedUsd, { compact: true })}
+        {isNewVisual ? "NEW" : displayedUsdLabel}
       </span>
     </Link>
   );
