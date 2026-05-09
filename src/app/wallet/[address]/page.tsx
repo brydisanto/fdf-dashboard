@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, ChevronRight, ExternalLink, Sparkles } from "lucide-react";
+import { ArrowLeft, ChevronRight, ExternalLink, Fish, Sparkles } from "lucide-react";
 import { getWalletPortfolio, getWalletFlow, getWalletFunPosition } from "@/lib/data";
 import { ROSTER_BY_TOKEN } from "@/lib/data/roster";
 import { Card, CardHeader, Pill } from "@/components/ui";
@@ -46,11 +46,13 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
   ];
 
   const tier = TIER_META[profile.tier];
-  const tierGlyph = profile.tier === "whale" ? "🐋"
-    : profile.tier === "shark" ? "🦈"
-    : profile.tier === "dolphin" ? "🐬"
-    : profile.tier === "fish" ? "🐟"
-    : "🦐";
+  // Fish-icon size scales with tier so the visual weight matches the
+  // wallet's portfolio class — same convention WalletBadge uses inline.
+  const tierIconPx = profile.tier === "whale" ? 56
+    : profile.tier === "shark" ? 48
+    : profile.tier === "dolphin" ? 42
+    : profile.tier === "fish" ? 38
+    : 32;
 
   return (
     <div className="mx-auto max-w-[var(--max-w)] px-5 sm:px-8 py-6 sm:py-8">
@@ -77,19 +79,18 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
           }}
         />
         <div className="relative grid items-center gap-8 p-7 sm:grid-cols-[auto_1fr_auto] sm:p-9">
-          {/* Tier glyph */}
+          {/* Tier glyph — Fish icon, sized + colored to match the
+              wallet's tier (matches WalletBadge convention). */}
           <div
             className="flex items-center justify-center rounded-full bg-[var(--color-press)]"
             style={{
               width: 92,
               height: 92,
               boxShadow: `inset 0 0 0 2px ${tier.color}`,
-              fontSize: 44,
-              lineHeight: 1,
             }}
             aria-hidden
           >
-            {tierGlyph}
+            <Fish width={tierIconPx} height={tierIconPx} style={{ color: tier.color }} />
           </div>
 
           {/* Meta column */}

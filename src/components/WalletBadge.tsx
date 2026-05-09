@@ -1,30 +1,29 @@
 import Link from "next/link";
 import clsx from "clsx";
+import { Fish, Sparkles } from "lucide-react";
 import { fmtUsd, shortAddr } from "@/lib/format";
 import type { WalletTier } from "@/lib/types";
 
 // Single source of truth for tier visuals — the wallet page hero
 // pulls TIER_META.color too so the icon, label, and badge all stay
-// in sync. The values in `pillBg/Border/Text` are tuned for the
-// hero pill on the detail page; the badge below uses its own
-// border-tint via TIER_META.borderClass.
+// in sync. iconPx grows with tier so a whale's badge reads visually
+// heavier than a shrimp's.
 export const TIER_META: Record<
   WalletTier,
   {
-    label: string;        // visible tier label
-    glyph: string;        // tier glyph used in the badge (whale/shark/●/★)
-    color: string;        // pure tier color — used for the hero icon
+    label: string;
+    iconPx: number;       // Fish icon size in the inline badge
+    color: string;        // tier color, applied to icon stroke + ring
     borderClass: string;  // badge border tint
     valueClass: string;   // badge USD value color
     pillBg: string;
     pillBorder: string;
     pillText: string;
-    bgClass?: string;     // optional badge bg (e.g. NEW)
   }
 > = {
   whale: {
     label: "Whale",
-    glyph: "🐋",
+    iconPx: 16,
     color: "var(--color-broadcast)",
     borderClass: "border-[color-mix(in_oklab,var(--color-broadcast)_35%,transparent)]",
     valueClass: "text-[var(--color-broadcast)]",
@@ -34,7 +33,7 @@ export const TIER_META: Record<
   },
   shark: {
     label: "Shark",
-    glyph: "🦈",
+    iconPx: 14,
     color: "var(--accent)",
     borderClass: "border-[color-mix(in_oklab,var(--accent)_35%,transparent)]",
     valueClass: "text-[var(--accent-soft)]",
@@ -44,7 +43,7 @@ export const TIER_META: Record<
   },
   dolphin: {
     label: "Dolphin",
-    glyph: "●",
+    iconPx: 12,
     color: "var(--accent-soft)",
     borderClass: "border-[var(--color-line)]",
     valueClass: "text-[var(--accent-soft)]",
@@ -54,7 +53,7 @@ export const TIER_META: Record<
   },
   fish: {
     label: "Fish",
-    glyph: "●",
+    iconPx: 11,
     color: "var(--color-text-muted)",
     borderClass: "border-[var(--color-line)]",
     valueClass: "text-[var(--accent-soft)]",
@@ -64,7 +63,7 @@ export const TIER_META: Record<
   },
   shrimp: {
     label: "Shrimp",
-    glyph: "●",
+    iconPx: 9,
     color: "var(--color-text-dim)",
     borderClass: "border-[var(--color-line)]",
     valueClass: "text-[var(--accent-soft)]",
@@ -107,8 +106,20 @@ export function WalletBadge({
       )}
       style={{ padding: "4px 10px 4px 6px", fontSize: "11.5px" }}
     >
-      <span aria-hidden style={{ fontSize: "13px", lineHeight: 1 }}>
-        {isNewVisual ? "★" : meta.glyph}
+      <span aria-hidden className="inline-flex shrink-0 items-center justify-center">
+        {isNewVisual ? (
+          <Sparkles
+            width={12}
+            height={12}
+            style={{ color: "var(--color-flag)" }}
+          />
+        ) : (
+          <Fish
+            width={meta.iconPx}
+            height={meta.iconPx}
+            style={{ color: meta.color }}
+          />
+        )}
       </span>
       {!compact ? (
         <span
