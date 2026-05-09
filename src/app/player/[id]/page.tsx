@@ -6,13 +6,16 @@ import {
   getPlayer,
   getPoolStats,
   getPriceSeries,
+  getTopHolders,
   getTrades,
+  getWalletSnapshots,
+  type WalletSnapshot,
 } from "@/lib/data";
 import type { Timeframe, PricePoint } from "@/lib/types";
 import { Card, CardHeader, Delta, Pill } from "@/components/ui";
-import { PlayerAvatar } from "@/components/PlayerAvatar";
 import { PlayerPriceChart } from "@/components/PlayerPriceChart";
 import { HoldersBreakdown } from "@/components/HoldersBreakdown";
+import { LargestHoldersTable } from "@/components/LargestHoldersTable";
 import { RecentTrades } from "@/components/RecentTrades";
 import { TEAM_COLORS, TEAM_NAMES } from "@/lib/data/players";
 import { fmtNum, fmtPrice, fmtUsd } from "@/lib/format";
@@ -27,8 +30,9 @@ export default async function PlayerPage(props: PageProps<"/player/[id]">) {
   const player = await getPlayer(id);
   if (!player) notFound();
 
-  const [holders, pool, trades, ...seriesArr] = await Promise.all([
+  const [holders, topHolders, pool, trades, ...seriesArr] = await Promise.all([
     getHolders(id),
+    getTopHolders(id, 25),
     getPoolStats(id),
     getTrades(id, 30),
     ...TFS.map((tf) => getPriceSeries(id, tf)),
@@ -39,7 +43,17 @@ export default async function PlayerPage(props: PageProps<"/player/[id]">) {
     return acc;
   }, {} as Record<Timeframe, PricePoint[]>);
 
+  // Resolve wallet tier badges for both the trade feed and the
+  // largest-holders table — single batched call, deduped.
+  const tradeAddrs = Array.from(new Set(trades.map((t) => t.wallet))).slice(0, 25);
+  const holderAddrs = topHolders.map((h) => h.address);
+  const allAddrs = Array.from(new Set([...tradeAddrs, ...holderAddrs]));
+  const snapshotMap = await getWalletSnapshots(allAddrs);
+  const wallets: Record<string, WalletSnapshot> = {};
+  for (const [k, v] of snapshotMap) wallets[k] = v;
+
   const supplyShare = player.circulatingSupply / player.maxSupply;
+  const activeShare = player.activeSupply / Math.max(1, player.circulatingSupply);
   const teamColor = TEAM_COLORS[player.team] ?? "var(--accent)";
   const initials = `${player.firstName[0] ?? ""}${player.lastName[0] ?? ""}`;
   const fullTeam = TEAM_NAMES[player.team] ?? player.team;
@@ -185,10 +199,18 @@ export default async function PlayerPage(props: PageProps<"/player/[id]">) {
         style={{ gridTemplateColumns: "repeat(6, minmax(0, 1fr))" }}
       >
         <StatCell label="Market Cap" value={fmtUsd(player.marketCap, { compact: true })} sub="Price × supply" />
-        <StatCell label="24h Volume" value={fmtUsd(player.volume24h, { compact: true })} sub={`${fmtNum(player.trades24h)} trades`} />
+        <StatCell
+          label="24h Volume"
+          value={fmtUsd(Math.round(player.volume24h), { compact: true })}
+          sub={`${fmtNum(player.trades24h)} trades`}
+        />
         <StatCell label="Pool TVL" value={fmtUsd(player.tvl, { compact: true })} sub="Sport.fun AMM" />
         <StatCell label="Holders" value={fmtNum(player.holders, { compact: true })} sub="Distinct wallets" />
-        <StatCell label="7D Change" value={null} sub="vs 7d ago" delta={player.change7d} />
+        <StatCell
+          label="Active Shares"
+          value={fmtNum(player.activeSupply, { compact: true })}
+          sub={`${(activeShare * 100).toFixed(1)}% of circulating`}
+        />
         <StatCell
           label="Circulating"
           value={fmtNum(player.circulatingSupply, { compact: true })}
@@ -254,62 +276,67 @@ export default async function PlayerPage(props: PageProps<"/player/[id]">) {
         </Card>
       </div>
 
-      {/* Holders + ATH/ATL */}
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader title="Holder Distribution" hint="By share of circulating supply" />
-          <HoldersBreakdown buckets={holders} totalHolders={player.holders} />
-        </Card>
-        <Card>
-          <CardHeader title="All-Time" hint="Historical extremes for this token" />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <ExtremeBlock
-              label="All-Time High"
-              value={fmtPrice(player.ath)}
-              date={player.athDate}
-              tone="gain"
-              delta={((player.priceUsd - player.ath) / player.ath) * 100}
-            />
-            <ExtremeBlock
-              label="All-Time Low"
-              value={fmtPrice(player.atl)}
-              date={player.atlDate}
-              tone="loss"
-              delta={((player.priceUsd - player.atl) / player.atl) * 100}
-            />
-          </div>
-        </Card>
-      </div>
+      {/* Holder Distribution — full width */}
+      <Card className="mt-4">
+        <CardHeader title="Holder Distribution" hint="By share of circulating supply" />
+        <HoldersBreakdown buckets={holders} totalHolders={player.holders} />
+      </Card>
 
       {/* Recent Trades — press card */}
       <div className="mt-4">
-        <div className="mb-4 flex items-end justify-between gap-4">
-          <div>
-            <h2
-              style={{
-                fontFamily: "var(--font-display)",
-                fontWeight: 800,
-                fontSize: "26px",
-                letterSpacing: "0.02em",
-                textTransform: "uppercase",
-                lineHeight: 1.1,
-              }}
-            >
-              Recent Trades
-            </h2>
-            <p className="mt-1 text-[12px] text-[var(--color-text-dim)]">
-              Latest {trades.length} trades for {player.firstName} {player.lastName}
-            </p>
-          </div>
-          <span className="mono-eyebrow inline-flex items-center gap-2" style={{ fontSize: 10 }}>
-            <span className="live-dot inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-turf)]" />
-            LIVE
-          </span>
-        </div>
+        <SectionHead
+          title="Recent Trades"
+          hint={`Latest ${trades.length} trades for ${player.firstName} ${player.lastName}`}
+          right={
+            <span className="mono-eyebrow inline-flex items-center gap-2" style={{ fontSize: 10 }}>
+              <span className="live-dot inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-turf)]" />
+              LIVE
+            </span>
+          }
+        />
         <Card variant="press" padded={false}>
-          <RecentTrades trades={trades} showPlayer={false} />
+          <RecentTrades trades={trades} wallets={wallets} showPlayer={false} />
         </Card>
       </div>
+
+      {/* Largest Holders — press card */}
+      <div className="mt-4">
+        <SectionHead
+          title="Largest Holders"
+          hint={`Top ${topHolders.length} wallets by share of circulating supply · AMM router excluded`}
+          right={<Pill tone="muted">{fmtNum(player.holders)} TOTAL</Pill>}
+        />
+        <Card variant="press" padded={false}>
+          <LargestHoldersTable
+            holders={topHolders}
+            wallets={wallets}
+            priceUsd={player.priceUsd}
+          />
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function SectionHead({ title, hint, right }: { title: string; hint?: string; right?: React.ReactNode }) {
+  return (
+    <div className="mb-4 flex items-end justify-between gap-4">
+      <div>
+        <h2
+          style={{
+            fontFamily: "var(--font-display)",
+            fontWeight: 800,
+            fontSize: 22,
+            letterSpacing: "0.02em",
+            textTransform: "uppercase",
+            lineHeight: 1.1,
+          }}
+        >
+          {title}
+        </h2>
+        {hint ? <p className="mt-1 text-[12px] text-[var(--color-text-dim)]">{hint}</p> : null}
+      </div>
+      {right}
     </div>
   );
 }
@@ -461,73 +488,3 @@ function PoolRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function ExtremeBlock({
-  label,
-  value,
-  date,
-  tone,
-  delta,
-}: {
-  label: string;
-  value: string;
-  date: string;
-  tone: "gain" | "loss";
-  delta: number;
-}) {
-  const d = new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  return (
-    <div
-      className="rounded-[var(--r-8)] border p-4"
-      style={{
-        borderColor: tone === "gain"
-          ? "color-mix(in oklab, var(--color-turf) 25%, transparent)"
-          : "color-mix(in oklab, var(--color-penalty) 25%, transparent)",
-        background: tone === "gain"
-          ? "color-mix(in oklab, var(--color-turf) 6%, transparent)"
-          : "color-mix(in oklab, var(--color-penalty) 6%, transparent)",
-      }}
-    >
-      <div className="flex items-center justify-between">
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            fontWeight: 700,
-            letterSpacing: "0.18em",
-            textTransform: "uppercase",
-            color: tone === "gain" ? "var(--color-turf)" : "var(--color-penalty)",
-          }}
-        >
-          {label}
-        </span>
-        <Pill tone={tone}>{tone === "gain" ? "ATH" : "ATL"}</Pill>
-      </div>
-      <div
-        className="mt-2 leading-none"
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontWeight: 700,
-          fontSize: 28,
-          letterSpacing: "-0.03em",
-          fontVariantNumeric: "tabular-nums",
-        }}
-      >
-        {value}
-      </div>
-      <div className="mt-2 flex items-center gap-2">
-        <Delta value={delta} />
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            letterSpacing: "0.14em",
-            textTransform: "uppercase",
-            color: "var(--color-text-dim)",
-          }}
-        >
-          from current · {d}
-        </span>
-      </div>
-    </div>
-  );
-}

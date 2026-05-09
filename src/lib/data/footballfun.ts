@@ -671,41 +671,90 @@ export async function getNflDailyVolume(days = 30): Promise<{ t: number; volumeU
   return out;
 }
 
+// Paginate the holder list up to a generous cap so the breakdown
+// buckets reflect the full population (not just the top 50). Tenero
+// returns a `next` cursor when more rows are available.
+async function fetchAllHolders(tokenAddress: string, maxPages = 14): Promise<TeneroHolderRow[]> {
+  const out: TeneroHolderRow[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < maxPages; page++) {
+    try {
+      const path: string = `/tokens/${encodeURIComponent(tokenAddress)}/holders?limit=50` +
+        (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "");
+      const data: ListResponse<TeneroHolderRow> | null = await tget<ListResponse<TeneroHolderRow>>(
+        path,
+        REVALIDATE.detail,
+      );
+      const rows = data?.rows ?? [];
+      out.push(...rows);
+      cursor = data?.next ?? null;
+      if (!cursor || rows.length === 0) break;
+    } catch {
+      break;
+    }
+  }
+  return out;
+}
+
 export async function getHolders(id: string): Promise<HolderBucket[]> {
   const player = ROSTER_BY_ID.get(id);
   if (!player) return [];
-  try {
-    const data = await tget<ListResponse<TeneroHolderRow>>(
-      `/tokens/${encodeURIComponent(player.tokenAddress)}/holders?limit=50`,
-      REVALIDATE.detail,
-    );
-    const rows = data?.rows ?? [];
-    if (rows.length === 0) return [];
+  const rows = await fetchAllHolders(player.tokenAddress);
+  if (rows.length === 0) return [];
 
-    const balances = rows
-      .map((r) => Number(r.balance ?? 0))
-      .filter((n) => Number.isFinite(n) && n > 0)
-      .sort((a, b) => b - a);
-    const total = balances.reduce((a, b) => a + b, 0) || 1;
+  const balances = rows
+    .filter((r) => r.wallet_address?.toLowerCase() !== SWAP_ROUTER_LC)
+    .map((r) => Number(r.balance ?? 0))
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .sort((a, b) => b - a);
+  const total = balances.reduce((a, b) => a + b, 0) || 1;
 
-    const buckets: HolderBucket[] = [
-      { label: "Whales (>1%)",     count: 0, share: 0 },
-      { label: "Large (0.1–1%)",   count: 0, share: 0 },
-      { label: "Mid (0.01–0.1%)",  count: 0, share: 0 },
-      { label: "Small (<0.01%)",   count: 0, share: 0 },
-    ];
-    for (const b of balances) {
-      const pct = (b / total) * 100;
-      if (pct > 1)         { buckets[0].count++; buckets[0].share += pct; }
-      else if (pct > 0.1)  { buckets[1].count++; buckets[1].share += pct; }
-      else if (pct > 0.01) { buckets[2].count++; buckets[2].share += pct; }
-      else                 { buckets[3].count++; buckets[3].share += pct; }
-    }
-    for (const b of buckets) b.share = +b.share.toFixed(2);
-    return buckets;
-  } catch {
-    return [];
+  const buckets: HolderBucket[] = [
+    { label: "Whales (>1%)",     count: 0, share: 0 },
+    { label: "Large (0.1–1%)",   count: 0, share: 0 },
+    { label: "Mid (0.01–0.1%)",  count: 0, share: 0 },
+    { label: "Small (<0.01%)",   count: 0, share: 0 },
+  ];
+  for (const b of balances) {
+    const pct = (b / total) * 100;
+    if (pct > 1)         { buckets[0].count++; buckets[0].share += pct; }
+    else if (pct > 0.1)  { buckets[1].count++; buckets[1].share += pct; }
+    else if (pct > 0.01) { buckets[2].count++; buckets[2].share += pct; }
+    else                 { buckets[3].count++; buckets[3].share += pct; }
   }
+  for (const b of buckets) b.share = +b.share.toFixed(2);
+  return buckets;
+}
+
+// Top N holders for the player detail page's "Largest Holders" table.
+// Excludes the AMM router. Each row carries the share % of circulating
+// supply so the table can render a bar without re-summing.
+export interface TopHolder {
+  address: string;
+  balance: number;
+  sharePct: number;
+  startHoldingAt: number;
+  lastActiveAt: number;
+}
+export async function getTopHolders(id: string, limit = 25): Promise<TopHolder[]> {
+  const player = ROSTER_BY_ID.get(id);
+  if (!player) return [];
+  const rows = await fetchAllHolders(player.tokenAddress);
+  const filtered = rows
+    .filter((r) => r.wallet_address && r.wallet_address.toLowerCase() !== SWAP_ROUTER_LC)
+    .map((r) => ({
+      address: r.wallet_address,
+      balance: Number(r.balance ?? 0),
+      startHoldingAt: Number(r.start_holding_at ?? 0),
+      lastActiveAt: Number(r.last_active_at ?? 0),
+    }))
+    .filter((r) => Number.isFinite(r.balance) && r.balance > 0);
+  filtered.sort((a, b) => b.balance - a.balance);
+  const total = filtered.reduce((a, r) => a + r.balance, 0) || 1;
+  return filtered.slice(0, limit).map((r) => ({
+    ...r,
+    sharePct: +((r.balance / total) * 100).toFixed(3),
+  }));
 }
 
 export async function getPoolStats(id: string): Promise<PoolStats | null> {

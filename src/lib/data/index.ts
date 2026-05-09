@@ -7,6 +7,7 @@ export {
   getPriceSeries,
   getTrades,
   getHolders,
+  getTopHolders,
   getPoolStats,
   getRecentTradesGlobal,
   getMarketOverview,
@@ -33,4 +34,5 @@ export type {
   WalletFlowSummary,
   WalletDailyFlow,
   WalletFunPosition,
+  TopHolder,
 } from "./footballfun";
