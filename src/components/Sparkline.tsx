@@ -27,7 +27,7 @@ export function Sparkline({
     .map((v, i) => `${(i * stepX).toFixed(1)},${(height - ((v - min) / span) * height).toFixed(1)}`)
     .join(" ");
   const isPos = positive ?? data[data.length - 1] >= data[0];
-  const stroke = isPos ? "var(--color-gain)" : "var(--color-loss)";
+  const stroke = isPos ? "var(--color-turf)" : "var(--color-penalty)";
   const areaPoints = `0,${height} ${points} ${width},${height}`;
 
   return (

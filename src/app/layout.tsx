@@ -1,16 +1,23 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Big_Shoulders, JetBrains_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 
 const geistSans = Geist({
-  variable: "--font-geist-sans",
   subsets: ["latin"],
+  variable: "--font-geist-sans",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const display = Big_Shoulders({
   subsets: ["latin"],
+  weight: ["500", "700", "800", "900"],
+  variable: "--font-display-raw",
+});
+
+const mono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-mono-raw",
 });
 
 export const metadata: Metadata = {
@@ -25,9 +32,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${display.variable} ${mono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-[var(--color-bg)] text-[var(--color-text)]">
+      <body className="min-h-full flex flex-col">
         <SiteHeader />
         <main className="flex-1">{children}</main>
         <SiteFooter />
@@ -38,14 +45,24 @@ export default function RootLayout({
 
 function SiteHeader() {
   return (
-    <header className="sticky top-0 z-30 border-b border-[var(--color-border)] bg-[var(--color-bg)]/85 backdrop-blur supports-[backdrop-filter]:bg-[var(--color-bg)]/70">
-      <div className="mx-auto flex h-14 max-w-[1400px] items-center justify-between px-4 sm:px-6">
-        <Link href="/" className="flex items-center gap-2 group">
-          <Logo />
-          <div className="leading-tight">
-            <div className="font-bold tracking-tight text-[15px]">GRIDIRON</div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-dim)]">
-              NFL Player Token Market
+    <header className="sticky top-0 z-30 border-b border-[var(--color-line)] bg-[color-mix(in_oklab,var(--color-stadium)_85%,transparent)] backdrop-blur">
+      <div className="mx-auto flex h-16 max-w-[var(--max-w)] items-center justify-between px-5 sm:px-8">
+        <Link href="/" className="flex items-center gap-3 group">
+          <BrandMark />
+          <div className="leading-none">
+            <div
+              className="font-bold uppercase"
+              style={{
+                fontFamily: "var(--font-display)",
+                fontWeight: 900,
+                fontSize: "22px",
+                letterSpacing: "0.04em",
+              }}
+            >
+              GRIDIRON
+            </div>
+            <div className="mono-eyebrow mt-1" style={{ fontSize: "9.5px" }}>
+              NFL · PLAYER TOKEN MARKET
             </div>
           </div>
         </Link>
@@ -56,11 +73,9 @@ function SiteHeader() {
           <NavLink href="/#trades">Trades</NavLink>
           <NavLink href="/#pools">Pools</NavLink>
         </nav>
-        <div className="flex items-center gap-2">
-          <span className="hidden sm:inline-flex items-center gap-2 text-[11px] uppercase tracking-wider text-[var(--color-text-muted)]">
-            <span className="live-dot inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-gain)]" />
-            Live · Base
-          </span>
+        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-[var(--r-8)] border border-[var(--color-line)] bg-[var(--color-bench)]">
+          <span className="live-dot inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-turf)]" />
+          <span className="mono-eyebrow" style={{ fontSize: "10px" }}>LIVE · BASE</span>
         </div>
       </div>
     </header>
@@ -71,7 +86,7 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
   return (
     <Link
       href={href}
-      className="rounded-md px-3 py-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)] transition-colors"
+      className="rounded-[var(--r-8)] px-3 py-1.5 text-[13px] font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bench)] transition-colors"
     >
       {children}
     </Link>
@@ -80,42 +95,58 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
 
 function SiteFooter() {
   return (
-    <footer className="mt-16 border-t border-[var(--color-border)] py-6 text-xs text-[var(--color-text-dim)]">
-      <div className="mx-auto flex max-w-[1400px] flex-col gap-2 px-4 sm:px-6 md:flex-row md:items-center md:justify-between">
+    <footer className="mt-24 border-t border-[var(--color-line)] py-6 text-xs text-[var(--color-text-dim)]">
+      <div className="mx-auto flex max-w-[var(--max-w)] flex-col gap-2 px-5 sm:px-8 md:flex-row md:items-center md:justify-between">
         <div>Gridiron · Independent NFL token analytics. Not affiliated with the NFL or Sport.fun.</div>
-        <div>Live market data from Base · refreshed continuously.</div>
+        <div className="mono-eyebrow" style={{ fontSize: "10px" }}>LIVE MARKET DATA · BASE</div>
       </div>
     </footer>
   );
 }
 
-function Logo() {
+// Field-grid mark — a 32×32 rounded square with amber outline,
+// three horizontal yard lines, a vertical center spine, and faint
+// X-laces at ~60% opacity. Inherits colors from CSS vars so it
+// follows the accent.
+function BrandMark() {
   return (
     <svg
-      width="28"
-      height="28"
+      width="32"
+      height="32"
       viewBox="0 0 32 32"
       aria-hidden="true"
       className="shrink-0"
     >
-      <defs>
-        <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
-          <stop offset="0" stopColor="#ff9248" />
-          <stop offset="1" stopColor="#ff5e1a" />
-        </linearGradient>
-      </defs>
-      <rect width="32" height="32" rx="8" fill="url(#g)" />
-      <path
-        d="M16 6c-3.6 0-7.4 1.6-7.4 1.6s-1.4 4.6 0 8.4c1.4 3.8 4.4 7.6 7.4 9.4 3-1.8 6-5.6 7.4-9.4 1.4-3.8 0-8.4 0-8.4S19.6 6 16 6Z"
-        fill="#1b1004"
-        opacity="0.85"
+      <rect
+        x="1"
+        y="1"
+        width="30"
+        height="30"
+        rx="6"
+        fill="var(--accent-tint)"
+        stroke="var(--accent)"
+        strokeWidth="1.2"
       />
-      <path
-        d="M11 13.6h10M11 16h10M11 18.4h10M16 11v11"
-        stroke="#ffd6b3"
-        strokeWidth="1.1"
-        strokeLinecap="round"
+      {/* Yard lines @ 25%, 50%, 75% */}
+      <g stroke="var(--accent)" strokeWidth="1" opacity="0.55">
+        <line x1="4" x2="28" y1="9" y2="9" />
+        <line x1="4" x2="28" y1="16" y2="16" />
+        <line x1="4" x2="28" y1="23" y2="23" />
+      </g>
+      {/* Vertical spine */}
+      <line
+        x1="16"
+        x2="16"
+        y1="4"
+        y2="28"
+        stroke="var(--accent)"
+        strokeWidth="1.5"
       />
+      {/* X laces */}
+      <g stroke="var(--accent-soft)" strokeWidth="1" opacity="0.6">
+        <line x1="13" x2="19" y1="13" y2="19" />
+        <line x1="19" x2="13" y1="13" y2="19" />
+      </g>
     </svg>
   );
 }

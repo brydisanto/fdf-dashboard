@@ -1,54 +1,131 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg:           #0a0d12;
-  --color-surface:      #11151c;
-  --color-surface-2:    #161c25;
-  --color-border:       #222a36;
-  --color-border-strong:#2c3645;
-  --color-text:         #e5e9f0;
-  --color-text-muted:   #8a93a4;
-  --color-text-dim:     #5b6473;
-  --color-brand:        #ff7a1a;
-  --color-brand-soft:   #ffb27a;
-  --color-gain:         #18c98a;
-  --color-loss:         #ff5e6c;
+  /* ── Surfaces — warm charcoal stack ───────────────────────────── */
+  --color-stadium:      #0B0B0D;
+  --color-bench:        #131316;
+  --color-press:        #1B1B1F;
+  --color-line:         #2A2A30;
+  --color-line-strong:  #3D3D44;
+
+  /* Legacy aliases — keep until every component is migrated */
+  --color-bg:           #0B0B0D;
+  --color-surface:      #131316;
+  --color-surface-2:    #1B1B1F;
+  --color-border:       #2A2A30;
+  --color-border-strong:#3D3D44;
+
+  /* ── Text — warmer ────────────────────────────────────────────── */
+  --color-text:         #EEECE7;
+  --color-text-muted:   #9B9690;
+  --color-text-dim:     #66625C;
+
+  /* ── Brand — amber retuned via oklch ──────────────────────────── */
+  --color-amber-12:     oklch(0.78 0.17 62);
+  --color-amber-10:     oklch(0.72 0.19 56);
+  --color-amber-08:     oklch(0.62 0.19 50);
+  --color-amber-04:     oklch(0.34 0.12 48);
+
+  /* Legacy aliases */
+  --color-brand:        oklch(0.72 0.19 56);
+  --color-brand-soft:   oklch(0.78 0.17 62);
+
+  /* ── Semantic ─────────────────────────────────────────────────── */
+  --color-turf:         oklch(0.74 0.18 156);
+  --color-penalty:      oklch(0.68 0.21 22);
+  --color-flag:         oklch(0.78 0.15 92);
+  --color-broadcast:    oklch(0.72 0.14 235);
+
+  /* Legacy aliases */
+  --color-gain:         oklch(0.74 0.18 156);
+  --color-loss:         oklch(0.68 0.21 22);
+
+  /* ── Resolved accent ──────────────────────────────────────────── */
+  --accent:             var(--color-amber-10);
+  --accent-soft:        var(--color-amber-12);
+  --accent-tint:        color-mix(in oklab, var(--color-amber-10) 12%, transparent);
+  --accent-line:        color-mix(in oklab, var(--color-amber-10) 35%, transparent);
+
+  /* ── Type ─────────────────────────────────────────────────────── */
+  --font-display:       var(--font-display-raw), 'Geist', system-ui, sans-serif;
+  --font-ui:            var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-sans:          var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono:          var(--font-geist-mono), ui-monospace, monospace;
+  --font-mono:          var(--font-mono-raw), ui-monospace, 'SF Mono', monospace;
+
+  /* ── Radii ────────────────────────────────────────────────────── */
+  --r-2:    2px;
+  --r-4:    4px;
+  --r-8:    8px;
+  --r-14:   14px;
+  --r-full: 999px;
+
+  /* ── Page rhythm ──────────────────────────────────────────────── */
+  --max-w:       1240px;
+  --gutter:      32px;
+  --section-gap: 96px;
+
+  /* ── Density (default Dense) ──────────────────────────────────── */
+  --row-pad-y: 8px;
 }
 
 html, body {
-  background: var(--color-bg);
+  background: var(--color-stadium);
   color: var(--color-text);
-  font-family: var(--font-sans);
+  font-family: var(--font-ui);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
 ::selection {
-  background: color-mix(in oklab, var(--color-brand) 35%, transparent);
+  background: color-mix(in oklab, var(--accent) 35%, transparent);
 }
 
-.tabular {
-  font-variant-numeric: tabular-nums;
-}
+/* ── Utilities ──────────────────────────────────────────────────── */
+.tabular { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.font-display { font-family: var(--font-display); }
 
 .scrollbar-thin {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-border-strong) transparent;
+  scrollbar-color: var(--color-line-strong) transparent;
 }
 
+/* Field-grid background pattern (used on press cards + hero glow) */
 .field-grid {
   background-image:
-    linear-gradient(to right, rgba(255,255,255,0.025) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255,255,255,0.025) 1px, transparent 1px);
+    linear-gradient(to right, color-mix(in oklab, var(--color-text) 4%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--color-text) 4%, transparent) 1px, transparent 1px);
   background-size: 32px 32px;
 }
 
+/* Mono eyebrow — section + stat labels */
+.mono-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* ── Live dot ───────────────────────────────────────────────────── */
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.35; }
 }
 .live-dot {
   animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+/* ── Live ticker scroll ─────────────────────────────────────────── */
+@keyframes ticker-scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.ticker-track {
+  animation: ticker-scroll 30s linear infinite;
+}
+.ticker-track:hover { animation-play-state: paused; }
+.ticker-mask {
+  mask-image: linear-gradient(90deg, transparent 0, #000 32px, #000 calc(100% - 32px), transparent 100%);
 }

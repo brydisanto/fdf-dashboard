@@ -2,12 +2,15 @@ import clsx from "clsx";
 import { TEAM_COLORS } from "@/lib/data/players";
 import type { Player } from "@/lib/types";
 
+// Per design system v0.2: round avatar with team-color rim via inset
+// box-shadow (so the press-surface bg fills edge-to-edge). Initials
+// in display 900 with 0.04em letter-spacing.
 const SIZES = {
-  xs: "h-6 w-6 text-[9px]",
-  sm: "h-8 w-8 text-[10px]",
-  md: "h-10 w-10 text-xs",
-  lg: "h-14 w-14 text-base",
-  xl: "h-20 w-20 text-xl",
+  xs: { px: 22, fs: 9,    ringPx: 1.5 },
+  sm: { px: 30, fs: 10.5, ringPx: 2 },
+  md: { px: 44, fs: 14,   ringPx: 2 },
+  lg: { px: 64, fs: 20,   ringPx: 2 },
+  xl: { px: 80, fs: 24,   ringPx: 2.5 },
 } as const;
 
 export function PlayerAvatar({
@@ -20,31 +23,26 @@ export function PlayerAvatar({
   className?: string;
 }) {
   const initials = `${player.firstName[0] ?? ""}${player.lastName[0] ?? ""}`;
-  const color = TEAM_COLORS[player.team] ?? "#222a36";
+  const teamColor = TEAM_COLORS[player.team] ?? "var(--color-line)";
+  const cfg = SIZES[size];
   return (
     <div
       className={clsx(
-        "relative flex shrink-0 items-center justify-center rounded-full font-bold text-white shadow-inner",
-        SIZES[size],
+        "inline-flex shrink-0 items-center justify-center rounded-full bg-[var(--color-press)] text-[var(--color-text)]",
         className,
       )}
       style={{
-        background: `linear-gradient(135deg, ${color} 0%, ${shade(color, -22)} 100%)`,
-        boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.08)`,
+        width: cfg.px,
+        height: cfg.px,
+        fontSize: `${cfg.fs}px`,
+        fontFamily: "var(--font-display)",
+        fontWeight: 900,
+        letterSpacing: "0.04em",
+        boxShadow: `inset 0 0 0 ${cfg.ringPx}px ${teamColor}`,
       }}
       aria-hidden="true"
     >
       {initials}
     </div>
   );
-}
-
-function shade(hex: string, amt: number) {
-  const m = hex.replace("#", "").match(/.{1,2}/g);
-  if (!m) return hex;
-  const [r, g, b] = m.map((h) => clamp(parseInt(h, 16) + amt));
-  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
-}
-function clamp(n: number) {
-  return Math.max(0, Math.min(255, n));
 }
