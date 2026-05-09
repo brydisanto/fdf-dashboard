@@ -51,7 +51,7 @@ export default async function Home() {
       <LiveTicker movers={tickerMovers} />
 
       <div className="mx-auto max-w-[var(--max-w)] px-5 sm:px-8 py-6 sm:py-8">
-        <Hero overview={overview} listed={players.length} generatedAt={generatedAt} />
+        <Hero listed={players.length} />
 
         <section className="mt-6">
           <MarketStatBar
@@ -208,14 +208,7 @@ export default async function Home() {
 // Hero panel — full-width inside the page wrap. 1px line border, r14,
 // 135° gradient bench → press, 48px field-grid decoration, 480x480
 // amber radial glow anchored top-right.
-function Hero({
-  overview,
-  listed,
-}: {
-  overview: Awaited<ReturnType<typeof getMarketOverview>>;
-  listed: number;
-  generatedAt: number;
-}) {
+function Hero({ listed }: { listed: number }) {
   return (
     <div
       className="relative overflow-hidden rounded-[var(--r-14)] border border-[var(--color-line)]"
@@ -271,49 +264,6 @@ function Hero({
           Real-time price action, pool liquidity, holders, and trades for every tokenized
           athlete on Sport.fun&apos;s NFL market. {listed} players listed.
         </p>
-        <div className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-stretch">
-          <HeroStat label="NFL Market Cap" value={fmtUsd(overview.totalMarketCap, { compact: true })} delta={overview.marketCapChange24h} />
-          <span className="hidden sm:block w-px bg-[var(--color-line)]" style={{ marginRight: 32 }} />
-          <HeroStat label="24h Volume" value={fmtUsd(overview.totalVolume24h, { compact: true })} delta={overview.volumeChange24h} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function HeroStat({ label, value, delta }: { label: string; value: string; delta: number }) {
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <span className="block h-px w-4 bg-[var(--accent)]" />
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "10px",
-            fontWeight: 700,
-            letterSpacing: "0.18em",
-            textTransform: "uppercase",
-            color: "var(--color-text-muted)",
-          }}
-        >
-          {label}
-        </span>
-      </div>
-      <div className="flex items-baseline gap-3">
-        <span
-          className="leading-none"
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontWeight: 700,
-            fontSize: "56px",
-            letterSpacing: "-0.04em",
-            color: "var(--color-text)",
-            fontVariantNumeric: "tabular-nums",
-          }}
-        >
-          {value}
-        </span>
-        <Delta value={delta} />
       </div>
     </div>
   );
