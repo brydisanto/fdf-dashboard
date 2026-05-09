@@ -240,7 +240,7 @@ function Hero({ listed }: { listed: number }) {
       <div className="relative flex flex-col gap-6" style={{ padding: "40px 40px 36px" }}>
         <div className="flex flex-wrap items-center gap-2">
           <Pill tone="brand">NFL · Base Chain</Pill>
-          <Pill tone="muted">The Real Football</Pill>
+          <Pill tone="muted">Real Football&trade;</Pill>
         </div>
         <h1
           className="m-0 text-[var(--color-text)]"
@@ -262,8 +262,8 @@ function Hero({ listed }: { listed: number }) {
           style={{ fontSize: "15px" }}
         >
           Real-time price action, pool liquidity, holders, trades, and value assessment for every
-          tokenized athlete on Sport.fun&apos;s NFL market. {listed} players listed. This is{" "}
-          <strong className="text-[var(--color-text)]">Real Football&trade;</strong>.
+          tokenized athlete on Sport.fun&apos;s NFL market. {listed} players listed. This is
+          Real Football&trade;.
         </p>
       </div>
     </div>

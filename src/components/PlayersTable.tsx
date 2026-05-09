@@ -13,7 +13,7 @@ import type { PlayerSummary, Position } from "@/lib/types";
 
 type SortKey =
   | "rank" | "name" | "priceUsd" | "change1h" | "change24h" | "change7d"
-  | "marketCap" | "volume24h" | "tvl" | "holders"
+  | "marketCap" | "volume24h" | "holders"
   | "circulatingSupply" | "activeSupply";
 
 const POSITIONS: (Position | "ALL")[] = ["ALL", "QB", "RB", "WR", "TE"];
@@ -101,7 +101,7 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1280px] text-[13px]">
+        <table className="w-full min-w-[1180px] text-[13px]">
           <thead style={{ background: "color-mix(in oklab, var(--color-press) 50%, transparent)" }}>
             <tr className="border-b border-[var(--color-line)]">
               <Th onClick={() => onSort("rank")}    active={sortKey === "rank"}    dir={sortDir} className="w-12 pl-5">#</Th>
@@ -112,7 +112,6 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
               <Th onClick={() => onSort("change7d")} active={sortKey === "change7d"} dir={sortDir} align="right">7d</Th>
               <Th onClick={() => onSort("marketCap")} active={sortKey === "marketCap"} dir={sortDir} align="right">Market Cap</Th>
               <Th onClick={() => onSort("volume24h")} active={sortKey === "volume24h"} dir={sortDir} align="right">24h Vol</Th>
-              <Th onClick={() => onSort("tvl")} active={sortKey === "tvl"} dir={sortDir} align="right">Pool TVL</Th>
               <Th onClick={() => onSort("holders")} active={sortKey === "holders"} dir={sortDir} align="right">Holders</Th>
               <Th onClick={() => onSort("activeSupply")} active={sortKey === "activeSupply"} dir={sortDir} align="right">Active</Th>
               <Th onClick={() => onSort("circulatingSupply")} active={sortKey === "circulatingSupply"} dir={sortDir} align="right">Circulating</Th>
@@ -163,7 +162,6 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
                   <Cell><div className="text-right"><Delta value={p.change7d} /></div></Cell>
                   <NumCell>{fmtUsd(p.marketCap, { compact: true })}</NumCell>
                   <NumCell>{fmtUsd(p.volume24h, { compact: true })}</NumCell>
-                  <NumCell>{fmtUsd(p.tvl, { compact: true })}</NumCell>
                   <NumCell>{fmtNum(p.holders, { compact: true })}</NumCell>
                   <NumCell>{fmtNum(p.activeSupply, { compact: true })}</NumCell>
                   <NumCell>
@@ -180,7 +178,7 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
             })}
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={13} className="px-5 py-12 text-center text-sm text-[var(--color-text-muted)]">
+                <td colSpan={12} className="px-5 py-12 text-center text-sm text-[var(--color-text-muted)]">
                   No players match your filters.
                 </td>
               </tr>
