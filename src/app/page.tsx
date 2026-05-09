@@ -240,7 +240,7 @@ function Hero({ listed }: { listed: number }) {
       <div className="relative flex flex-col gap-6" style={{ padding: "40px 40px 36px" }}>
         <div className="flex flex-wrap items-center gap-2">
           <Pill tone="brand">NFL · Base Chain</Pill>
-          <Pill tone="muted">v0.2 · Broadcast</Pill>
+          <Pill tone="muted">The Real Football</Pill>
         </div>
         <h1
           className="m-0 text-[var(--color-text)]"
@@ -253,16 +253,17 @@ function Hero({ listed }: { listed: number }) {
             textTransform: "uppercase",
           }}
         >
-          The NFL Player Token Market,
+          FDF&apos;s NFL Player Token Market,
           <br />
-          In One Screen.
+          All In One Place.
         </h1>
         <p
-          className="m-0 max-w-[60ch] text-[var(--color-text-muted)]"
+          className="m-0 max-w-[64ch] text-[var(--color-text-muted)]"
           style={{ fontSize: "15px" }}
         >
-          Real-time price action, pool liquidity, holders, and trades for every tokenized
-          athlete on Sport.fun&apos;s NFL market. {listed} players listed.
+          Real-time price action, pool liquidity, holders, trades, and value assessment for every
+          tokenized athlete on Sport.fun&apos;s NFL market. {listed} players listed. This is{" "}
+          <strong className="text-[var(--color-text)]">Real Football&trade;</strong>.
         </p>
       </div>
     </div>
