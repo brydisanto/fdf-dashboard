@@ -21,7 +21,7 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Gridiron — NFL Player Token Market",
+  title: "Box Score — NFL Player Token Market",
   description:
     "Real-time market intelligence for tokenized NFL player shares. Prices, pools, holders, and trades across every listed athlete.",
 };
@@ -59,7 +59,7 @@ function SiteHeader() {
                 letterSpacing: "0.04em",
               }}
             >
-              GRIDIRON
+              BOX SCORE
             </div>
             <div className="mono-eyebrow mt-1" style={{ fontSize: "9.5px" }}>
               NFL · PLAYER TOKEN MARKET
@@ -97,7 +97,7 @@ function SiteFooter() {
   return (
     <footer className="mt-24 border-t border-[var(--color-line)] py-6 text-xs text-[var(--color-text-dim)]">
       <div className="mx-auto flex max-w-[var(--max-w)] flex-col gap-2 px-5 sm:px-8 md:flex-row md:items-center md:justify-between">
-        <div>Gridiron · Independent NFL token analytics. Not affiliated with the NFL or Sport.fun.</div>
+        <div>Box Score · Independent NFL token analytics. Not affiliated with the NFL or Sport.fun.</div>
         <div className="mono-eyebrow" style={{ fontSize: "10px" }}>LIVE MARKET DATA · BASE</div>
       </div>
     </footer>
@@ -114,7 +114,7 @@ function BrandMark() {
       width="32"
       height="32"
       viewBox="0 0 64 64"
-      aria-label="Gridiron"
+      aria-label="Box Score"
       className="shrink-0"
     >
       <rect
