@@ -1142,7 +1142,8 @@ export async function getWalletFlow(address: string, windowDays = 7): Promise<Wa
 // Lightweight wallet snapshot for trade-feed badges (no holdings detail).
 export interface WalletSnapshot {
   address: string;
-  totalValueUsd: number;
+  totalValueUsd: number;     // NFL + soccer combined
+  nflValueUsd: number;       // NFL-only — what the trade-feed badge surfaces
   tier: WalletTier;
   isNew: boolean;
   holdingsCount: number;
@@ -1155,15 +1156,22 @@ export async function getWalletSnapshot(address: string): Promise<WalletSnapshot
   const cached = snapshotCache.get(lower);
   if (cached) return cached;
   const profile = await getWalletPortfolio(address);
-  const snap: WalletSnapshot = profile
-    ? {
-        address: profile.address,
-        totalValueUsd: profile.totalValueUsd,
-        tier: profile.tier,
-        isNew: profile.isNew,
-        holdingsCount: profile.holdingsCount,
-      }
-    : { address, totalValueUsd: 0, tier: "shrimp", isNew: false, holdingsCount: 0 };
+  let snap: WalletSnapshot;
+  if (profile) {
+    const nflValueUsd = profile.holdings
+      .filter((h) => ROSTER_BY_TOKEN.has(h.tokenAddress))
+      .reduce((a, h) => a + h.balanceValueUsd, 0);
+    snap = {
+      address: profile.address,
+      totalValueUsd: profile.totalValueUsd,
+      nflValueUsd,
+      tier: profile.tier,
+      isNew: profile.isNew,
+      holdingsCount: profile.holdingsCount,
+    };
+  } else {
+    snap = { address, totalValueUsd: 0, nflValueUsd: 0, tier: "shrimp", isNew: false, holdingsCount: 0 };
+  }
   snapshotCache.set(lower, snap);
   return snap;
 }

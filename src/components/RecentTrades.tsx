@@ -139,6 +139,7 @@ export function RecentTrades({
                         address={snap.address}
                         tier={snap.tier}
                         totalValueUsd={snap.totalValueUsd}
+                        nflValueUsd={snap.nflValueUsd}
                         isNew={snap.isNew}
                       />
                     ) : (

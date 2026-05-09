@@ -3,7 +3,7 @@ import { ArrowLeft, ExternalLink, Fish, Sparkles } from "lucide-react";
 import { getWalletPortfolio, getWalletFlow, getWalletFunPosition } from "@/lib/data";
 import { ROSTER_BY_TOKEN } from "@/lib/data/roster";
 import { Card, CardHeader, Pill } from "@/components/ui";
-import { tierLabel } from "@/components/WalletBadge";
+import { tierLabel, TIER_META } from "@/components/WalletBadge";
 import { CompositionPie, type CompositionSlice } from "@/components/CompositionPie";
 import { WalletFlowChart } from "@/components/WalletFlowChart";
 import { WalletHoldingsTable } from "@/components/WalletHoldingsTable";
@@ -61,12 +61,20 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
       <div className="mt-3 relative overflow-hidden rounded-2xl border border-[var(--color-border)] bg-gradient-to-br from-[var(--color-surface)] to-[var(--color-surface-2)]">
         <div className="absolute inset-0 field-grid opacity-50" />
         <div className="relative flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:p-7">
-          <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-[var(--color-surface-2)] ring-1 ring-[var(--color-border)]">
-            <Fish className="h-10 w-10 text-[var(--color-brand-soft)]" />
+          <div
+            className="flex h-20 w-20 items-center justify-center rounded-2xl bg-[var(--color-surface-2)] ring-1"
+            style={{ borderColor: TIER_META[profile.tier].color, boxShadow: `0 0 0 1px ${TIER_META[profile.tier].color}40` }}
+          >
+            <Fish className="h-10 w-10" style={{ color: TIER_META[profile.tier].color }} />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2 text-[11px]">
-              <Pill tone="brand">{tierLabel(profile.tier)}</Pill>
+              <span
+                className={`rounded-md border px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.12em] ${TIER_META[profile.tier].pillBg} ${TIER_META[profile.tier].pillBorder} ${TIER_META[profile.tier].pillText}`}
+                title={`Tier based on total portfolio USD`}
+              >
+                {tierLabel(profile.tier)}
+              </span>
               {profile.isNew ? (
                 <Pill tone="gain">
                   <Sparkles className="mr-1 inline h-3 w-3" />
