@@ -7,6 +7,7 @@ import {
   normalizeName,
 } from "@/lib/data/fantasypros";
 import { getUnderdogRankings, indexUdByName } from "@/lib/data/underdog";
+import { getEspnRankings, indexEspnByName } from "@/lib/data/espn";
 import { Card, CardHeader, Pill } from "@/components/ui";
 import { ValueTable, type ValueRow } from "@/components/ValueTable";
 import { fmtNum } from "@/lib/format";
@@ -29,10 +30,13 @@ const FAIR_BAND = 1;
 export default async function ValuePage() {
   const [players, fp] = await Promise.all([getPlayers(), getFantasyProsRankings()]);
   const fpByName = indexFpByName(fp);
-  // Underdog is sourced from a static snapshot file (no server-side
-  // fetch — Cloudflare blocks the runtime). Refreshed periodically by
-  // re-running the Chrome MCP scrape into underdog-rankings.json.
+  // Underdog + ESPN are sourced from static snapshot files (no
+  // server-side fetch — Underdog is Cloudflare-blocked, ESPN is
+  // JS-rendered). Refreshed periodically by re-running the Chrome
+  // MCP scrape and overwriting underdog-rankings.json /
+  // espn-rankings.json.
   const udByName = indexUdByName(getUnderdogRankings());
+  const espnByName = indexEspnByName(getEspnRankings());
 
   // Group roster by position; market positional rank within each.
   const byPos = new Map<Position, typeof players>();
@@ -63,10 +67,12 @@ export default async function ValuePage() {
       const nameKey = normalizeName(`${p.firstName} ${p.lastName}`);
       const fpHit = fpByName.get(nameKey);
       const udHit = udByName.get(nameKey);
+      const espnHit = espnByName.get(nameKey);
       const fpPosRank = fpHit?.posRankNum && fpHit.posRankNum > 0 ? fpHit.posRankNum : null;
       const udPosRank = udHit?.posRank && udHit.posRank > 0 ? udHit.posRank : null;
+      const espnAvgRank = espnHit?.avgRank && espnHit.avgRank > 0 ? espnHit.avgRank : null;
 
-      const industryRanks = [fpPosRank, udPosRank].filter(
+      const industryRanks = [fpPosRank, udPosRank, espnAvgRank].filter(
         (r): r is number => r != null,
       );
       const industryAvgRank = industryRanks.length
@@ -91,6 +97,7 @@ export default async function ValuePage() {
         posPlayers: market.size,
         fpPosRank,
         udPosRank,
+        espnAvgRank,
         industryAvgRank,
         posRankDelta,
         verdict,
