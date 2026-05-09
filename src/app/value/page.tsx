@@ -15,7 +15,7 @@ import { fmtNum } from "@/lib/format";
 import type { Position } from "@/lib/types";
 
 export const metadata = {
-  title: "Value · Box Score",
+  title: "Value · FDF Box Score",
   description:
     "Sport.fun market rank vs an industry-consensus rank averaged across FantasyPros, Underdog Sports, and ESPN — surfaces NFL player tokens the market may be over- or undervaluing.",
 };
