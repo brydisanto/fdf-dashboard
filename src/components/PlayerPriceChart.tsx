@@ -80,14 +80,17 @@ export function PlayerPriceChart({
             />
             <Tooltip
               contentStyle={{
-                background: "var(--color-surface-2)",
-                border: "1px solid var(--color-border-strong)",
+                background: "var(--color-press)",
+                border: "1px solid var(--color-line-strong)",
                 borderRadius: 8,
                 fontSize: 12,
+                color: "var(--color-text)",
               }}
+              labelStyle={{ color: "var(--color-text)" }}
+              itemStyle={{ color: "var(--color-text)" }}
               labelFormatter={(v) => new Date(Number(v)).toLocaleString()}
               formatter={(v) => [fmtPrice(Number(v)), "Price"] as [string, string]}
-              cursor={{ stroke: "var(--color-border-strong)", strokeDasharray: "3 3" }}
+              cursor={{ stroke: "var(--color-line-strong)", strokeDasharray: "3 3" }}
             />
             <Area
               type="monotone"

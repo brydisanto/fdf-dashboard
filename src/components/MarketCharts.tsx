@@ -17,7 +17,12 @@ const tooltipStyle = {
   borderRadius: 8,
   fontSize: 12,
   fontFamily: "var(--font-mono)",
+  color: "var(--color-text)",
 };
+// Recharts renders the label + each item with their own inline
+// styles that override contentStyle, so we explicitly set both.
+const tooltipLabelStyle = { color: "var(--color-text)" };
+const tooltipItemStyle = { color: "var(--color-text)" };
 const tickStyle = {
   fill: "var(--color-text-dim)",
   fontFamily: "var(--font-mono)",
@@ -56,6 +61,8 @@ export function MarketCapChart({ data }: { data: PricePoint[] }) {
           />
           <Tooltip
             contentStyle={tooltipStyle}
+            labelStyle={tooltipLabelStyle}
+            itemStyle={tooltipItemStyle}
             labelFormatter={(v) => new Date(Number(v)).toLocaleString()}
             formatter={(v) => [fmtUsd(Number(v), { compact: true }), "Market Cap"] as [string, string]}
             cursor={{ stroke: "var(--color-line-strong)", strokeDasharray: "2 4" }}
@@ -100,6 +107,8 @@ export function VolumeChart({ data }: { data: PricePoint[] }) {
           <Tooltip
             cursor={{ fill: "color-mix(in oklab, var(--color-text) 4%, transparent)" }}
             contentStyle={tooltipStyle}
+            labelStyle={tooltipLabelStyle}
+            itemStyle={tooltipItemStyle}
             labelFormatter={(v) => new Date(Number(v)).toLocaleString()}
             formatter={(v) => [fmtUsd(Number(v), { compact: true }), "Volume"] as [string, string]}
           />

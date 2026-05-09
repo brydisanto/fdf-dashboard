@@ -49,7 +49,9 @@ export function WalletFlowChart({
           <ReferenceLine y={0} stroke="var(--color-border-strong)" />
           <Tooltip
             cursor={{ fill: "rgba(255,255,255,0.05)" }}
-            contentStyle={{ background: "var(--color-surface-2)", border: "1px solid var(--color-border-strong)", borderRadius: 8, fontSize: 12 }}
+            contentStyle={{ background: "var(--color-press)", border: "1px solid var(--color-line-strong)", borderRadius: 8, fontSize: 12, color: "var(--color-text)" }}
+            labelStyle={{ color: "var(--color-text)" }}
+            itemStyle={{ color: "var(--color-text)" }}
             labelFormatter={(v) => new Date(Number(v)).toLocaleDateString()}
             formatter={(v: unknown, name: unknown) => {
               const n = Number(v);
