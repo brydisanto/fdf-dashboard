@@ -261,12 +261,12 @@ function Hero() {
           All In One Place.
         </h1>
         <p
-          className="m-0 max-w-[64ch] text-[var(--color-text-muted)]"
+          className="m-0 max-w-[100ch] text-[var(--color-text-muted)]"
           style={{ fontSize: "15px" }}
         >
           Real-time price action, pool liquidity, holders, trades, and value assessment for every
-          tokenized athlete on Sport.fun&apos;s NFL market. 72 players listed. This is
-          Real Football&trade;.
+          tokenized athlete on Sport.fun&apos;s NFL market. 72 players listed. This is how Real
+          Football&trade; is played.
         </p>
       </div>
     </div>
