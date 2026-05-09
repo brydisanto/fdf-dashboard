@@ -6,6 +6,7 @@ import clsx from "clsx";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { PlayerAvatar } from "./PlayerAvatar";
 import { TEAM_NAMES } from "@/lib/data/players";
+import { deltaTone } from "@/lib/value-tone";
 import type { PlayerSummary, Position } from "@/lib/types";
 
 export interface ValueRow extends PlayerSummary {
@@ -24,8 +25,24 @@ type SortKey =
 
 const POSITIONS: (Position | "ALL")[] = ["ALL", "QB", "RB", "WR", "TE"];
 
-export function ValueTable({ rows }: { rows: ValueRow[] }) {
-  const [pos, setPos] = useState<Position | "ALL">("QB");
+export function ValueTable({
+  rows,
+  pos: posProp,
+  onPosChange,
+}: {
+  rows: ValueRow[];
+  // Optionally controlled — when provided, the parent owns the
+  // position filter (used by /value to share state with the
+  // companion scatter chart). Falls back to internal state.
+  pos?: Position | "ALL";
+  onPosChange?: (pos: Position | "ALL") => void;
+}) {
+  const [internalPos, setInternalPos] = useState<Position | "ALL">("QB");
+  const pos = posProp ?? internalPos;
+  const setPos = (next: Position | "ALL") => {
+    if (onPosChange) onPosChange(next);
+    else setInternalPos(next);
+  };
   const [sortKey, setSortKey] = useState<SortKey>("marketPosRank");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -255,31 +272,6 @@ function NumCell({ children }: { children: React.ReactNode }) {
       {children}
     </td>
   );
-}
-
-// Pick a foreground color along a magnitude ramp so small disparities
-// stay calm (yellow-ish / pale-green) and large ones get loud (red /
-// vivid green). The ramps are 3-stop on each side so the eye can tell
-// "mild / moderate / severe" without any extra label.
-//
-// Cutoffs (|Δ|): 0–1 fair, 1–3 mild, 3–6 moderate, 6+ severe.
-function deltaTone(value: number | null): {
-  fg: string;
-  tier: "fair" | "unranked" | "under-mild" | "under-mod" | "under-sev" | "over-mild" | "over-mod" | "over-sev";
-} {
-  if (value == null) return { fg: "var(--color-text-dim)", tier: "unranked" };
-  const abs = Math.abs(value);
-  if (abs <= 1) return { fg: "var(--color-text-muted)", tier: "fair" };
-  if (value < 0) {
-    // Undervalued ramp: pale → turf → vivid
-    if (abs <= 3) return { fg: "oklch(0.80 0.13 145)", tier: "under-mild" };
-    if (abs <= 6) return { fg: "var(--color-turf)", tier: "under-mod" };
-    return { fg: "oklch(0.70 0.22 156)", tier: "under-sev" };
-  }
-  // Overvalued ramp: yellow → orange → penalty red
-  if (abs <= 3) return { fg: "oklch(0.82 0.14 90)", tier: "over-mild" };
-  if (abs <= 6) return { fg: "oklch(0.74 0.18 50)", tier: "over-mod" };
-  return { fg: "var(--color-penalty)", tier: "over-sev" };
 }
 
 // Δ — negative means industry avg ranks them higher than market does

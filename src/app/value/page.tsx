@@ -8,8 +8,9 @@ import {
 } from "@/lib/data/fantasypros";
 import { getUnderdogRankings, indexUdByName } from "@/lib/data/underdog";
 import { getEspnRankings, indexEspnByName } from "@/lib/data/espn";
-import { Card, CardHeader, Pill } from "@/components/ui";
-import { ValueTable, type ValueRow } from "@/components/ValueTable";
+import { Pill } from "@/components/ui";
+import { ValuePageBody } from "@/components/ValuePageBody";
+import { type ValueRow } from "@/components/ValueTable";
 import { fmtNum } from "@/lib/format";
 import type { Position } from "@/lib/types";
 
@@ -112,11 +113,11 @@ export default async function ValuePage() {
   const topUndervalued = undervalued
     .slice()
     .sort((a, b) => (a.posRankDelta ?? 0) - (b.posRankDelta ?? 0))
-    .slice(0, 3);
+    .slice(0, 5);
   const topOvervalued = overvalued
     .slice()
     .sort((a, b) => (b.posRankDelta ?? 0) - (a.posRankDelta ?? 0))
-    .slice(0, 3);
+    .slice(0, 5);
 
   return (
     <div className="mx-auto max-w-[var(--max-w)] px-5 sm:px-8 py-6 sm:py-8">
@@ -223,14 +224,7 @@ export default async function ValuePage() {
         </div>
       </div>
 
-      <Card className="mt-6">
-        <CardHeader
-          title="Rank Disparity Table"
-          hint="FDF market rank vs FP / UD / ESPN industry consensus · sort any column"
-          right={<Pill tone="muted">{fmtNum(matched)} matched · {fmtNum(rows.length - matched)} unranked</Pill>}
-        />
-        <ValueTable rows={rows} />
-      </Card>
+      <ValuePageBody rows={rows} total={rows.length} matched={matched} />
     </div>
   );
 }
