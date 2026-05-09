@@ -274,18 +274,24 @@ function InfoTooltip() {
             How it&apos;s built
           </span>
           <span className="block">
-            <strong className="text-[var(--color-text)]">FDF rank</strong> is the player&apos;s
-            Sport.fun market positional rank, sorted by current token price.
+            <strong className="block text-[var(--color-text)]" style={{ marginBottom: 2 }}>
+              FDF rank
+            </strong>
+            The player&apos;s Sport.fun market positional rank, sorted by current token price.
           </span>
-          <span className="mt-2 block">
-            <strong className="text-[var(--color-text)]">Industry rank</strong> averages three
-            PPR sources: FantasyPros consensus ECR, Underdog Sports rankings, and ESPN&apos;s
-            preseason AVG (mean of 8 ESPN expert rankers).
+          <span className="mt-3 block">
+            <strong className="block text-[var(--color-text)]" style={{ marginBottom: 2 }}>
+              Industry rank
+            </strong>
+            Average of three PPR sources: FantasyPros consensus ECR, Underdog Sports rankings,
+            and ESPN&apos;s preseason AVG (mean of 8 ESPN expert rankers).
           </span>
-          <span className="mt-2 block">
-            <strong className="text-[var(--color-text)]">Difference</strong> = industry avg −
-            FDF rank. Negative means the industry ranks them higher than the market
-            (potentially undervalued); positive means the market ranks them higher than
+          <span className="mt-3 block">
+            <strong className="block text-[var(--color-text)]" style={{ marginBottom: 2 }}>
+              Difference
+            </strong>
+            Industry avg − FDF rank. Negative means the industry ranks them higher than the
+            market (potentially undervalued); positive means the market ranks them higher than
             the industry says they belong (potentially overvalued).
           </span>
           <span className="mt-2 block text-[var(--color-text-dim)]">
