@@ -172,16 +172,24 @@ export default async function ValuePage() {
           >
             Where do market and consensus disagree?
           </h1>
-          <p className="m-0 max-w-[68ch] text-[var(--color-text-muted)]" style={{ fontSize: "15px", lineHeight: 1.55 }}>
-            Each player&apos;s <strong>Sport.fun market positional rank</strong> (FDF, sorted by
-            current price) is compared against an <strong>industry-consensus rank</strong> averaged
-            across three PPR sources: <strong>FantasyPros</strong> consensus ECR,{" "}
-            <strong>Underdog</strong> Sports rankings, and <strong>ESPN</strong>&apos;s preseason
-            AVG (mean of 8 ESPN expert rankers). The <strong>Difference</strong> column is{" "}
-            <em>industry avg − FDF rank</em> — negative means the industry ranks them higher than
-            the market does (potentially <span className="text-[var(--color-turf)]">undervalued</span>),
-            positive means the market ranks them higher than the industry says they belong
-            (potentially <span className="text-[var(--color-penalty)]">overvalued</span>).
+          <p
+            className="m-0 max-w-[68ch] text-[var(--color-text-muted)]"
+            style={{ fontSize: "15px", lineHeight: 1.55 }}
+            // Long-form explanation in title attr — rendered as a
+            // native tooltip on hover for users who want the detail.
+            title={
+              "How it's built:\n" +
+              "• FDF rank — Sport.fun market positional rank, sorted by current token price.\n" +
+              "• Industry rank — average of 3 PPR sources: FantasyPros consensus ECR, Underdog Sports rankings, ESPN preseason AVG (mean of 8 ESPN experts).\n" +
+              "• Difference — industry avg − FDF rank. Negative = industry ranks them higher than the market (potentially undervalued). Positive = market ranks them higher than industry (potentially overvalued).\n" +
+              `• Fair band — |Δ| ≤ ${FAIR_BAND} treated as no-signal.`
+            }
+          >
+            Each player&apos;s FDF market positional rank is compared against multiple
+            industry-consensus ranks. The result is a directional indicator that shows which
+            players are potentially{" "}
+            <span className="text-[var(--color-penalty)]">overvalued</span> and{" "}
+            <span className="text-[var(--color-turf)]">undervalued</span>.
           </p>
           <div
             className="flex flex-wrap items-center gap-x-5 gap-y-2"
