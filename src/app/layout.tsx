@@ -69,6 +69,7 @@ function SiteHeader() {
         <nav className="hidden md:flex items-center gap-1 text-sm">
           <NavLink href="/">Market</NavLink>
           <NavLink href="/#players">Players</NavLink>
+          <NavLink href="/wallets">Wallets</NavLink>
           <NavLink href="/value">Value</NavLink>
           <NavLink href="/#trades">Trades</NavLink>
           <NavLink href="/#pools">Pools</NavLink>

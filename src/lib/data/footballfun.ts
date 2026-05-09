@@ -780,6 +780,101 @@ export async function getTopHolders(id: string, limit = 25): Promise<TopHolder[]
   }));
 }
 
+// Cross-pool wallet leaderboard. Aggregates each NFL pool's top
+// holders into a global NFL-portfolio-value ranking — no per-wallet
+// API calls needed since each holder row already carries balance,
+// and we have current price per pool from getPlayers().
+//
+// Top-K per pool (default 100) trades exhaustiveness for speed;
+// the wealthy wallets we care about are by definition in the top
+// of every pool they touch, so K=100 captures essentially all of
+// them while keeping the upstream call count bounded.
+export interface TopNflWallet {
+  address: string;
+  nflValueUsd: number;
+  positions: number;        // distinct NFL pools held
+  topPositionPlayerId: string | null;
+  topPositionUsd: number;
+  firstHeldAt: number;      // earliest startHoldingAt across NFL holdings
+  lastActiveAt: number;     // latest lastActiveAt across NFL holdings
+  tier: WalletTier;
+}
+export async function getTopNflWallets(limit = 100, perPool = 100): Promise<TopNflWallet[]> {
+  const players = await getPlayers();
+  // Pull top-K holders for each pool in parallel (chunked).
+  const fns = players.map((p) => async () => {
+    const rows = await fetchAllHolders(
+      ROSTER_BY_ID.get(p.id)!.tokenAddress,
+      Math.ceil(perPool / 50),
+    );
+    const filtered = rows
+      .filter((r) => r.wallet_address && r.wallet_address.toLowerCase() !== SWAP_ROUTER_LC)
+      .map((r) => ({
+        address: r.wallet_address,
+        balance: Number(r.balance ?? 0),
+        startHoldingAt: Number(r.start_holding_at ?? 0),
+        lastActiveAt: Number(r.last_active_at ?? 0),
+      }))
+      .filter((r) => Number.isFinite(r.balance) && r.balance > 0);
+    filtered.sort((a, b) => b.balance - a.balance);
+    return { player: p, rows: filtered.slice(0, perPool) };
+  });
+  const results = await chunked(fns, 6);
+
+  type Agg = {
+    nflValueUsd: number;
+    positions: number;
+    topPositionPlayerId: string | null;
+    topPositionUsd: number;
+    firstHeldAt: number;
+    lastActiveAt: number;
+  };
+  const byAddr = new Map<string, Agg>();
+
+  for (const { player, rows } of results) {
+    const price = player.priceUsd;
+    if (!Number.isFinite(price) || price <= 0) continue;
+    for (const r of rows) {
+      const addr = r.address.toLowerCase();
+      const valueUsd = r.balance * price;
+      if (valueUsd <= 0) continue;
+      const cur = byAddr.get(addr) ?? {
+        nflValueUsd: 0,
+        positions: 0,
+        topPositionPlayerId: null as string | null,
+        topPositionUsd: 0,
+        firstHeldAt: 0,
+        lastActiveAt: 0,
+      };
+      cur.nflValueUsd += valueUsd;
+      cur.positions += 1;
+      if (valueUsd > cur.topPositionUsd) {
+        cur.topPositionUsd = valueUsd;
+        cur.topPositionPlayerId = player.id;
+      }
+      if (r.startHoldingAt && (cur.firstHeldAt === 0 || r.startHoldingAt < cur.firstHeldAt)) {
+        cur.firstHeldAt = r.startHoldingAt;
+      }
+      if (r.lastActiveAt > cur.lastActiveAt) cur.lastActiveAt = r.lastActiveAt;
+      byAddr.set(addr, cur);
+    }
+  }
+
+  return Array.from(byAddr.entries())
+    .map(([address, v]) => ({
+      address,
+      nflValueUsd: +v.nflValueUsd.toFixed(2),
+      positions: v.positions,
+      topPositionPlayerId: v.topPositionPlayerId,
+      topPositionUsd: +v.topPositionUsd.toFixed(2),
+      firstHeldAt: v.firstHeldAt,
+      lastActiveAt: v.lastActiveAt,
+      tier: tierForValue(v.nflValueUsd),
+    }))
+    .sort((a, b) => b.nflValueUsd - a.nflValueUsd)
+    .slice(0, limit);
+}
+
 export async function getPoolStats(id: string): Promise<PoolStats | null> {
   const player = await getPlayer(id);
   if (!player) return null;

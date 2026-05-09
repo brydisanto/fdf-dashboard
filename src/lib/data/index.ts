@@ -8,6 +8,7 @@ export {
   getTrades,
   getHolders,
   getTopHolders,
+  getTopNflWallets,
   getPoolStats,
   getRecentTradesGlobal,
   getMarketOverview,
@@ -35,4 +36,5 @@ export type {
   WalletDailyFlow,
   WalletFunPosition,
   TopHolder,
+  TopNflWallet,
 } from "./footballfun";
