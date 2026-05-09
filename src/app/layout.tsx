@@ -104,48 +104,49 @@ function SiteFooter() {
   );
 }
 
-// Field-grid mark — a 32×32 rounded square with amber outline,
-// three horizontal yard lines, a vertical center spine, and faint
-// X-laces at ~60% opacity. Inherits colors from CSS vars so it
-// follows the accent.
+// Field decal — rounded square with amber stroke on a stadium-dark
+// fill, two horizontal yard lines, a vertical center hash post, and
+// four hash ticks. Colors pull from CSS vars so the mark follows the
+// accent.
 function BrandMark() {
   return (
     <svg
       width="32"
       height="32"
-      viewBox="0 0 32 32"
-      aria-hidden="true"
+      viewBox="0 0 64 64"
+      aria-label="Gridiron"
       className="shrink-0"
     >
       <rect
-        x="1"
-        y="1"
-        width="30"
-        height="30"
-        rx="6"
-        fill="var(--accent-tint)"
+        x="3"
+        y="3"
+        width="58"
+        height="58"
+        rx="12"
+        fill="var(--color-stadium)"
         stroke="var(--accent)"
-        strokeWidth="1.2"
+        strokeWidth="2"
       />
-      {/* Yard lines @ 25%, 50%, 75% */}
-      <g stroke="var(--accent)" strokeWidth="1" opacity="0.55">
-        <line x1="4" x2="28" y1="9" y2="9" />
-        <line x1="4" x2="28" y1="16" y2="16" />
-        <line x1="4" x2="28" y1="23" y2="23" />
+      {/* Yard lines */}
+      <g stroke="var(--accent)" strokeOpacity="0.35" strokeWidth="1">
+        <line x1="12" y1="20" x2="52" y2="20" />
+        <line x1="12" y1="44" x2="52" y2="44" />
       </g>
-      {/* Vertical spine */}
+      {/* Center hash post */}
       <line
-        x1="16"
-        x2="16"
-        y1="4"
-        y2="28"
+        x1="32"
+        y1="14"
+        x2="32"
+        y2="50"
         stroke="var(--accent)"
-        strokeWidth="1.5"
+        strokeWidth="2"
       />
-      {/* X laces */}
-      <g stroke="var(--accent-soft)" strokeWidth="1" opacity="0.6">
-        <line x1="13" x2="19" y1="13" y2="19" />
-        <line x1="19" x2="13" y1="13" y2="19" />
+      {/* Hash ticks left + right of center */}
+      <g stroke="var(--accent)" strokeWidth="2">
+        <line x1="22" y1="26" x2="28" y2="26" />
+        <line x1="36" y1="26" x2="42" y2="26" />
+        <line x1="22" y1="38" x2="28" y2="38" />
+        <line x1="36" y1="38" x2="42" y2="38" />
       </g>
     </svg>
   );
