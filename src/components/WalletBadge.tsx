@@ -91,10 +91,10 @@ export function WalletBadge({
   compact?: boolean;
 }) {
   const meta = TIER_META[tier];
-  // Prefer NFL-only value, but fall back to total when the wallet
-  // currently holds 0 NFL (e.g. just sold out). Showing $0 NFL on
-  // wallets with real Soccer / $FUN balances reads as missing data.
-  const displayedUsd = nflValueUsd != null && nflValueUsd > 0 ? nflValueUsd : totalValueUsd;
+  // NFL-only — never fall back to total. A wallet currently
+  // holding 0 NFL displays $0 here even if it has Soccer / $FUN
+  // balances; the badge is specifically the NFL portfolio value.
+  const displayedUsd = nflValueUsd ?? 0;
   // NEW trumps tier visual.
   const isNewVisual = isNew;
   return (
