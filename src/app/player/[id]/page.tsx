@@ -45,7 +45,7 @@ export default async function PlayerPage(props: PageProps<"/player/[id]">) {
 
   // Resolve wallet tier badges for both the trade feed and the
   // largest-holders table — single batched call, deduped.
-  const tradeAddrs = Array.from(new Set(trades.map((t) => t.wallet))).slice(0, 25);
+  const tradeAddrs = Array.from(new Set(trades.map((t) => t.wallet))).slice(0, 50);
   const holderAddrs = topHolders.map((h) => h.address);
   const allAddrs = Array.from(new Set([...tradeAddrs, ...holderAddrs]));
   const snapshotMap = await getWalletSnapshots(allAddrs);

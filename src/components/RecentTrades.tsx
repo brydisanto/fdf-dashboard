@@ -103,13 +103,13 @@ export function RecentTrades({
         <table className={clsx("w-full text-[13px]", compact ? "min-w-[560px]" : "min-w-[820px]")}>
           <thead style={{ background: "color-mix(in oklab, var(--color-press) 50%, transparent)" }}>
             <tr className="border-b border-[var(--color-line)]">
-              <Th>Flow</Th>
+              <Th align="center">Flow</Th>
               {showPlayer ? <Th>Player</Th> : null}
-              <Th align="right">Price</Th>
-              <Th align="right">Amount</Th>
-              <Th align="right">Total</Th>
-              <Th>Wallet</Th>
-              <Th align="right" className="pr-5">Time</Th>
+              <Th align="center">Price</Th>
+              <Th align="center">Amount</Th>
+              <Th align="center">Total</Th>
+              <Th align="center">Wallet</Th>
+              <Th align="center" className="pr-5">Time</Th>
             </tr>
           </thead>
           <tbody>
@@ -124,9 +124,9 @@ export function RecentTrades({
                     borderBottom: "1px solid var(--color-line)",
                   }}
                 >
-                  <Cell>
+                  <CenterCell>
                     <FlowBadge flow={t.flow} />
-                  </Cell>
+                  </CenterCell>
                   {showPlayer && player ? (
                     <Cell>
                       <Link href={`/player/${t.playerId}`} className="flex items-center gap-2 hover:text-[var(--accent-soft)]">
@@ -140,7 +140,7 @@ export function RecentTrades({
                   <NumCell>{fmtPrice(t.priceUsd)}</NumCell>
                   <NumCell>{fmtNum(t.amount, { digits: 2 })}</NumCell>
                   <NumCell className="font-semibold">{fmtUsd(t.totalUsd, { compact: true })}</NumCell>
-                  <Cell>
+                  <CenterCell>
                     {snap && snap.totalValueUsd > 0 ? (
                       <WalletBadge
                         address={snap.address}
@@ -163,9 +163,9 @@ export function RecentTrades({
                         {t.wallet.slice(0, 6)}…{t.wallet.slice(-4)}
                       </Link>
                     )}
-                  </Cell>
+                  </CenterCell>
                   <td
-                    className="text-right pr-5"
+                    className="text-center pr-5"
                     style={{
                       padding: "var(--row-pad-y) 12px",
                       fontFamily: "var(--font-mono)",
@@ -232,10 +232,20 @@ function Cell({ children }: { children: React.ReactNode }) {
   );
 }
 
+function CenterCell({ children }: { children: React.ReactNode }) {
+  // Wraps the child in a flex centering box so pills (FlowBadge,
+  // WalletBadge) sit dead-center in the column.
+  return (
+    <td className="px-3" style={{ padding: "var(--row-pad-y) 12px" }}>
+      <div className="flex items-center justify-center">{children}</div>
+    </td>
+  );
+}
+
 function NumCell({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <td
-      className={clsx("text-right", className)}
+      className={clsx("text-center", className)}
       style={{
         padding: "var(--row-pad-y) 12px",
         fontFamily: "var(--font-mono)",
@@ -253,7 +263,7 @@ function Th({
   className,
 }: {
   children: React.ReactNode;
-  align?: "left" | "right";
+  align?: "left" | "center" | "right";
   className?: string;
 }) {
   return (

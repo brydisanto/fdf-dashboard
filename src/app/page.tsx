@@ -32,7 +32,10 @@ export default async function Home() {
   const recent = feedAndFlow.trades;
   const flow = feedAndFlow.flow;
 
-  const uniqueAddrs = Array.from(new Set(recent.map((t) => t.wallet))).slice(0, 25);
+  // Cover the full trade-feed length (50) so every visible trade
+  // shows its wallet tier badge + NFL value, not a fallback mono
+  // address.
+  const uniqueAddrs = Array.from(new Set(recent.map((t) => t.wallet))).slice(0, 50);
   const snapshotMap = await getWalletSnapshots(uniqueAddrs);
   const walletSnapshots: Record<string, WalletSnapshot> = {};
   for (const [k, v] of snapshotMap) walletSnapshots[k] = v;
