@@ -188,23 +188,6 @@ export default async function ValuePage() {
             <span className="text-[var(--color-turf)]">undervalued</span>
             <InfoTooltip />.
           </p>
-          <div
-            className="flex flex-wrap items-center gap-x-5 gap-y-2"
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "10.5px",
-              fontWeight: 600,
-              letterSpacing: "0.14em",
-              textTransform: "uppercase",
-              color: "var(--color-text-dim)",
-            }}
-          >
-            <span>FP · live · hourly</span>
-            <span>UD · static snapshot</span>
-            <span>ESPN · static snapshot</span>
-            <span>·</span>
-            <span>Fair band: |Δ| ≤ {FAIR_BAND}</span>
-          </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
             <ExtremeCard
