@@ -78,7 +78,11 @@ const SHARE_DECIMALS = 18; // confirmed via /tokens detail; balances are 1e18-sc
 export async function readWalletNflBalances(
   address: string,
   priceByTokenAddress: Map<string, number>,
-): Promise<WalletHolding[]> {
+): Promise<WalletHolding[] | null> {
+  // Returns null on RPC failure so callers can distinguish "wallet
+  // genuinely has no NFL" (returns []) from "we couldn't ask"
+  // (returns null) and fall back to the upstream API instead of
+  // misrepresenting a $9k holder as $0.
   const wallet = address as Address;
   const wallets = ROSTER.map(() => wallet);
   let raw: readonly bigint[];
@@ -90,7 +94,7 @@ export async function readWalletNflBalances(
       args: [wallets, TOKEN_ID_BIG],
     });
   } catch {
-    return [];
+    return null;
   }
 
   const out: WalletHolding[] = [];

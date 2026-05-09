@@ -1026,22 +1026,28 @@ export async function getWalletPortfolio(
     ]));
     const onchainNfl = await readWalletNflBalances(address, priceByToken);
 
+    const upstreamNflRows = upstreamHoldings.filter((h) =>
+      ROSTER_BY_TOKEN.has(h.tokenAddress),
+    );
     const upstreamNflByToken = new Map(
-      upstreamHoldings
-        .filter((h) => ROSTER_BY_TOKEN.has(h.tokenAddress))
-        .map((h) => [h.tokenAddress, h]),
+      upstreamNflRows.map((h) => [h.tokenAddress, h]),
     );
 
-    // Merge: on-chain wins for balance/value (it's the source of truth);
-    // upstream contributes start/last-active timestamps when available.
-    const mergedNfl: WalletHolding[] = onchainNfl.map((onchain) => {
-      const u = upstreamNflByToken.get(onchain.tokenAddress);
-      return {
-        ...onchain,
-        startHoldingAt: u?.startHoldingAt ?? 0,
-        lastActiveAt: u?.lastActiveAt ?? onchain.lastActiveAt,
-      };
-    });
+    // Merge: on-chain wins for balance/value (it's the source of
+    // truth); upstream contributes start/last-active timestamps. If
+    // the on-chain RPC failed entirely (null), fall back to the
+    // upstream NFL rows so we don't misrepresent a holder as $0.
+    const mergedNfl: WalletHolding[] =
+      onchainNfl != null
+        ? onchainNfl.map((onchain) => {
+            const u = upstreamNflByToken.get(onchain.tokenAddress);
+            return {
+              ...onchain,
+              startHoldingAt: u?.startHoldingAt ?? 0,
+              lastActiveAt: u?.lastActiveAt ?? onchain.lastActiveAt,
+            };
+          })
+        : upstreamNflRows;
 
     // Non-NFL holdings still come from the upstream — we have no
     // on-chain enumeration of soccer pools.
