@@ -3,38 +3,37 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
-import { ArrowDownRight, ArrowUpRight, ChevronDown, ChevronUp, Minus } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { PlayerAvatar } from "./PlayerAvatar";
 import { fmtPrice } from "@/lib/format";
-import { TEAM_NAMES } from "@/lib/data/players";
+import { TEAM_NAMES, TEAM_COLORS } from "@/lib/data/players";
 import type { PlayerSummary, Position } from "@/lib/types";
 
 export interface ValueRow extends PlayerSummary {
-  fpConsensusRank: number | null;
-  fpPosRankNum: number | null;
-  marketPosRank: number;
-  posPlayers: number;
-  rankDelta: number | null;          // market_pos − fp_pos (legacy disparity)
-  fpOverallGapPct: number | null;    // (player.fpOverall − pos#1.fpOverall) / pos#1.fpOverall × 100
-  expectedPriceUsd: number | null;   // pos#1 price × (1 − gap%)
-  priceVsExpectedUsd: number | null; // actual − expected
-  priceVsExpectedPct: number | null; // (actual − expected) / expected × 100
+  marketPosRank: number;             // 1-indexed market price rank within position
+  posPlayers: number;                // total roster players at this position
+  auctionValue: number | null;       // Draft Sharks PPR auction $
+  auctionPosRank: number | null;     // 1-indexed auction-value rank within position
+  posRankDelta: number | null;       // auction − market (positive = market overvalues vs auction)
+  ratio: number | null;              // playerAuction / anchorAuction
+  expectedPriceUsd: number | null;   // anchor.marketPrice × ratio
+  priceVsExpectedUsd: number | null; // priceUsd − expected
+  priceVsExpectedPct: number | null; // (priceUsd − expected) / expected × 100
+  isAnchor: boolean;                 // anchor is highlighted (no Δ vs self)
   verdict: "undervalued" | "fair" | "overvalued" | "unranked";
 }
 
 type SortKey =
   | "priceVsExpectedPct" | "priceVsExpectedUsd" | "expectedPriceUsd"
-  | "priceUsd" | "fpOverallGapPct" | "fpPosRankNum" | "fpConsensusRank"
-  | "marketPosRank" | "name";
+  | "priceUsd" | "auctionValue" | "auctionPosRank" | "marketPosRank"
+  | "posRankDelta" | "name";
 
 const POSITIONS: (Position | "ALL")[] = ["ALL", "QB", "RB", "WR", "TE"];
 
-const FAIR_BAND_PCT = 10;
-
 export function ValueTable({ rows }: { rows: ValueRow[] }) {
-  const [pos, setPos] = useState<Position | "ALL">("ALL");
-  const [sortKey, setSortKey] = useState<SortKey>("priceVsExpectedPct");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc"); // most undervalued first
+  const [pos, setPos] = useState<Position | "ALL">("QB");
+  const [sortKey, setSortKey] = useState<SortKey>("marketPosRank");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   const filtered = useMemo(() => {
     let list = rows.slice();
@@ -67,228 +66,390 @@ export function ValueTable({ rows }: { rows: ValueRow[] }) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else {
       setSortKey(key);
-      setSortDir(
-        key === "name" || key === "priceVsExpectedPct" || key === "priceVsExpectedUsd"
-          ? "asc"
-          : "desc",
-      );
+      setSortDir(key === "name" || key === "marketPosRank" || key === "auctionPosRank" ? "asc" : "desc");
     }
   };
 
   return (
     <div>
-      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-1">
-          {POSITIONS.map((p) => (
-            <button
-              key={p}
-              onClick={() => setPos(p)}
-              className={clsx(
-                "rounded-md border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-colors",
-                pos === p
-                  ? "border-[var(--color-brand)] bg-[var(--color-brand)]/10 text-[var(--color-brand-soft)]"
-                  : "border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
-              )}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-3 text-[11px] text-[var(--color-text-dim)]">
-          <span className="inline-flex items-center gap-1.5">
-            <ArrowUpRight className="h-3 w-3 text-[var(--color-gain)]" /> undervalued
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <Minus className="h-3 w-3" /> fair (±{FAIR_BAND_PCT}%)
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <ArrowDownRight className="h-3 w-3 text-[var(--color-loss)]" /> overvalued
-          </span>
-        </div>
+      {/* Toolbar — position filter */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Seg
+          options={POSITIONS}
+          value={pos}
+          onChange={(v) => setPos(v as Position | "ALL")}
+        />
+        <span
+          className="ml-auto"
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "10.5px",
+            fontWeight: 600,
+            letterSpacing: "0.18em",
+            textTransform: "uppercase",
+            color: "var(--color-text-dim)",
+          }}
+        >
+          {filtered.length} {pos === "ALL" ? "players" : `${pos}s`}
+        </span>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-        <table className="w-full min-w-[1200px] text-sm">
-          <thead>
-            <tr className="border-b border-[var(--color-border)] text-left text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-dim)]">
-              <Th onClick={() => onSort("name")}              active={sortKey === "name"}              dir={sortDir} className="w-[24%] pl-4">
-                Player
-              </Th>
-              <Th onClick={() => onSort("priceUsd")}          active={sortKey === "priceUsd"}          dir={sortDir} align="right">
-                Market Price
-              </Th>
-              <Th onClick={() => onSort("fpPosRankNum")}      active={sortKey === "fpPosRankNum"}      dir={sortDir} align="right">
-                FP Pos
-              </Th>
-              <Th onClick={() => onSort("fpConsensusRank")}   active={sortKey === "fpConsensusRank"}   dir={sortDir} align="right">
-                FP Overall
-              </Th>
-              <Th onClick={() => onSort("fpOverallGapPct")}   active={sortKey === "fpOverallGapPct"}   dir={sortDir} align="right">
-                Gap from #1
-              </Th>
-              <Th onClick={() => onSort("expectedPriceUsd")}  active={sortKey === "expectedPriceUsd"}  dir={sortDir} align="right">
-                Expected $
-              </Th>
-              <Th onClick={() => onSort("priceVsExpectedUsd")} active={sortKey === "priceVsExpectedUsd"} dir={sortDir} align="right">
-                Δ
-              </Th>
-              <Th onClick={() => onSort("priceVsExpectedPct")} active={sortKey === "priceVsExpectedPct"} dir={sortDir} align="right" className="pr-4">
-                Δ %
-              </Th>
-              <th className="px-3 py-3 text-right pr-4">Verdict</th>
+      <div className="overflow-x-auto rounded-[var(--r-14)] border border-[var(--color-line)] bg-[var(--color-bench)]">
+        <table className="w-full min-w-[1080px]">
+          <thead style={{ background: "color-mix(in oklab, var(--color-press) 60%, transparent)" }}>
+            <tr className="border-b border-[var(--color-line)]">
+              <Th onClick={() => onSort("name")}             active={sortKey === "name"}             dir={sortDir}>Player</Th>
+              <Th onClick={() => onSort("marketPosRank")}    active={sortKey === "marketPosRank"}    dir={sortDir} align="right" tip="Market positional rank by price">MKT</Th>
+              <Th onClick={() => onSort("auctionPosRank")}   active={sortKey === "auctionPosRank"}   dir={sortDir} align="right" tip="Draft Sharks auction positional rank">AUC</Th>
+              <Th onClick={() => onSort("posRankDelta")}     active={sortKey === "posRankDelta"}     dir={sortDir} align="right" tip="Auction rank − market rank (positive = market ranks higher than auction)">Δ</Th>
+              <Th onClick={() => onSort("priceUsd")}         active={sortKey === "priceUsd"}         dir={sortDir} align="right">Price</Th>
+              <Th onClick={() => onSort("auctionValue")}     active={sortKey === "auctionValue"}     dir={sortDir} align="right" tip="Draft Sharks PPR auction value">Auction Val</Th>
+              <Th onClick={() => onSort("expectedPriceUsd")} active={sortKey === "expectedPriceUsd"} dir={sortDir} align="right" tip="Anchor price × auction-value ratio">Exp Price</Th>
+              <Th onClick={() => onSort("priceVsExpectedUsd")} active={sortKey === "priceVsExpectedUsd"} dir={sortDir} align="right" tip="Actual − expected (negative = undervalued)">Δ $</Th>
+              <Th onClick={() => onSort("priceVsExpectedPct")} active={sortKey === "priceVsExpectedPct"} dir={sortDir} align="right" tip="Actual − expected as % of expected">Δ %</Th>
+              <Th align="right" className="pr-5">Verdict</Th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((p) => (
-              <tr
-                key={p.id}
-                className="group border-b border-[var(--color-border)]/60 last:border-b-0 hover:bg-[var(--color-surface-2)]/60"
-              >
-                <td className="pl-4 pr-3 py-3">
-                  <Link href={`/player/${p.id}`} className="flex items-center gap-2.5">
-                    <PlayerAvatar player={p} size="sm" />
-                    <div className="min-w-0">
-                      <div className="truncate font-medium group-hover:text-[var(--color-brand-soft)]">
-                        {p.firstName} {p.lastName}
+            {filtered.map((p) => {
+              const teamColor = TEAM_COLORS[p.team] ?? "var(--accent)";
+              return (
+                <tr
+                  key={p.id}
+                  className="transition-colors duration-[180ms] ease-out hover:bg-[color-mix(in_oklab,var(--color-press)_50%,transparent)]"
+                  style={{
+                    boxShadow: `inset 4px 0 0 0 ${teamColor}`,
+                    borderBottom: "1px solid color-mix(in oklab, var(--color-line) 50%, transparent)",
+                    background: p.isAnchor ? "color-mix(in oklab, var(--accent) 6%, transparent)" : undefined,
+                  }}
+                >
+                  <Cell>
+                    <Link href={`/player/${p.id}`} className="flex items-center gap-2.5 group">
+                      <PlayerAvatar player={p} size="sm" />
+                      <div className="min-w-0">
+                        <div className="truncate text-[13px] font-semibold group-hover:text-[var(--accent-soft)]">
+                          {p.firstName} {p.lastName}
+                          {p.isAnchor ? (
+                            <span
+                              className="ml-1.5 rounded border border-[var(--accent-line)] bg-[var(--accent-tint)] px-1 py-0.5 align-middle text-[var(--accent-soft)]"
+                              style={{
+                                fontFamily: "var(--font-mono)",
+                                fontSize: "8.5px",
+                                fontWeight: 700,
+                                letterSpacing: "0.16em",
+                              }}
+                            >
+                              ANCHOR
+                            </span>
+                          ) : null}
+                        </div>
+                        <div
+                          style={{
+                            fontFamily: "var(--font-mono)",
+                            fontSize: "10px",
+                            letterSpacing: "0.08em",
+                            textTransform: "uppercase",
+                            color: "var(--color-text-dim)",
+                          }}
+                        >
+                          {p.position} · {TEAM_NAMES[p.team] ?? p.team}
+                        </div>
                       </div>
-                      <div className="text-[11px] text-[var(--color-text-dim)]">
-                        {p.position} · {TEAM_NAMES[p.team]} · market {p.position}{p.marketPosRank}
-                      </div>
-                    </div>
-                  </Link>
-                </td>
-                <td className="px-3 py-3 text-right tabular">{fmtPrice(p.priceUsd)}</td>
-                <td className="px-3 py-3 text-right tabular">
-                  {p.fpPosRankNum != null ? `${p.position}${p.fpPosRankNum}` : <span className="text-[var(--color-text-dim)]">—</span>}
-                </td>
-                <td className="px-3 py-3 text-right tabular">
-                  {p.fpConsensusRank ? `#${p.fpConsensusRank}` : <span className="text-[var(--color-text-dim)]">—</span>}
-                </td>
-                <td className="px-3 py-3 text-right tabular text-[var(--color-text-muted)]">
-                  {p.fpOverallGapPct == null
-                    ? <span className="text-[var(--color-text-dim)]">—</span>
-                    : p.fpOverallGapPct === 0
-                      ? "anchor"
-                      : `+${p.fpOverallGapPct.toFixed(1)}%`}
-                </td>
-                <td className="px-3 py-3 text-right tabular text-[var(--color-text-muted)]">
-                  {p.expectedPriceUsd != null ? fmtPrice(p.expectedPriceUsd) : <span className="text-[var(--color-text-dim)]">—</span>}
-                </td>
-                <td className="px-3 py-3 text-right tabular">
-                  <DeltaUsd value={p.priceVsExpectedUsd} />
-                </td>
-                <td className="px-3 py-3 pr-4 text-right tabular font-medium">
-                  <DeltaPct value={p.priceVsExpectedPct} />
-                </td>
-                <td className="px-3 py-3 text-right pr-4">
-                  <VerdictPill verdict={p.verdict} />
-                </td>
-              </tr>
-            ))}
+                    </Link>
+                  </Cell>
+                  <NumCell>
+                    {p.marketPosRank > 0 ? (
+                      <span style={{ color: "var(--color-text)" }}>
+                        {p.position}
+                        {p.marketPosRank}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </NumCell>
+                  <NumCell>
+                    {p.auctionPosRank != null ? (
+                      <span style={{ color: "var(--color-text)" }}>
+                        {p.position}
+                        {p.auctionPosRank}
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--color-text-dim)" }}>—</span>
+                    )}
+                  </NumCell>
+                  <NumCell>
+                    <RankDelta value={p.posRankDelta} />
+                  </NumCell>
+                  <NumCell>{fmtPrice(p.priceUsd)}</NumCell>
+                  <NumCell>
+                    {p.auctionValue != null ? (
+                      <span className="font-semibold text-[var(--color-text)]">${p.auctionValue}</span>
+                    ) : (
+                      <span style={{ color: "var(--color-text-dim)" }}>—</span>
+                    )}
+                  </NumCell>
+                  <NumCell>
+                    {p.expectedPriceUsd != null
+                      ? p.isAnchor
+                        ? <span style={{ color: "var(--color-text-dim)" }}>—</span>
+                        : fmtPrice(p.expectedPriceUsd)
+                      : <span style={{ color: "var(--color-text-dim)" }}>—</span>}
+                  </NumCell>
+                  <NumDiffCell deltaUsd={p.priceVsExpectedUsd} verdict={p.verdict} isAnchor={p.isAnchor} />
+                  <NumCell>
+                    <PctDelta value={p.priceVsExpectedPct} verdict={p.verdict} isAnchor={p.isAnchor} />
+                  </NumCell>
+                  <Cell className="pr-5 text-right">
+                    <VerdictBadge verdict={p.verdict} isAnchor={p.isAnchor} />
+                  </Cell>
+                </tr>
+              );
+            })}
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-12 text-center text-sm text-[var(--color-text-muted)]">
-                  No players match this filter.
+                <td colSpan={10} className="px-5 py-12 text-center text-sm text-[var(--color-text-muted)]">
+                  No matching players.
                 </td>
               </tr>
             ) : null}
           </tbody>
         </table>
       </div>
-
-      <div className="mt-3 text-xs text-[var(--color-text-dim)]">
-        Expected price for each player is anchored on the FP-#1 player at their position and scaled
-        down by the % gap in FP overall ranks. Δ = actual market price − expected price; Δ % expresses
-        that gap as a percentage of expected.
-      </div>
     </div>
   );
 }
 
-function DeltaUsd({ value }: { value: number | null }) {
-  if (value == null) return <span className="text-[var(--color-text-dim)]">—</span>;
-  if (Math.abs(value) < 0.0005) return <span className="text-[var(--color-text-muted)]">≈ $0</span>;
-  const positive = value >= 0;
+function Cell({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <span className={positive ? "text-[var(--color-loss)]" : "text-[var(--color-gain)]"}>
-      {positive ? "+" : ""}{fmtPrice(value)}
+    <td className={clsx("px-3", className)} style={{ padding: "10px 12px" }}>
+      {children}
+    </td>
+  );
+}
+
+function NumCell({ children }: { children: React.ReactNode }) {
+  return (
+    <td
+      className="text-right"
+      style={{
+        padding: "10px 12px",
+        fontFamily: "var(--font-mono)",
+        fontVariantNumeric: "tabular-nums",
+        fontSize: "13px",
+      }}
+    >
+      {children}
+    </td>
+  );
+}
+
+function NumDiffCell({
+  deltaUsd,
+  verdict,
+  isAnchor,
+}: {
+  deltaUsd: number | null;
+  verdict: ValueRow["verdict"];
+  isAnchor: boolean;
+}) {
+  if (isAnchor || deltaUsd == null) {
+    return (
+      <td
+        className="text-right"
+        style={{
+          padding: "10px 12px",
+          fontFamily: "var(--font-mono)",
+          color: "var(--color-text-dim)",
+        }}
+      >
+        —
+      </td>
+    );
+  }
+  // Color background by verdict — mirrors the user's spreadsheet
+  // (red for overvalued, green for undervalued, neutral for fair).
+  const bg =
+    verdict === "overvalued"
+      ? "color-mix(in oklab, var(--color-penalty) 18%, transparent)"
+      : verdict === "undervalued"
+        ? "color-mix(in oklab, var(--color-turf) 18%, transparent)"
+        : "transparent";
+  const fg =
+    verdict === "overvalued"
+      ? "var(--color-penalty)"
+      : verdict === "undervalued"
+        ? "var(--color-turf)"
+        : "var(--color-text)";
+  return (
+    <td
+      className="text-right"
+      style={{
+        padding: "10px 12px",
+        fontFamily: "var(--font-mono)",
+        fontVariantNumeric: "tabular-nums",
+        fontSize: "13px",
+        fontWeight: 700,
+        background: bg,
+        color: fg,
+      }}
+    >
+      {deltaUsd > 0 ? "+" : ""}
+      {fmtPrice(deltaUsd)}
+    </td>
+  );
+}
+
+function PctDelta({ value, verdict, isAnchor }: { value: number | null; verdict: ValueRow["verdict"]; isAnchor: boolean }) {
+  if (isAnchor || value == null) return <span style={{ color: "var(--color-text-dim)" }}>—</span>;
+  const fg =
+    verdict === "overvalued"
+      ? "var(--color-penalty)"
+      : verdict === "undervalued"
+        ? "var(--color-turf)"
+        : "var(--color-text-muted)";
+  return (
+    <span style={{ color: fg, fontWeight: 700 }}>
+      {value > 0 ? "+" : ""}
+      {value.toFixed(1)}%
     </span>
   );
 }
 
-function DeltaPct({ value }: { value: number | null }) {
-  if (value == null) return <span className="text-[var(--color-text-dim)]">—</span>;
-  const fair = Math.abs(value) <= FAIR_BAND_PCT;
-  const positive = value > 0;
-  const capped = Math.abs(value) >= 500;
-  const display = capped
-    ? `${positive ? "≥+" : "≤−"}500%`
-    : `${positive ? "+" : ""}${value.toFixed(1)}%`;
+function RankDelta({ value }: { value: number | null }) {
+  if (value == null) return <span style={{ color: "var(--color-text-dim)" }}>—</span>;
+  if (value === 0) return <span style={{ color: "var(--color-text-muted)" }}>0</span>;
+  // Positive = auction ranks lower (higher number) than market →
+  // market ranks them higher. Penalty color. Negative = auction
+  // ranks higher than market → market underrates them. Turf color.
+  const fg = value > 0 ? "var(--color-penalty)" : "var(--color-turf)";
+  return (
+    <span style={{ color: fg, fontWeight: 700 }}>
+      {value > 0 ? `+${value}` : value}
+    </span>
+  );
+}
+
+function VerdictBadge({ verdict, isAnchor }: { verdict: ValueRow["verdict"]; isAnchor: boolean }) {
+  if (isAnchor) {
+    return (
+      <span
+        className="inline-flex items-center rounded-[var(--r-4)] border border-[var(--accent-line)] bg-[var(--accent-tint)] px-2 py-1 text-[var(--accent-soft)]"
+        style={{ fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 700, letterSpacing: "0.14em" }}
+      >
+        ANCHOR
+      </span>
+    );
+  }
+  const map = {
+    undervalued: { cls: "border-[color-mix(in_oklab,var(--color-turf)_35%,transparent)] bg-[color-mix(in_oklab,var(--color-turf)_12%,transparent)] text-[var(--color-turf)]", label: "BUY" },
+    overvalued:  { cls: "border-[color-mix(in_oklab,var(--color-penalty)_35%,transparent)] bg-[color-mix(in_oklab,var(--color-penalty)_12%,transparent)] text-[var(--color-penalty)]", label: "SELL" },
+    fair:        { cls: "border-[var(--color-line)] bg-[var(--color-press)] text-[var(--color-text-muted)]", label: "FAIR" },
+    unranked:    { cls: "border-[var(--color-line)] bg-transparent text-[var(--color-text-dim)]", label: "—" },
+  };
+  const m = map[verdict];
   return (
     <span
-      className={clsx(
-        fair && "text-[var(--color-text-muted)]",
-        !fair && positive && "text-[var(--color-loss)]",
-        !fair && !positive && "text-[var(--color-gain)]",
-      )}
+      className={clsx("inline-flex items-center rounded-[var(--r-4)] border px-2 py-1", m.cls)}
+      style={{ fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 700, letterSpacing: "0.14em" }}
     >
-      {display}
+      {m.label}
     </span>
   );
 }
 
-function VerdictPill({ verdict }: { verdict: ValueRow["verdict"] }) {
-  if (verdict === "undervalued") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-md border border-[var(--color-gain)]/40 bg-[var(--color-gain)]/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--color-gain)]">
-        <ArrowUpRight className="h-3 w-3" /> Undervalued
-      </span>
-    );
-  }
-  if (verdict === "overvalued") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-md border border-[var(--color-loss)]/40 bg-[var(--color-loss)]/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--color-loss)]">
-        <ArrowDownRight className="h-3 w-3" /> Overvalued
-      </span>
-    );
-  }
-  if (verdict === "fair") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
-        <Minus className="h-3 w-3" /> Fair
-      </span>
-    );
-  }
+function Seg<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: readonly T[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
   return (
-    <span className="inline-flex items-center rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-dim)]">
-      Unranked
-    </span>
+    <div
+      className="inline-flex items-center rounded-[var(--r-8)] border border-[var(--color-line)] bg-[var(--color-press)] p-[3px]"
+      style={{ height: 38 }}
+    >
+      {options.map((o) => {
+        const active = value === o;
+        return (
+          <button
+            key={o}
+            onClick={() => onChange(o)}
+            className={clsx(
+              "inline-flex h-[30px] items-center justify-center rounded-[5px] px-3 transition-colors",
+              active
+                ? "bg-[var(--color-bench)] text-[var(--accent-soft)]"
+                : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
+            )}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "11px",
+              fontWeight: 600,
+              letterSpacing: "0.12em",
+              boxShadow: active ? "inset 0 0 0 1px var(--accent-line)" : undefined,
+            }}
+          >
+            {o}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
 function Th({
-  children, onClick, active, dir, align = "left", className,
+  children,
+  onClick,
+  active,
+  dir,
+  align = "left",
+  className,
+  tip,
 }: {
   children: React.ReactNode;
-  onClick: () => void;
-  active: boolean;
-  dir: "asc" | "desc";
+  onClick?: () => void;
+  active?: boolean;
+  dir?: "asc" | "desc";
   align?: "left" | "right";
   className?: string;
+  tip?: string;
 }) {
   return (
-    <th className={clsx("px-3 py-3 font-medium", className)}>
-      <button
-        onClick={onClick}
-        className={clsx(
-          "inline-flex items-center gap-1 hover:text-[var(--color-text)]",
-          align === "right" && "ml-auto float-right",
-          active && "text-[var(--color-text)]",
-        )}
-      >
-        <span>{children}</span>
-        {active ? (dir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />) : null}
-      </button>
+    <th
+      className={clsx("px-3 py-3 select-none", className)}
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: "10px",
+        fontWeight: 600,
+        letterSpacing: "0.18em",
+        textTransform: "uppercase",
+        color: active ? "var(--color-text)" : "var(--color-text-dim)",
+        textAlign: align,
+      }}
+      title={tip}
+    >
+      {onClick ? (
+        <button
+          onClick={onClick}
+          className={clsx(
+            "inline-flex items-center gap-1 hover:text-[var(--color-text)]",
+            align === "right" && "ml-auto",
+          )}
+        >
+          <span>{children}</span>
+          {active && dir ? (
+            dir === "asc" ? (
+              <ChevronUp className="h-3 w-3" strokeWidth={1.5} />
+            ) : (
+              <ChevronDown className="h-3 w-3" strokeWidth={1.5} />
+            )
+          ) : null}
+        </button>
+      ) : (
+        children
+      )}
     </th>
   );
 }
