@@ -90,9 +90,9 @@ export function ValueTable({ rows }: { rows: ValueRow[] }) {
           <thead style={{ background: "color-mix(in oklab, var(--color-press) 60%, transparent)" }}>
             <tr className="border-b border-[var(--color-line)]">
               <Th onClick={() => onSort("name")}          active={sortKey === "name"}          dir={sortDir}>Player</Th>
-              <Th onClick={() => onSort("marketPosRank")} active={sortKey === "marketPosRank"} dir={sortDir} align="right" tip="Sport.fun market positional rank by price">MKT</Th>
-              <Th onClick={() => onSort("fpPosRank")}     active={sortKey === "fpPosRank"}     dir={sortDir} align="right" tip="FantasyPros consensus PPR positional rank">FP</Th>
-              <Th onClick={() => onSort("posRankDelta")}  active={sortKey === "posRankDelta"}  dir={sortDir} align="right" tip="FP rank − market rank (negative = market may be undervaluing)">Δ</Th>
+              <Th onClick={() => onSort("marketPosRank")} active={sortKey === "marketPosRank"} dir={sortDir} align="right" tip="Sport.fun market positional rank by price">FDF Ranking</Th>
+              <Th onClick={() => onSort("fpPosRank")}     active={sortKey === "fpPosRank"}     dir={sortDir} align="right" tip="FantasyPros consensus PPR positional rank">FP Ranking</Th>
+              <Th onClick={() => onSort("posRankDelta")}  active={sortKey === "posRankDelta"}  dir={sortDir} align="right" tip="FP rank − market rank (negative = market may be undervaluing)">Difference</Th>
               <Th align="right" className="pr-5">Verdict</Th>
             </tr>
           </thead>
@@ -153,7 +153,7 @@ export function ValueTable({ rows }: { rows: ValueRow[] }) {
                     <RankDelta value={p.posRankDelta} verdict={p.verdict} />
                   </NumCell>
                   <Cell className="pr-5 text-right">
-                    <VerdictBadge verdict={p.verdict} />
+                    <VerdictBadge verdict={p.verdict} delta={p.posRankDelta} />
                   </Cell>
                 </tr>
               );
@@ -211,20 +211,26 @@ function RankDelta({ value, verdict }: { value: number | null; verdict: ValueRow
   );
 }
 
-function VerdictBadge({ verdict }: { verdict: ValueRow["verdict"] }) {
+function VerdictBadge({ verdict, delta }: { verdict: ValueRow["verdict"]; delta: number | null }) {
   const map = {
-    undervalued: { cls: "border-[color-mix(in_oklab,var(--color-turf)_35%,transparent)] bg-[color-mix(in_oklab,var(--color-turf)_12%,transparent)] text-[var(--color-turf)]", label: "BUY" },
-    overvalued:  { cls: "border-[color-mix(in_oklab,var(--color-penalty)_35%,transparent)] bg-[color-mix(in_oklab,var(--color-penalty)_12%,transparent)] text-[var(--color-penalty)]", label: "SELL" },
+    undervalued: { cls: "border-[color-mix(in_oklab,var(--color-turf)_35%,transparent)] bg-[color-mix(in_oklab,var(--color-turf)_12%,transparent)] text-[var(--color-turf)]", label: "UNDERVALUED" },
+    overvalued:  { cls: "border-[color-mix(in_oklab,var(--color-penalty)_35%,transparent)] bg-[color-mix(in_oklab,var(--color-penalty)_12%,transparent)] text-[var(--color-penalty)]", label: "OVERVALUED" },
     fair:        { cls: "border-[var(--color-line)] bg-[var(--color-press)] text-[var(--color-text-muted)]", label: "FAIR" },
     unranked:    { cls: "border-[var(--color-line)] bg-transparent text-[var(--color-text-dim)]", label: "—" },
   };
   const m = map[verdict];
+  const showDelta = verdict !== "unranked" && delta != null;
   return (
     <span
-      className={clsx("inline-flex items-center rounded-[var(--r-4)] border px-2 py-1", m.cls)}
+      className={clsx("inline-flex items-center gap-1 rounded-[var(--r-4)] border px-2 py-1", m.cls)}
       style={{ fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 700, letterSpacing: "0.14em" }}
     >
-      {m.label}
+      <span>{m.label}</span>
+      {showDelta ? (
+        <span className="opacity-80">
+          {delta > 0 ? `+${delta}` : delta}
+        </span>
+      ) : null}
     </span>
   );
 }
