@@ -26,8 +26,11 @@ const FOOTBALLFUN_CONTRACT = "0x2EeF466e802Ab2835aB81BE63eEbc55167d35b56";
 const SWAP_ROUTER_LC = FOOTBALLFUN_CONTRACT.toLowerCase();
 const UPSTREAM = "https://api.tenero.io/v1/sportsfun";
 const HOLDERS_PAGE_LIMIT = 50;
-const HOLDERS_MAX_PAGES = 30;
-const CONCURRENCY = 2;
+const HOLDERS_MAX_PAGES = 15;
+// Tenero's IP rate limit is 100 req/min. Run sequentially with a
+// 700ms inter-request delay to stay safely under that and avoid
+// 429 backoff cascades that kill the GitHub Actions timeout.
+const REQUEST_DELAY_MS = 700;
 const HISTORY_LIMIT = 720;
 
 // Roster of NFL token IDs (must match src/lib/data/roster.ts).
@@ -58,6 +61,7 @@ async function uget(p, attempt = 0) {
     return uget(p, attempt + 1);
   }
   if (!res.ok) return null;
+  await sleep(REQUEST_DELAY_MS);
   return res.json();
 }
 
@@ -86,19 +90,17 @@ async function scanPool(tokenAddress) {
   return { addrs, truncated };
 }
 
-async function chunked(items, size) {
-  const out = [];
-  for (let i = 0; i < items.length; i += size) {
-    const slice = items.slice(i, i + size);
-    out.push(...(await Promise.all(slice.map((fn) => fn()))));
-  }
-  return out;
-}
-
 async function main() {
   const start = Date.now();
-  const fns = TOKEN_ADDRESSES.map((addr) => () => scanPool(addr));
-  const results = await chunked(fns, CONCURRENCY);
+  const results = [];
+  for (let i = 0; i < TOKEN_ADDRESSES.length; i++) {
+    const addr = TOKEN_ADDRESSES[i];
+    const r = await scanPool(addr);
+    results.push(r);
+    if (process.env.GRIDIRON_VERBOSE) {
+      console.log(`[${i + 1}/${TOKEN_ADDRESSES.length}] ${addr.slice(-8)} holders=${r.addrs.size} truncated=${r.truncated}`);
+    }
+  }
 
   const set = new Set();
   let largestPool = 0;

@@ -27,7 +27,19 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
   const nflValue = nflHoldings.reduce((a, h) => a + h.balanceValueUsd, 0);
   const soccerValue = soccerHoldings.reduce((a, h) => a + h.balanceValueUsd, 0);
   const totalPortfolioValue = profile.totalValueUsd + fun.valueUsd;
-  const nflDominance = totalPortfolioValue > 0 ? (nflValue / totalPortfolioValue) * 100 : 0;
+  // NFL Dominance = how much of this wallet's *sport allocation* sits
+  // in NFL vs Soccer. We deliberately exclude $FUN here — it's a
+  // utility/treasury token, not a sport bet, so mixing it in dilutes
+  // the signal of which sport this wallet is positioned on.
+  const sportValue = nflValue + soccerValue;
+  const nflDominance = sportValue > 0 ? (nflValue / sportValue) * 100 : 0;
+  // Earliest currently-held NFL position. Approximates "first NFL buy"
+  // for wallets that haven't fully exited and re-entered NFL — the
+  // holdings table's "First Held" column derives from the same field.
+  const firstNflHoldAt = nflHoldings.reduce<number>(
+    (m, h) => (h.startHoldingAt && (!m || h.startHoldingAt < m) ? h.startHoldingAt : m),
+    0,
+  );
 
   const slices: CompositionSlice[] = [
     { key: "nfl",    label: "NFL",    value: nflValue,    color: "var(--color-brand)" },
@@ -72,6 +84,15 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
               <span>First seen {profile.firstSeenAt ? fmtTimeAgo(profile.firstSeenAt) : "—"}</span>
               <span>·</span>
               <span>Last active {profile.lastActiveAt ? fmtTimeAgo(profile.lastActiveAt) : "—"}</span>
+              {firstNflHoldAt > 0 ? (
+                <>
+                  <span>·</span>
+                  <span>
+                    First NFL position{" "}
+                    <span className="text-[var(--color-text)]">{fmtDate(firstNflHoldAt)}</span>
+                  </span>
+                </>
+              ) : null}
               <a
                 href={`https://basescan.org/address/${address}`}
                 target="_blank"
@@ -93,7 +114,7 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
                 {fmtUsd(nflValue, { compact: true })}
               </div>
               <div className="mt-1 text-[11px] text-[var(--color-text-muted)]">
-                {nflDominance.toFixed(1)}% of total · {nflHoldings.length} positions
+                {nflHoldings.length} player position{nflHoldings.length === 1 ? "" : "s"}
               </div>
             </div>
             <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3">
@@ -110,6 +131,45 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
           </div>
         </div>
       </div>
+
+      {/* NFL Dominance — slim horizontal card with split bar */}
+      {sportValue > 0 ? (
+        <div className="mt-5 rounded-xl border border-[var(--color-brand)]/30 bg-[var(--color-brand)]/5 p-4 sm:p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
+            <div className="sm:min-w-[200px]">
+              <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-brand-soft)]">
+                NFL Dominance
+              </div>
+              <div className="tabular text-4xl font-bold leading-none text-[var(--color-brand-soft)]">
+                {nflDominance.toFixed(0)}%
+              </div>
+              <div className="mt-1 text-[11px] leading-snug text-[var(--color-text-muted)]">
+                Share of this wallet&rsquo;s sport allocation in NFL vs Soccer. $FUN excluded.
+              </div>
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center justify-between text-[10px] uppercase tracking-wider">
+                <span className="text-[var(--color-brand-soft)]">
+                  NFL · {fmtUsd(nflValue, { compact: true })}
+                </span>
+                <span className="text-[var(--color-text-muted)]">
+                  {fmtUsd(soccerValue, { compact: true })} · Soccer
+                </span>
+              </div>
+              <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-[var(--color-surface-2)] ring-1 ring-[var(--color-border)]">
+                <div
+                  className="h-full rounded-full bg-[var(--color-brand)]"
+                  style={{ width: `${nflDominance}%` }}
+                />
+              </div>
+              <div className="mt-1.5 flex items-center justify-between text-[11px] text-[var(--color-text-muted)]">
+                <span>{nflDominance.toFixed(1)}% NFL</span>
+                <span>{(100 - nflDominance).toFixed(1)}% Soccer</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Portfolio Composition */}
       <Card className="mt-5">
@@ -233,6 +293,14 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
 
 function pct(part: number, total: number): number {
   return total > 0 ? (part / total) * 100 : 0;
+}
+
+function fmtDate(ts: number): string {
+  return new Date(ts).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function SliceTile({
