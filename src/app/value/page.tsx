@@ -2,40 +2,34 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getPlayers } from "@/lib/data";
 import {
-  getDsAuctionValues,
-  indexDsByName,
+  getFantasyProsRankings,
+  indexFpByName,
   normalizeName,
-} from "@/lib/data/draftsharks";
-import { getFantasyProsRankings, indexFpByName } from "@/lib/data/fantasypros";
+} from "@/lib/data/fantasypros";
 import { Card, CardHeader, Pill } from "@/components/ui";
 import { ValueTable, type ValueRow } from "@/components/ValueTable";
-import { fmtNum, fmtPrice } from "@/lib/format";
+import { fmtNum } from "@/lib/format";
 import type { Position } from "@/lib/types";
 
 export const metadata = {
   title: "Value Score · Gridiron",
   description:
-    "Compare market price against Draft Sharks PPR auction values to surface NFL player tokens that may be over- or undervalued.",
+    "FantasyPros consensus positional rank vs Sport.fun market rank — surfaces NFL player tokens the market ranks above or below the consensus.",
 };
 
 export const revalidate = 600;
 
 const POS: Position[] = ["QB", "RB", "WR", "TE"];
 
-// "Fair" band: actual price is within ±this percent of expected price.
-const FAIR_BAND_PCT = 10;
+// Δ band tolerated as "fair". |Δ| ≤ this → no over/undervalued
+// verdict. 1 spot of disparity is noise; 2+ starts to matter.
+const FAIR_BAND = 1;
 
 export default async function ValuePage() {
-  const [players, ds, fp] = await Promise.all([
-    getPlayers(),
-    getDsAuctionValues(),
-    getFantasyProsRankings(),
-  ]);
-  const dsByName = indexDsByName(ds);
+  const [players, fp] = await Promise.all([getPlayers(), getFantasyProsRankings()]);
   const fpByName = indexFpByName(fp);
 
-  // Group roster players by position so we can compute market positional
-  // rank within each group.
+  // Group roster by position; market positional rank within each.
   const byPos = new Map<Position, typeof players>();
   for (const p of players) {
     if (!POS.includes(p.position as Position)) continue;
@@ -49,70 +43,25 @@ export default async function ValuePage() {
     list.forEach((p, i) => marketPosRank.set(p.id, { rank: i + 1, size: list.length }));
   }
 
-  // For each position, find the "anchor" — the highest auction-value
-  // player that ALSO appears in our roster. We require the anchor to be
-  // on-roster so the price ratio is computed against a real Sport.fun
-  // pool, not someone Sport.fun hasn't listed yet.
-  type Anchor = { id: string; auctionVal: number; marketPrice: number; name: string };
-  const anchorByPos = new Map<Position, Anchor>();
-  for (const [position, list] of byPos) {
-    let best: { ds: ReturnType<typeof dsByName.get>; player: (typeof list)[number] } | null = null;
-    for (const p of list) {
-      const hit = dsByName.get(normalizeName(`${p.firstName} ${p.lastName}`));
-      if (!hit?.dsAuctionValue) continue;
-      if (!best || hit.posRank < best.ds!.posRank) best = { ds: hit, player: p };
-    }
-    if (best && best.ds) {
-      anchorByPos.set(position, {
-        id: best.player.id,
-        auctionVal: best.ds.dsAuctionValue,
-        marketPrice: best.player.priceUsd,
-        name: `${best.player.firstName} ${best.player.lastName}`,
-      });
-    }
-  }
-
-  // Build rows. Two-source model:
-  //   - Draft Sharks PPR auction value drives the expected-price math
-  //     (ratio = playerAuctionVal / anchorAuctionVal; expected =
-  //     anchor.marketPrice × ratio).
-  //   - FantasyPros consensus PPR positional rank drives the
-  //     positional-disparity columns (FP, Δ).
-  // Δ = fpPosRank − marketPosRank. Negative = market ranks them
-  // lower than FP does (FP says they're better than the market) →
-  // potentially undervalued. Positive = market ranks them higher
-  // than FP → potentially overvalued.
+  // Build rows. Single-source rank disparity model:
+  //   posRankDelta = fpPosRank − marketPosRank
+  // Negative Δ → FP ranks them higher than market does (FP says
+  // they're better) → market may be UNDERVALUING them.
+  // Positive Δ → market ranks them higher than FP → market may be
+  // OVERVALUING them.
   const rows: ValueRow[] = players
     .filter((p) => POS.includes(p.position as Position))
     .map((p) => {
       const market = marketPosRank.get(p.id) ?? { rank: 0, size: 0 };
-      const nameKey = normalizeName(`${p.firstName} ${p.lastName}`);
-      const ds = dsByName.get(nameKey);
-      const fp = fpByName.get(nameKey);
-      const anchor = anchorByPos.get(p.position as Position) ?? null;
-
-      const auctionVal = ds?.dsAuctionValue ?? null;
-      const fpPosRank = fp?.posRankNum && fp.posRankNum > 0 ? fp.posRankNum : null;
+      const fpHit = fpByName.get(normalizeName(`${p.firstName} ${p.lastName}`));
+      const fpPosRank = fpHit?.posRankNum && fpHit.posRankNum > 0 ? fpHit.posRankNum : null;
       const posRankDelta =
         fpPosRank != null && market.rank > 0 ? fpPosRank - market.rank : null;
 
-      let expectedPriceUsd: number | null = null;
-      let priceVsExpectedUsd: number | null = null;
-      let priceVsExpectedPct: number | null = null;
-      let ratio: number | null = null;
-      if (anchor && auctionVal != null && anchor.auctionVal > 0) {
-        ratio = auctionVal / anchor.auctionVal;
-        expectedPriceUsd = anchor.marketPrice * ratio;
-        priceVsExpectedUsd = +(p.priceUsd - expectedPriceUsd).toFixed(6);
-        if (expectedPriceUsd > 0) {
-          priceVsExpectedPct = +((priceVsExpectedUsd / expectedPriceUsd) * 100).toFixed(2);
-        }
-      }
-
       let verdict: ValueRow["verdict"] = "unranked";
-      if (priceVsExpectedPct != null) {
-        if (Math.abs(priceVsExpectedPct) <= FAIR_BAND_PCT) verdict = "fair";
-        else if (priceVsExpectedPct < 0) verdict = "undervalued";
+      if (posRankDelta != null) {
+        if (Math.abs(posRankDelta) <= FAIR_BAND) verdict = "fair";
+        else if (posRankDelta < 0) verdict = "undervalued";
         else verdict = "overvalued";
       }
 
@@ -120,38 +69,25 @@ export default async function ValuePage() {
         ...p,
         marketPosRank: market.rank,
         posPlayers: market.size,
-        auctionValue: auctionVal,
         fpPosRank,
         posRankDelta,
-        ratio,
-        expectedPriceUsd,
-        priceVsExpectedUsd,
-        priceVsExpectedPct,
-        isAnchor: anchor?.id === p.id,
         verdict,
       };
     });
 
-  const matched = rows.filter((r) => r.priceVsExpectedPct != null).length;
+  const matched = rows.filter((r) => r.posRankDelta != null).length;
   const undervalued = rows.filter((r) => r.verdict === "undervalued");
   const overvalued = rows.filter((r) => r.verdict === "overvalued");
 
-  // Sort extremes by % gap from expected price.
+  // Extremes by absolute rank disparity (largest gap first).
   const topUndervalued = undervalued
     .slice()
-    .sort((a, b) => (a.priceVsExpectedPct ?? 0) - (b.priceVsExpectedPct ?? 0))
+    .sort((a, b) => (a.posRankDelta ?? 0) - (b.posRankDelta ?? 0))
     .slice(0, 3);
   const topOvervalued = overvalued
     .slice()
-    .sort((a, b) => (b.priceVsExpectedPct ?? 0) - (a.priceVsExpectedPct ?? 0))
+    .sort((a, b) => (b.posRankDelta ?? 0) - (a.posRankDelta ?? 0))
     .slice(0, 3);
-
-  const anchorStrip = Array.from(anchorByPos.entries()).map(([pos, a]) => ({
-    pos,
-    name: a.name,
-    auctionVal: a.auctionVal,
-    marketPrice: a.marketPrice,
-  }));
 
   return (
     <div className="mx-auto max-w-[var(--max-w)] px-5 sm:px-8 py-6 sm:py-8">
@@ -190,8 +126,8 @@ export default async function ValuePage() {
         />
         <div className="relative flex flex-col gap-6" style={{ padding: "32px 32px 28px" }}>
           <div className="flex flex-wrap items-center gap-2">
-            <Pill tone="brand">Expected Price</Pill>
-            <Pill tone="muted">PPR · Draft Sharks Auction</Pill>
+            <Pill tone="brand">Rank Disparity</Pill>
+            <Pill tone="muted">PPR · FantasyPros consensus</Pill>
           </div>
           <h1
             className="m-0 text-[var(--color-text)]"
@@ -207,21 +143,13 @@ export default async function ValuePage() {
             Where do market and consensus disagree?
           </h1>
           <p className="m-0 max-w-[64ch] text-[var(--color-text-muted)]" style={{ fontSize: "15px" }}>
-            For each position we anchor on the highest auction-value player on the
-            Sport.fun roster. Every other player&apos;s expected price is the anchor&apos;s
-            market price scaled by their <strong>auction-value ratio</strong> to that anchor.
-            <strong> Δ vs Expected</strong> is the dollar gap — negative means the market
-            is pricing them below where the auction sheet says they belong (undervalued).
+            Comparing each player&apos;s <strong>Sport.fun market positional rank</strong> against
+            their <strong>FantasyPros consensus PPR positional rank</strong>. A negative <strong>Δ</strong>
+            means FP ranks them higher than the market does — a candidate the market may be
+            undervaluing. Positive Δ — the inverse.
           </p>
 
-          {/* Per-position anchor strip */}
-          <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {anchorStrip.map((a) => (
-              <AnchorCard key={a.pos} {...a} />
-            ))}
-          </div>
-
-          <div className="mt-2 grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-3">
             <ExtremeCard
               title="Most Undervalued"
               tone="gain"
@@ -246,38 +174,12 @@ export default async function ValuePage() {
 
       <Card className="mt-6">
         <CardHeader
-          title="Value Score Table"
-          hint="Sort by Δ vs Expected to surface biggest mispricings · click any column"
+          title="Rank Disparity Table"
+          hint="Sort by Δ to surface biggest market-vs-consensus disagreements"
           right={<Pill tone="muted">{fmtNum(matched)} matched · {fmtNum(rows.length - matched)} unranked</Pill>}
         />
         <ValueTable rows={rows} />
       </Card>
-    </div>
-  );
-}
-
-function AnchorCard({ pos, name, auctionVal, marketPrice }: { pos: Position; name: string; auctionVal: number; marketPrice: number }) {
-  return (
-    <div className="rounded-[var(--r-8)] border border-[var(--accent-line)] bg-[var(--accent-tint)] px-3 py-2.5">
-      <div className="flex items-center gap-2">
-        <span className="mono-eyebrow text-[var(--accent-soft)]" style={{ fontSize: "9.5px" }}>
-          {pos} ANCHOR
-        </span>
-      </div>
-      <div className="mt-1 truncate text-[14px] font-semibold">{name}</div>
-      <div
-        className="mt-0.5 flex items-baseline gap-2"
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontVariantNumeric: "tabular-nums",
-          fontSize: "11px",
-          color: "var(--color-text-muted)",
-        }}
-      >
-        <span className="text-[var(--accent-soft)] font-semibold">${auctionVal}</span>
-        <span>·</span>
-        <span>{fmtPrice(marketPrice)}</span>
-      </div>
     </div>
   );
 }
@@ -329,15 +231,17 @@ function ExtremeCard({
                     color: "var(--color-text-dim)",
                   }}
                 >
-                  {p.position} · ${p.auctionValue ?? "?"} · {fmtPrice(p.priceUsd)} → {fmtPrice(p.expectedPriceUsd ?? 0)}
+                  {p.position} · MKT {p.position}
+                  {p.marketPosRank} · FP {p.position}
+                  {p.fpPosRank}
                 </span>
               </Link>
               <span
                 className={tone === "gain" ? "text-[var(--color-turf)]" : "text-[var(--color-penalty)]"}
                 style={{ fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums", fontWeight: 700 }}
               >
-                {p.priceVsExpectedPct! > 0 ? "+" : ""}
-                {p.priceVsExpectedPct!.toFixed(1)}%
+                {p.posRankDelta! > 0 ? "+" : ""}
+                {p.posRankDelta}
               </span>
             </li>
           ))}
@@ -375,10 +279,10 @@ function SummaryCard({
         <Stat label="Matched" value={`${fmtNum(matched)} / ${fmtNum(total)}`} />
         <Stat label="Undervalued" value={fmtNum(undervalued)} tone="gain" />
         <Stat label="Overvalued" value={fmtNum(overvalued)} tone="loss" />
-        <Stat label={`Fair (±${FAIR_BAND_PCT}%)`} value={fmtNum(matched - undervalued - overvalued)} />
+        <Stat label={`Fair (|Δ| ≤ ${FAIR_BAND})`} value={fmtNum(matched - undervalued - overvalued)} />
       </div>
       <div className="mt-3 text-[11px] text-[var(--color-text-dim)]">
-        Fair band: actual price within ±{FAIR_BAND_PCT}% of expected.
+        Within ±{FAIR_BAND} positional rank counts as fair.
       </div>
     </div>
   );
@@ -399,13 +303,6 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: "ga
         {label}
       </div>
       <div
-        className={
-          tone === "gain"
-            ? "text-[var(--color-turf)]"
-            : tone === "loss"
-              ? "text-[var(--color-penalty)]"
-              : ""
-        }
         style={{
           fontFamily: "var(--font-mono)",
           fontSize: "16px",

@@ -5,28 +5,19 @@ import Link from "next/link";
 import clsx from "clsx";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { PlayerAvatar } from "./PlayerAvatar";
-import { fmtPrice } from "@/lib/format";
 import { TEAM_NAMES, TEAM_COLORS } from "@/lib/data/players";
 import type { PlayerSummary, Position } from "@/lib/types";
 
 export interface ValueRow extends PlayerSummary {
   marketPosRank: number;             // 1-indexed market price rank within position
   posPlayers: number;                // total roster players at this position
-  auctionValue: number | null;       // Draft Sharks PPR auction $
   fpPosRank: number | null;          // FantasyPros consensus PPR positional rank
-  posRankDelta: number | null;       // fpPosRank − marketPosRank (positive = market ranks higher than FP)
-  ratio: number | null;              // playerAuction / anchorAuction
-  expectedPriceUsd: number | null;   // anchor.marketPrice × ratio
-  priceVsExpectedUsd: number | null; // priceUsd − expected
-  priceVsExpectedPct: number | null; // (priceUsd − expected) / expected × 100
-  isAnchor: boolean;                 // anchor is highlighted (no Δ vs self)
+  posRankDelta: number | null;       // fpPosRank − marketPosRank
   verdict: "undervalued" | "fair" | "overvalued" | "unranked";
 }
 
 type SortKey =
-  | "priceVsExpectedPct" | "priceVsExpectedUsd" | "expectedPriceUsd"
-  | "priceUsd" | "auctionValue" | "fpPosRank" | "marketPosRank"
-  | "posRankDelta" | "name";
+  | "name" | "marketPosRank" | "fpPosRank" | "posRankDelta";
 
 const POSITIONS: (Position | "ALL")[] = ["ALL", "QB", "RB", "WR", "TE"];
 
@@ -66,13 +57,13 @@ export function ValueTable({ rows }: { rows: ValueRow[] }) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else {
       setSortKey(key);
-      setSortDir(key === "name" || key === "marketPosRank" || key === "fpPosRank" ? "asc" : "desc");
+      // Default to asc for ranks (1 first), desc for everything else.
+      setSortDir(key === "marketPosRank" || key === "fpPosRank" || key === "name" ? "asc" : "desc");
     }
   };
 
   return (
     <div>
-      {/* Toolbar — position filter */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Seg
           options={POSITIONS}
@@ -95,18 +86,13 @@ export function ValueTable({ rows }: { rows: ValueRow[] }) {
       </div>
 
       <div className="overflow-x-auto rounded-[var(--r-14)] border border-[var(--color-line)] bg-[var(--color-bench)]">
-        <table className="w-full min-w-[1080px]">
+        <table className="w-full min-w-[640px]">
           <thead style={{ background: "color-mix(in oklab, var(--color-press) 60%, transparent)" }}>
             <tr className="border-b border-[var(--color-line)]">
-              <Th onClick={() => onSort("name")}             active={sortKey === "name"}             dir={sortDir}>Player</Th>
-              <Th onClick={() => onSort("marketPosRank")}    active={sortKey === "marketPosRank"}    dir={sortDir} align="right" tip="Market positional rank by price">MKT</Th>
-              <Th onClick={() => onSort("fpPosRank")}        active={sortKey === "fpPosRank"}        dir={sortDir} align="right" tip="FantasyPros consensus PPR positional rank">FP</Th>
-              <Th onClick={() => onSort("posRankDelta")}     active={sortKey === "posRankDelta"}     dir={sortDir} align="right" tip="FP rank − market rank (positive = market ranks higher than FP, potentially overvalued)">Δ</Th>
-              <Th onClick={() => onSort("priceUsd")}         active={sortKey === "priceUsd"}         dir={sortDir} align="right">Price</Th>
-              <Th onClick={() => onSort("auctionValue")}     active={sortKey === "auctionValue"}     dir={sortDir} align="right" tip="Draft Sharks PPR auction value">Auction Val</Th>
-              <Th onClick={() => onSort("expectedPriceUsd")} active={sortKey === "expectedPriceUsd"} dir={sortDir} align="right" tip="Anchor price × auction-value ratio">Exp Price</Th>
-              <Th onClick={() => onSort("priceVsExpectedUsd")} active={sortKey === "priceVsExpectedUsd"} dir={sortDir} align="right" tip="Actual − expected (negative = undervalued)">Δ $</Th>
-              <Th onClick={() => onSort("priceVsExpectedPct")} active={sortKey === "priceVsExpectedPct"} dir={sortDir} align="right" tip="Actual − expected as % of expected">Δ %</Th>
+              <Th onClick={() => onSort("name")}          active={sortKey === "name"}          dir={sortDir}>Player</Th>
+              <Th onClick={() => onSort("marketPosRank")} active={sortKey === "marketPosRank"} dir={sortDir} align="right" tip="Sport.fun market positional rank by price">MKT</Th>
+              <Th onClick={() => onSort("fpPosRank")}     active={sortKey === "fpPosRank"}     dir={sortDir} align="right" tip="FantasyPros consensus PPR positional rank">FP</Th>
+              <Th onClick={() => onSort("posRankDelta")}  active={sortKey === "posRankDelta"}  dir={sortDir} align="right" tip="FP rank − market rank (negative = market may be undervaluing)">Δ</Th>
               <Th align="right" className="pr-5">Verdict</Th>
             </tr>
           </thead>
@@ -119,8 +105,7 @@ export function ValueTable({ rows }: { rows: ValueRow[] }) {
                   className="transition-colors duration-[180ms] ease-out hover:bg-[color-mix(in_oklab,var(--color-press)_50%,transparent)]"
                   style={{
                     boxShadow: `inset 4px 0 0 0 ${teamColor}`,
-                    borderBottom: "1px solid color-mix(in oklab, var(--color-line) 50%, transparent)",
-                    background: p.isAnchor ? "color-mix(in oklab, var(--accent) 6%, transparent)" : undefined,
+                    borderBottom: "1px solid var(--color-line)",
                   }}
                 >
                   <Cell>
@@ -129,19 +114,6 @@ export function ValueTable({ rows }: { rows: ValueRow[] }) {
                       <div className="min-w-0">
                         <div className="truncate text-[13px] font-semibold group-hover:text-[var(--accent-soft)]">
                           {p.firstName} {p.lastName}
-                          {p.isAnchor ? (
-                            <span
-                              className="ml-1.5 rounded border border-[var(--accent-line)] bg-[var(--accent-tint)] px-1 py-0.5 align-middle text-[var(--accent-soft)]"
-                              style={{
-                                fontFamily: "var(--font-mono)",
-                                fontSize: "8.5px",
-                                fontWeight: 700,
-                                letterSpacing: "0.16em",
-                              }}
-                            >
-                              ANCHOR
-                            </span>
-                          ) : null}
                         </div>
                         <div
                           style={{
@@ -178,36 +150,17 @@ export function ValueTable({ rows }: { rows: ValueRow[] }) {
                     )}
                   </NumCell>
                   <NumCell>
-                    <RankDelta value={p.posRankDelta} />
-                  </NumCell>
-                  <NumCell>{fmtPrice(p.priceUsd)}</NumCell>
-                  <NumCell>
-                    {p.auctionValue != null ? (
-                      <span className="font-semibold text-[var(--color-text)]">${p.auctionValue}</span>
-                    ) : (
-                      <span style={{ color: "var(--color-text-dim)" }}>—</span>
-                    )}
-                  </NumCell>
-                  <NumCell>
-                    {p.expectedPriceUsd != null
-                      ? p.isAnchor
-                        ? <span style={{ color: "var(--color-text-dim)" }}>—</span>
-                        : fmtPrice(p.expectedPriceUsd)
-                      : <span style={{ color: "var(--color-text-dim)" }}>—</span>}
-                  </NumCell>
-                  <NumDiffCell deltaUsd={p.priceVsExpectedUsd} verdict={p.verdict} isAnchor={p.isAnchor} />
-                  <NumCell>
-                    <PctDelta value={p.priceVsExpectedPct} verdict={p.verdict} isAnchor={p.isAnchor} />
+                    <RankDelta value={p.posRankDelta} verdict={p.verdict} />
                   </NumCell>
                   <Cell className="pr-5 text-right">
-                    <VerdictBadge verdict={p.verdict} isAnchor={p.isAnchor} />
+                    <VerdictBadge verdict={p.verdict} />
                   </Cell>
                 </tr>
               );
             })}
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={10} className="px-5 py-12 text-center text-sm text-[var(--color-text-muted)]">
+                <td colSpan={5} className="px-5 py-12 text-center text-sm text-[var(--color-text-muted)]">
                   No matching players.
                 </td>
               </tr>
@@ -243,85 +196,14 @@ function NumCell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function NumDiffCell({
-  deltaUsd,
-  verdict,
-  isAnchor,
-}: {
-  deltaUsd: number | null;
-  verdict: ValueRow["verdict"];
-  isAnchor: boolean;
-}) {
-  if (isAnchor || deltaUsd == null) {
-    return (
-      <td
-        className="text-right"
-        style={{
-          padding: "10px 12px",
-          fontFamily: "var(--font-mono)",
-          color: "var(--color-text-dim)",
-        }}
-      >
-        —
-      </td>
-    );
-  }
-  // Color background by verdict — mirrors the user's spreadsheet
-  // (red for overvalued, green for undervalued, neutral for fair).
-  const bg =
-    verdict === "overvalued"
-      ? "color-mix(in oklab, var(--color-penalty) 18%, transparent)"
-      : verdict === "undervalued"
-        ? "color-mix(in oklab, var(--color-turf) 18%, transparent)"
-        : "transparent";
-  const fg =
-    verdict === "overvalued"
-      ? "var(--color-penalty)"
-      : verdict === "undervalued"
-        ? "var(--color-turf)"
-        : "var(--color-text)";
-  return (
-    <td
-      className="text-right"
-      style={{
-        padding: "10px 12px",
-        fontFamily: "var(--font-mono)",
-        fontVariantNumeric: "tabular-nums",
-        fontSize: "13px",
-        fontWeight: 700,
-        background: bg,
-        color: fg,
-      }}
-    >
-      {deltaUsd > 0 ? "+" : ""}
-      {fmtPrice(deltaUsd)}
-    </td>
-  );
-}
-
-function PctDelta({ value, verdict, isAnchor }: { value: number | null; verdict: ValueRow["verdict"]; isAnchor: boolean }) {
-  if (isAnchor || value == null) return <span style={{ color: "var(--color-text-dim)" }}>—</span>;
-  const fg =
-    verdict === "overvalued"
-      ? "var(--color-penalty)"
-      : verdict === "undervalued"
-        ? "var(--color-turf)"
-        : "var(--color-text-muted)";
-  return (
-    <span style={{ color: fg, fontWeight: 700 }}>
-      {value > 0 ? "+" : ""}
-      {value.toFixed(1)}%
-    </span>
-  );
-}
-
-function RankDelta({ value }: { value: number | null }) {
+// Δ — negative means FP ranks them higher than market does
+// (potentially undervalued, turf-green). Positive means market ranks
+// them higher (potentially overvalued, penalty-red).
+function RankDelta({ value, verdict }: { value: number | null; verdict: ValueRow["verdict"] }) {
   if (value == null) return <span style={{ color: "var(--color-text-dim)" }}>—</span>;
-  if (value === 0) return <span style={{ color: "var(--color-text-muted)" }}>0</span>;
-  // Positive = auction ranks lower (higher number) than market →
-  // market ranks them higher. Penalty color. Negative = auction
-  // ranks higher than market → market underrates them. Turf color.
-  const fg = value > 0 ? "var(--color-penalty)" : "var(--color-turf)";
+  if (value === 0 || verdict === "fair")
+    return <span style={{ color: "var(--color-text-muted)", fontWeight: 700 }}>{value > 0 ? "+" : ""}{value}</span>;
+  const fg = value < 0 ? "var(--color-turf)" : "var(--color-penalty)";
   return (
     <span style={{ color: fg, fontWeight: 700 }}>
       {value > 0 ? `+${value}` : value}
@@ -329,17 +211,7 @@ function RankDelta({ value }: { value: number | null }) {
   );
 }
 
-function VerdictBadge({ verdict, isAnchor }: { verdict: ValueRow["verdict"]; isAnchor: boolean }) {
-  if (isAnchor) {
-    return (
-      <span
-        className="inline-flex items-center rounded-[var(--r-4)] border border-[var(--accent-line)] bg-[var(--accent-tint)] px-2 py-1 text-[var(--accent-soft)]"
-        style={{ fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 700, letterSpacing: "0.14em" }}
-      >
-        ANCHOR
-      </span>
-    );
-  }
+function VerdictBadge({ verdict }: { verdict: ValueRow["verdict"] }) {
   const map = {
     undervalued: { cls: "border-[color-mix(in_oklab,var(--color-turf)_35%,transparent)] bg-[color-mix(in_oklab,var(--color-turf)_12%,transparent)] text-[var(--color-turf)]", label: "BUY" },
     overvalued:  { cls: "border-[color-mix(in_oklab,var(--color-penalty)_35%,transparent)] bg-[color-mix(in_oklab,var(--color-penalty)_12%,transparent)] text-[var(--color-penalty)]", label: "SELL" },
