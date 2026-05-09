@@ -54,34 +54,43 @@ async function scrapePosition(p: { url: string; pos: DsAuctionPlayer["position"]
   }
 }
 
-// Parses one auction-values page. Strategy: locate every <tr ...> that
-// declares both `data-player-name` and `data-fantasy-position`, then
-// for that row search forward (within ~10KB) for the
-// `data-attribute="dsAuctionValue"` cell and lift `data-value`.
+// Parses one auction-values page. Each player is wrapped in a
+// `<tbody data-player-row data-fantasy-position="QB" data-player-name="..." ...>`
+// element (not <tr> — rows for tier separators use <tr>). Inside each
+// tbody, the `<td data-attribute="dsAuctionValue" data-value="$31">`
+// cell holds the auction value.
 //
-// Tolerant to attribute order and whitespace. Skips rows missing a
-// recognizable `$N` value.
+// Attribute order on the tbody and inside cells varies — we match
+// either ordering. Tag-attributes can span multiple lines.
 export function parseAuctionPage(html: string, pos: DsAuctionPlayer["position"]): DsAuctionPlayer[] {
   const players: DsAuctionPlayer[] = [];
+  const seen = new Set<string>();
 
-  // Match player-row openings. `data-player-name` and
-  // `data-fantasy-position` always appear on the same <tr>.
-  const rowRegex = /<tr\b[^>]*\bdata-player-name="([^"]+)"[^>]*\bdata-fantasy-position="([^"]+)"[^>]*>/gi;
-
+  // Walk the HTML by every `<tbody` opening. Match the full opening
+  // tag including line breaks. Skip closing tags via the `\b` after
+  // the literal `tbody`.
+  const tbodyRegex = /<tbody\b[^>]*>/gi;
   let m: RegExpExecArray | null;
-  while ((m = rowRegex.exec(html)) !== null) {
-    const playerName = m[1];
-    const playerPos = m[2].toUpperCase();
-    if (playerPos !== pos) continue;
+  while ((m = tbodyRegex.exec(html)) !== null) {
+    const tag = m[0];
+    if (!/\bdata-player-row\b/.test(tag)) continue;
 
-    // Slice forward so we capture the row's own cells but not the
-    // next row's. End-of-row marker `</tr>` is the cleanest stop.
-    const rest = html.slice(m.index, m.index + 12000);
-    const endIdx = rest.indexOf("</tr>");
+    const nameMatch = tag.match(/\bdata-player-name="([^"]+)"/);
+    const posMatch = tag.match(/\bdata-fantasy-position="([^"]+)"/);
+    if (!nameMatch || !posMatch) continue;
+
+    const playerName = nameMatch[1];
+    const playerPos = posMatch[1].toUpperCase();
+    if (playerPos !== pos) continue;
+    if (seen.has(playerName)) continue;
+    seen.add(playerName);
+
+    // Slice forward to capture the row's cells. Each player tbody
+    // closes with </tbody>.
+    const rest = html.slice(m.index, m.index + 16000);
+    const endIdx = rest.indexOf("</tbody>");
     const window = endIdx >= 0 ? rest.slice(0, endIdx) : rest;
 
-    // Find dsAuctionValue cell in the window. The order of the two
-    // attributes inside the <td> varies — try both.
     const valueMatch =
       window.match(/data-attribute="dsAuctionValue"[^>]*data-value="([^"]+)"/) ||
       window.match(/data-value="([^"]+)"[^>]*data-attribute="dsAuctionValue"/);
@@ -92,8 +101,6 @@ export function parseAuctionPage(html: string, pos: DsAuctionPlayer["position"])
     const dsAuctionValue = Number(dollar);
     if (!Number.isFinite(dsAuctionValue) || dsAuctionValue < 0) continue;
 
-    // Extract team — there's a <span>BUF</span> right after a class
-    // 'team-position-logo-container'. Best-effort; not load-bearing.
     const teamMatch = window.match(/team-position-logo-container[\s\S]{0,200}?<span>([A-Z]{2,4})<\/span>/);
     const team = teamMatch?.[1] ?? "";
 
@@ -102,11 +109,10 @@ export function parseAuctionPage(html: string, pos: DsAuctionPlayer["position"])
       position: pos,
       team,
       dsAuctionValue,
-      posRank: 0, // placeholder — assigned below after sort
+      posRank: 0,
     });
   }
 
-  // Sort descending by auction value, assign 1-indexed posRank.
   players.sort((a, b) => b.dsAuctionValue - a.dsAuctionValue);
   players.forEach((p, i) => { p.posRank = i + 1; });
   return players;
