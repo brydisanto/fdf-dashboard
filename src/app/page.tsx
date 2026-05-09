@@ -54,7 +54,7 @@ export default async function Home() {
       <LiveTicker movers={tickerMovers} />
 
       <div className="mx-auto max-w-[var(--max-w)] px-5 sm:px-8 py-6 sm:py-8">
-        <Hero listed={players.length} />
+        <Hero />
 
         <section className="mt-6">
           <MarketStatBar
@@ -211,7 +211,7 @@ export default async function Home() {
 // Hero panel — full-width inside the page wrap. 1px line border, r14,
 // 135° gradient bench → press, 48px field-grid decoration, 480x480
 // amber radial glow anchored top-right.
-function Hero({ listed }: { listed: number }) {
+function Hero() {
   return (
     <div
       className="relative overflow-hidden rounded-[var(--r-14)] border border-[var(--color-line)]"
@@ -265,7 +265,7 @@ function Hero({ listed }: { listed: number }) {
           style={{ fontSize: "15px" }}
         >
           Real-time price action, pool liquidity, holders, trades, and value assessment for every
-          tokenized athlete on Sport.fun&apos;s NFL market. {listed} players listed. This is
+          tokenized athlete on Sport.fun&apos;s NFL market. 72 players listed. This is
           Real Football&trade;.
         </p>
       </div>
