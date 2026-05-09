@@ -31,6 +31,7 @@ export function WalletFlowChart({
             dataKey="t"
             tickFormatter={fmtDay}
             stroke="var(--color-text-muted)"
+            tick={{ fill: "var(--color-text)" }}
             tickLine={false}
             axisLine={false}
             fontSize={11}
@@ -38,6 +39,7 @@ export function WalletFlowChart({
           />
           <YAxis
             stroke="var(--color-text-muted)"
+            tick={{ fill: "var(--color-text)" }}
             tickLine={false}
             axisLine={false}
             fontSize={11}

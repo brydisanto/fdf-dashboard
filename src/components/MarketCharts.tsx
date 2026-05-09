@@ -25,7 +25,8 @@ export function MarketCapChart({ data }: { data: PricePoint[] }) {
           <XAxis
             dataKey="t"
             tickFormatter={fmtTick}
-            stroke="var(--color-text-dim)"
+            stroke="var(--color-text-muted)"
+            tick={{ fill: "var(--color-text)" }}
             tickLine={false}
             axisLine={false}
             fontSize={11}
@@ -34,7 +35,8 @@ export function MarketCapChart({ data }: { data: PricePoint[] }) {
           <YAxis
             dataKey="price"
             domain={["auto", "auto"]}
-            stroke="var(--color-text-dim)"
+            stroke="var(--color-text-muted)"
+            tick={{ fill: "var(--color-text)" }}
             tickFormatter={(v) => fmtUsd(v, { compact: true })}
             tickLine={false}
             axisLine={false}
@@ -74,7 +76,8 @@ export function VolumeChart({ data }: { data: PricePoint[] }) {
           <XAxis
             dataKey="t"
             tickFormatter={(t) => new Date(t).toLocaleTimeString("en-US", { hour: "numeric" })}
-            stroke="var(--color-text-dim)"
+            stroke="var(--color-text-muted)"
+            tick={{ fill: "var(--color-text)" }}
             tickLine={false}
             axisLine={false}
             fontSize={11}
@@ -82,7 +85,8 @@ export function VolumeChart({ data }: { data: PricePoint[] }) {
           />
           <YAxis
             dataKey="volume"
-            stroke="var(--color-text-dim)"
+            stroke="var(--color-text-muted)"
+            tick={{ fill: "var(--color-text)" }}
             tickFormatter={(v) => fmtUsd(v, { compact: true })}
             tickLine={false}
             axisLine={false}

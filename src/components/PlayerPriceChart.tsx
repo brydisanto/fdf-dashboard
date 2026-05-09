@@ -60,7 +60,8 @@ export function PlayerPriceChart({
             <XAxis
               dataKey="t"
               tickFormatter={fmtTick}
-              stroke="var(--color-text-dim)"
+              stroke="var(--color-text-muted)"
+              tick={{ fill: "var(--color-text)" }}
               tickLine={false}
               axisLine={false}
               fontSize={11}
@@ -69,7 +70,8 @@ export function PlayerPriceChart({
             <YAxis
               dataKey="price"
               domain={["auto", "auto"]}
-              stroke="var(--color-text-dim)"
+              stroke="var(--color-text-muted)"
+              tick={{ fill: "var(--color-text)" }}
               tickFormatter={(v) => fmtPrice(v as number)}
               tickLine={false}
               axisLine={false}

@@ -97,6 +97,7 @@ export function MarketPulse({
                   dataKey="t"
                   tickFormatter={fmtDay}
                   stroke="var(--color-text-muted)"
+                  tick={{ fill: "var(--color-text)" }}
                   tickLine={false}
                   axisLine={false}
                   fontSize={11}
@@ -104,6 +105,7 @@ export function MarketPulse({
                 />
                 <YAxis
                   stroke="var(--color-text-muted)"
+                  tick={{ fill: "var(--color-text)" }}
                   tickLine={false}
                   axisLine={false}
                   fontSize={11}
@@ -135,8 +137,8 @@ export function MarketPulse({
                 ]}
                 margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
               >
-                <XAxis dataKey="label" stroke="var(--color-text-muted)" tickLine={false} axisLine={false} fontSize={11} />
-                <YAxis stroke="var(--color-text-muted)" tickLine={false} axisLine={false} fontSize={11} width={56} tickFormatter={(v) => fmtUsd(Number(v), { compact: true })} />
+                <XAxis dataKey="label" stroke="var(--color-text-muted)" tick={{ fill: "var(--color-text)" }} tickLine={false} axisLine={false} fontSize={11} />
+                <YAxis stroke="var(--color-text-muted)" tick={{ fill: "var(--color-text)" }} tickLine={false} axisLine={false} fontSize={11} width={56} tickFormatter={(v) => fmtUsd(Number(v), { compact: true })} />
                 <ReferenceLine y={0} stroke="var(--color-border-strong)" />
                 <Tooltip
                   cursor={{ fill: "rgba(255,255,255,0.05)" }}
