@@ -12,12 +12,14 @@ export interface ValueRow extends PlayerSummary {
   marketPosRank: number;             // 1-indexed market price rank within position
   posPlayers: number;                // total roster players at this position
   fpPosRank: number | null;          // FantasyPros consensus PPR positional rank
-  posRankDelta: number | null;       // fpPosRank − marketPosRank
+  udPosRank: number | null;          // Underdog Sports PPR positional rank
+  industryAvgRank: number | null;    // mean(fpPosRank, udPosRank) when present
+  posRankDelta: number | null;       // industryAvgRank − marketPosRank
   verdict: "undervalued" | "fair" | "overvalued" | "unranked";
 }
 
 type SortKey =
-  | "name" | "marketPosRank" | "fpPosRank" | "posRankDelta";
+  | "name" | "marketPosRank" | "fpPosRank" | "udPosRank" | "industryAvgRank" | "posRankDelta";
 
 const POSITIONS: (Position | "ALL")[] = ["ALL", "QB", "RB", "WR", "TE"];
 
@@ -58,7 +60,8 @@ export function ValueTable({ rows }: { rows: ValueRow[] }) {
     else {
       setSortKey(key);
       // Default to asc for ranks (1 first), desc for everything else.
-      setSortDir(key === "marketPosRank" || key === "fpPosRank" || key === "name" ? "asc" : "desc");
+      const ascKeys = new Set<SortKey>(["name", "marketPosRank", "fpPosRank", "udPosRank", "industryAvgRank"]);
+      setSortDir(ascKeys.has(key) ? "asc" : "desc");
     }
   };
 
@@ -86,14 +89,36 @@ export function ValueTable({ rows }: { rows: ValueRow[] }) {
       </div>
 
       <div className="overflow-x-auto rounded-[var(--r-14)] border border-[var(--color-line)] bg-[var(--color-bench)]">
-        <table className="w-full min-w-[640px]">
+        <table className="w-full min-w-[860px]">
           <thead style={{ background: "color-mix(in oklab, var(--color-press) 60%, transparent)" }}>
+            {/* Two-row header: top groups the three industry-rank columns */}
             <tr className="border-b border-[var(--color-line)]">
-              <Th onClick={() => onSort("name")}          active={sortKey === "name"}          dir={sortDir}>Player</Th>
-              <Th onClick={() => onSort("marketPosRank")} active={sortKey === "marketPosRank"} dir={sortDir} align="center" tip="Sport.fun market positional rank by price">FDF Ranking</Th>
-              <Th onClick={() => onSort("fpPosRank")}     active={sortKey === "fpPosRank"}     dir={sortDir} align="center" tip="FantasyPros consensus PPR positional rank">FP Ranking</Th>
-              <Th onClick={() => onSort("posRankDelta")}  active={sortKey === "posRankDelta"}  dir={sortDir} align="center" tip="FP rank − market rank (negative = market may be undervaluing)">Difference</Th>
-              <Th align="center" className="pr-5">Verdict</Th>
+              <th rowSpan={2} className="px-3 py-3 select-none text-left" style={groupHeadStyle}>Player</th>
+              <th rowSpan={2} className="px-3 py-3 select-none text-center" style={groupHeadStyle} title="Sport.fun market positional rank by price">
+                <SortHeader sortKey="marketPosRank" current={sortKey} dir={sortDir} onSort={onSort} align="center">
+                  FDF Ranking
+                </SortHeader>
+              </th>
+              <th colSpan={3} className="px-3 py-2.5 text-center" style={{ ...groupHeadStyle, color: "var(--accent-soft)", borderBottom: "1px solid var(--color-line)" }}>
+                Industry Rankings
+              </th>
+              <th rowSpan={2} className="px-3 py-3 select-none text-center" style={groupHeadStyle} title="Industry avg − market rank (negative = market may be undervaluing)">
+                <SortHeader sortKey="posRankDelta" current={sortKey} dir={sortDir} onSort={onSort} align="center">
+                  Difference
+                </SortHeader>
+              </th>
+              <th rowSpan={2} className="px-3 py-3 select-none text-center pr-5" style={groupHeadStyle}>Verdict</th>
+            </tr>
+            <tr className="border-b border-[var(--color-line)]">
+              <th className="px-3 py-2 text-center" style={groupHeadStyle} title="FantasyPros consensus PPR positional rank">
+                <SortHeader sortKey="fpPosRank" current={sortKey} dir={sortDir} onSort={onSort} align="center">FP</SortHeader>
+              </th>
+              <th className="px-3 py-2 text-center" style={groupHeadStyle} title="Underdog Sports PPR positional rank">
+                <SortHeader sortKey="udPosRank" current={sortKey} dir={sortDir} onSort={onSort} align="center">UD</SortHeader>
+              </th>
+              <th className="px-3 py-2 text-center" style={groupHeadStyle} title="Average of FP + UD positional ranks">
+                <SortHeader sortKey="industryAvgRank" current={sortKey} dir={sortDir} onSort={onSort} align="center">Avg</SortHeader>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -148,6 +173,28 @@ export function ValueTable({ rows }: { rows: ValueRow[] }) {
                     )}
                   </NumCell>
                   <NumCell>
+                    {p.udPosRank != null ? (
+                      <span style={{ color: "var(--color-text)" }}>
+                        {p.position}
+                        {p.udPosRank}
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--color-text-dim)" }}>—</span>
+                    )}
+                  </NumCell>
+                  <NumCell>
+                    {p.industryAvgRank != null ? (
+                      <span style={{ color: "var(--accent-soft)", fontWeight: 700 }}>
+                        {p.position}
+                        {Number.isInteger(p.industryAvgRank)
+                          ? p.industryAvgRank
+                          : p.industryAvgRank.toFixed(1)}
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--color-text-dim)" }}>—</span>
+                    )}
+                  </NumCell>
+                  <NumCell>
                     <RankDelta value={p.posRankDelta} verdict={p.verdict} />
                   </NumCell>
                   <Cell className="pr-5 text-center">
@@ -158,7 +205,7 @@ export function ValueTable({ rows }: { rows: ValueRow[] }) {
             })}
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-5 py-12 text-center text-sm text-[var(--color-text-muted)]">
+                <td colSpan={7} className="px-5 py-12 text-center text-sm text-[var(--color-text-muted)]">
                   No matching players.
                 </td>
               </tr>
@@ -194,19 +241,17 @@ function NumCell({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Δ — negative means FP ranks them higher than market does
+// Δ — negative means industry avg ranks them higher than market does
 // (potentially undervalued, turf-green). Positive means market ranks
 // them higher (potentially overvalued, penalty-red).
 function RankDelta({ value, verdict }: { value: number | null; verdict: ValueRow["verdict"] }) {
   if (value == null) return <span style={{ color: "var(--color-text-dim)" }}>—</span>;
+  const display = Number.isInteger(value) ? `${value}` : value.toFixed(1);
+  const signed = value > 0 ? `+${display}` : display;
   if (value === 0 || verdict === "fair")
-    return <span style={{ color: "var(--color-text-muted)", fontWeight: 700 }}>{value > 0 ? "+" : ""}{value}</span>;
+    return <span style={{ color: "var(--color-text-muted)", fontWeight: 700 }}>{signed}</span>;
   const fg = value < 0 ? "var(--color-turf)" : "var(--color-penalty)";
-  return (
-    <span style={{ color: fg, fontWeight: 700 }}>
-      {value > 0 ? `+${value}` : value}
-    </span>
-  );
+  return <span style={{ color: fg, fontWeight: 700 }}>{signed}</span>;
 }
 
 function VerdictBadge({ verdict, delta }: { verdict: ValueRow["verdict"]; delta: number | null }) {
@@ -226,7 +271,8 @@ function VerdictBadge({ verdict, delta }: { verdict: ValueRow["verdict"]; delta:
       <span>{m.label}</span>
       {showDelta ? (
         <span className="opacity-80">
-          {delta > 0 ? `+${delta}` : delta}
+          {delta > 0 ? "+" : ""}
+          {Number.isInteger(delta) ? delta : delta.toFixed(1)}
         </span>
       ) : null}
     </span>
@@ -275,58 +321,51 @@ function Seg<T extends string>({
   );
 }
 
-function Th({
+// Shared style for column headers (top + sub rows in the grouped header).
+const groupHeadStyle: React.CSSProperties = {
+  fontFamily: "var(--font-mono)",
+  fontSize: "10px",
+  fontWeight: 600,
+  letterSpacing: "0.18em",
+  textTransform: "uppercase",
+  color: "var(--color-text-dim)",
+};
+
+function SortHeader({
   children,
-  onClick,
-  active,
+  sortKey,
+  current,
   dir,
+  onSort,
   align = "left",
-  className,
-  tip,
 }: {
   children: React.ReactNode;
-  onClick?: () => void;
-  active?: boolean;
-  dir?: "asc" | "desc";
+  sortKey: SortKey;
+  current: SortKey;
+  dir: "asc" | "desc";
+  onSort: (key: SortKey) => void;
   align?: "left" | "center" | "right";
-  className?: string;
-  tip?: string;
 }) {
+  const active = current === sortKey;
   return (
-    <th
-      className={clsx("px-3 py-3 select-none", className)}
-      style={{
-        fontFamily: "var(--font-mono)",
-        fontSize: "10px",
-        fontWeight: 600,
-        letterSpacing: "0.18em",
-        textTransform: "uppercase",
-        color: active ? "var(--color-text)" : "var(--color-text-dim)",
-        textAlign: align,
-      }}
-      title={tip}
-    >
-      {onClick ? (
-        <button
-          onClick={onClick}
-          className={clsx(
-            "inline-flex items-center gap-1 hover:text-[var(--color-text)]",
-            align === "right" && "ml-auto",
-            align === "center" && "mx-auto",
-          )}
-        >
-          <span>{children}</span>
-          {active && dir ? (
-            dir === "asc" ? (
-              <ChevronUp className="h-3 w-3" strokeWidth={1.5} />
-            ) : (
-              <ChevronDown className="h-3 w-3" strokeWidth={1.5} />
-            )
-          ) : null}
-        </button>
-      ) : (
-        children
+    <button
+      onClick={() => onSort(sortKey)}
+      className={clsx(
+        "inline-flex items-center gap-1 hover:text-[var(--color-text)]",
+        align === "right" && "ml-auto",
+        align === "center" && "mx-auto",
+        active && "text-[var(--color-text)]",
       )}
-    </th>
+      style={{ color: active ? "var(--color-text)" : "var(--color-text-dim)" }}
+    >
+      <span>{children}</span>
+      {active ? (
+        dir === "asc" ? (
+          <ChevronUp className="h-3 w-3" strokeWidth={1.5} />
+        ) : (
+          <ChevronDown className="h-3 w-3" strokeWidth={1.5} />
+        )
+      ) : null}
+    </button>
   );
 }

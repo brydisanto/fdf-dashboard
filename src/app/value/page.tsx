@@ -6,6 +6,7 @@ import {
   indexFpByName,
   normalizeName,
 } from "@/lib/data/fantasypros";
+import { getUnderdogRankings, indexUdByName } from "@/lib/data/underdog";
 import { Card, CardHeader, Pill } from "@/components/ui";
 import { ValueTable, type ValueRow } from "@/components/ValueTable";
 import { fmtNum } from "@/lib/format";
@@ -28,6 +29,10 @@ const FAIR_BAND = 1;
 export default async function ValuePage() {
   const [players, fp] = await Promise.all([getPlayers(), getFantasyProsRankings()]);
   const fpByName = indexFpByName(fp);
+  // Underdog is sourced from a static snapshot file (no server-side
+  // fetch — Cloudflare blocks the runtime). Refreshed periodically by
+  // re-running the Chrome MCP scrape into underdog-rankings.json.
+  const udByName = indexUdByName(getUnderdogRankings());
 
   // Group roster by position; market positional rank within each.
   const byPos = new Map<Position, typeof players>();
@@ -43,20 +48,35 @@ export default async function ValuePage() {
     list.forEach((p, i) => marketPosRank.set(p.id, { rank: i + 1, size: list.length }));
   }
 
-  // Build rows. Single-source rank disparity model:
-  //   posRankDelta = fpPosRank − marketPosRank
-  // Negative Δ → FP ranks them higher than market does (FP says
-  // they're better) → market may be UNDERVALUING them.
-  // Positive Δ → market ranks them higher than FP → market may be
-  // OVERVALUING them.
+  // Build rows. Industry-average rank model:
+  //   industryAvgRank = mean(fpPosRank, udPosRank) when both present
+  //                   = whichever single one is present
+  //                   = null if neither
+  //   posRankDelta    = industryAvgRank − marketPosRank
+  // Negative Δ → industry ranks them higher than market → market may
+  // be UNDERVALUING them. Positive → market ranks them higher than
+  // industry → market may be OVERVALUING them.
   const rows: ValueRow[] = players
     .filter((p) => POS.includes(p.position as Position))
     .map((p) => {
       const market = marketPosRank.get(p.id) ?? { rank: 0, size: 0 };
-      const fpHit = fpByName.get(normalizeName(`${p.firstName} ${p.lastName}`));
+      const nameKey = normalizeName(`${p.firstName} ${p.lastName}`);
+      const fpHit = fpByName.get(nameKey);
+      const udHit = udByName.get(nameKey);
       const fpPosRank = fpHit?.posRankNum && fpHit.posRankNum > 0 ? fpHit.posRankNum : null;
+      const udPosRank = udHit?.posRank && udHit.posRank > 0 ? udHit.posRank : null;
+
+      const industryRanks = [fpPosRank, udPosRank].filter(
+        (r): r is number => r != null,
+      );
+      const industryAvgRank = industryRanks.length
+        ? industryRanks.reduce((a, b) => a + b, 0) / industryRanks.length
+        : null;
+
       const posRankDelta =
-        fpPosRank != null && market.rank > 0 ? fpPosRank - market.rank : null;
+        industryAvgRank != null && market.rank > 0
+          ? +(industryAvgRank - market.rank).toFixed(1)
+          : null;
 
       let verdict: ValueRow["verdict"] = "unranked";
       if (posRankDelta != null) {
@@ -70,6 +90,8 @@ export default async function ValuePage() {
         marketPosRank: market.rank,
         posPlayers: market.size,
         fpPosRank,
+        udPosRank,
+        industryAvgRank,
         posRankDelta,
         verdict,
       };
