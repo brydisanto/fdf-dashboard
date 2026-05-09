@@ -257,40 +257,98 @@ function NumCell({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Pick a foreground color along a magnitude ramp so small disparities
+// stay calm (yellow-ish / pale-green) and large ones get loud (red /
+// vivid green). The ramps are 3-stop on each side so the eye can tell
+// "mild / moderate / severe" without any extra label.
+//
+// Cutoffs (|Δ|): 0–1 fair, 1–3 mild, 3–6 moderate, 6+ severe.
+function deltaTone(value: number | null): {
+  fg: string;
+  tier: "fair" | "unranked" | "under-mild" | "under-mod" | "under-sev" | "over-mild" | "over-mod" | "over-sev";
+} {
+  if (value == null) return { fg: "var(--color-text-dim)", tier: "unranked" };
+  const abs = Math.abs(value);
+  if (abs <= 1) return { fg: "var(--color-text-muted)", tier: "fair" };
+  if (value < 0) {
+    // Undervalued ramp: pale → turf → vivid
+    if (abs <= 3) return { fg: "oklch(0.80 0.13 145)", tier: "under-mild" };
+    if (abs <= 6) return { fg: "var(--color-turf)", tier: "under-mod" };
+    return { fg: "oklch(0.70 0.22 156)", tier: "under-sev" };
+  }
+  // Overvalued ramp: yellow → orange → penalty red
+  if (abs <= 3) return { fg: "oklch(0.82 0.14 90)", tier: "over-mild" };
+  if (abs <= 6) return { fg: "oklch(0.74 0.18 50)", tier: "over-mod" };
+  return { fg: "var(--color-penalty)", tier: "over-sev" };
+}
+
 // Δ — negative means industry avg ranks them higher than market does
-// (potentially undervalued, turf-green). Positive means market ranks
-// them higher (potentially overvalued, penalty-red).
+// (potentially undervalued, green ramp). Positive means market ranks
+// them higher (potentially overvalued, yellow→orange→red ramp).
 function RankDelta({ value, verdict }: { value: number | null; verdict: ValueRow["verdict"] }) {
   if (value == null) return <span style={{ color: "var(--color-text-dim)" }}>—</span>;
   const display = Number.isInteger(value) ? `${value}` : value.toFixed(1);
   const signed = value > 0 ? `+${display}` : display;
   if (value === 0 || verdict === "fair")
     return <span style={{ color: "var(--color-text-muted)", fontWeight: 700 }}>{signed}</span>;
-  const fg = value < 0 ? "var(--color-turf)" : "var(--color-penalty)";
+  const { fg } = deltaTone(value);
   return <span style={{ color: fg, fontWeight: 700 }}>{signed}</span>;
 }
 
 function VerdictBadge({ verdict, delta }: { verdict: ValueRow["verdict"]; delta: number | null }) {
-  const map = {
-    undervalued: { cls: "border-[color-mix(in_oklab,var(--color-turf)_35%,transparent)] bg-[color-mix(in_oklab,var(--color-turf)_12%,transparent)] text-[var(--color-turf)]", label: "UNDERVALUED" },
-    overvalued:  { cls: "border-[color-mix(in_oklab,var(--color-penalty)_35%,transparent)] bg-[color-mix(in_oklab,var(--color-penalty)_12%,transparent)] text-[var(--color-penalty)]", label: "OVERVALUED" },
-    fair:        { cls: "border-[var(--color-line)] bg-[var(--color-press)] text-[var(--color-text-muted)]", label: "FAIR" },
-    unranked:    { cls: "border-[var(--color-line)] bg-transparent text-[var(--color-text-dim)]", label: "—" },
-  };
-  const m = map[verdict];
-  const showDelta = verdict !== "unranked" && delta != null;
+  if (verdict === "unranked" || delta == null) {
+    return (
+      <span
+        className="inline-flex items-center rounded-[var(--r-4)] border border-[var(--color-line)] bg-transparent px-2 py-1 text-[var(--color-text-dim)]"
+        style={{ fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 700, letterSpacing: "0.14em" }}
+      >
+        —
+      </span>
+    );
+  }
+  if (verdict === "fair") {
+    const display = delta === 0
+      ? "0"
+      : Number.isInteger(delta) ? `${delta > 0 ? "+" : ""}${delta}` : `${delta > 0 ? "+" : ""}${delta.toFixed(1)}`;
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-[var(--r-4)] border border-[var(--color-line)] bg-[var(--color-press)] px-2 py-1 text-[var(--color-text-muted)]"
+        style={{ fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 700, letterSpacing: "0.14em" }}
+      >
+        <span>FAIR</span>
+        <span className="opacity-80">{display}</span>
+      </span>
+    );
+  }
+  // Magnitude-shaded pill: bg + border are color-mixed from the same
+  // ramp foreground so mild Δs read soft and severe Δs read bold.
+  const { fg, tier } = deltaTone(delta);
+  const label = verdict === "undervalued" ? "UNDERVALUED" : "OVERVALUED";
+  // Modifier prefix to communicate magnitude verbally too.
+  const modifier =
+    tier.endsWith("sev") ? "STRONGLY " :
+    tier.endsWith("mod") ? "" :
+    "MILDLY ";
+  const display = Number.isInteger(delta) ? `${delta > 0 ? "+" : ""}${delta}` : `${delta > 0 ? "+" : ""}${delta.toFixed(1)}`;
   return (
     <span
-      className={clsx("inline-flex items-center gap-1 rounded-[var(--r-4)] border px-2 py-1", m.cls)}
-      style={{ fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 700, letterSpacing: "0.14em" }}
+      className="inline-flex items-center gap-1 rounded-[var(--r-4)] border px-2 py-1"
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: "10px",
+        fontWeight: 700,
+        letterSpacing: "0.14em",
+        color: fg,
+        background: `color-mix(in oklab, ${fg} 12%, transparent)`,
+        borderColor: `color-mix(in oklab, ${fg} 40%, transparent)`,
+      }}
+      title={`${modifier}${label} · Δ ${display}`}
     >
-      <span>{m.label}</span>
-      {showDelta ? (
-        <span className="opacity-80">
-          {delta > 0 ? "+" : ""}
-          {Number.isInteger(delta) ? delta : delta.toFixed(1)}
-        </span>
-      ) : null}
+      <span>
+        {modifier}
+        {label}
+      </span>
+      <span className="opacity-80">{display}</span>
     </span>
   );
 }
