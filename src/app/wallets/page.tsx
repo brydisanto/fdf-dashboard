@@ -19,7 +19,12 @@ export const revalidate = 60;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 export default async function WalletsPage() {
-  const wallets = await getTopNflWallets(100, 100);
+  // Reach for top 500 globally with up to 250 holders per pool.
+  // The aggregation already runs once per cache window, so deeper
+  // per-pool sampling is "free" within the same render and surfaces
+  // wallets that only appear mid-pack in any single pool but hold
+  // across many.
+  const wallets = await getTopNflWallets(500, 250);
 
   // Headline stats — derived once, server-side.
   const total = wallets.length;

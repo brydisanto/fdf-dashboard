@@ -14,11 +14,13 @@ type SortKey = "nflValueUsd" | "positions" | "firstHeldAt" | "lastActiveAt";
 type TierFilter = "ALL" | WalletTier;
 
 const TIERS: TierFilter[] = ["ALL", "whale", "shark", "dolphin", "fish", "shrimp"];
+const PAGE_SIZE = 25;
 
 export function TopWalletsTable({ wallets }: { wallets: TopNflWallet[] }) {
   const [tier, setTier] = useState<TierFilter>("ALL");
   const [sortKey, setSortKey] = useState<SortKey>("nflValueUsd");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [page, setPage] = useState(0);
 
   const filtered = useMemo(() => {
     let list = wallets.slice();
@@ -41,10 +43,21 @@ export function TopWalletsTable({ wallets }: { wallets: TopNflWallet[] }) {
       // first/last activity natural-asc reads as "oldest first"; flip to desc.
       setSortDir(key === "firstHeldAt" ? "asc" : "desc");
     }
+    setPage(0);
   };
 
   // Reference: largest NFL value drives the bar widths in the value cell.
+  // Pinned to the top of the *current sort* so bars rescale per filter
+  // (e.g. filtering to Sharks rebases bars to the top Shark, not the
+  // global top).
   const top = filtered[0]?.nflValueUsd ?? 0;
+
+  // Pagination math — clamp page when filter shrinks the list.
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const start = safePage * PAGE_SIZE;
+  const end = Math.min(start + PAGE_SIZE, filtered.length);
+  const pageRows = filtered.slice(start, end);
 
   return (
     <div>
@@ -56,7 +69,10 @@ export function TopWalletsTable({ wallets }: { wallets: TopNflWallet[] }) {
         <Seg
           options={TIERS}
           value={tier}
-          onChange={(v) => setTier(v as TierFilter)}
+          onChange={(v) => {
+            setTier(v as TierFilter);
+            setPage(0);
+          }}
           renderLabel={(t) => (t === "ALL" ? "ALL" : tierLabel(t as WalletTier).toUpperCase())}
         />
         <span
@@ -97,7 +113,8 @@ export function TopWalletsTable({ wallets }: { wallets: TopNflWallet[] }) {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((w, i) => {
+            {pageRows.map((w, i) => {
+              const globalIdx = start + i;
               const meta = TIER_META[w.tier];
               const barPct = top > 0 ? (w.nflValueUsd / top) * 100 : 0;
               const topPlayer = w.topPositionPlayerId ? ROSTER_BY_ID.get(w.topPositionPlayerId) : null;
@@ -118,7 +135,7 @@ export function TopWalletsTable({ wallets }: { wallets: TopNflWallet[] }) {
                       textAlign: "center",
                     }}
                   >
-                    {i + 1}
+                    {globalIdx + 1}
                   </td>
                   <Cell>
                     <Link
@@ -214,7 +231,77 @@ export function TopWalletsTable({ wallets }: { wallets: TopNflWallet[] }) {
           </tbody>
         </table>
       </div>
+
+      {filtered.length > PAGE_SIZE ? (
+        <div
+          className="flex items-center justify-between gap-3 border-t border-[var(--color-line)] px-5 py-3"
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            letterSpacing: "0.06em",
+            color: "var(--color-text-muted)",
+          }}
+        >
+          <span>
+            Showing <span style={{ color: "var(--color-text)", fontWeight: 700 }}>{start + 1}–{end}</span>
+            {" "}of{" "}
+            <span style={{ color: "var(--color-text)", fontWeight: 700 }}>{filtered.length}</span>
+          </span>
+          <div className="flex items-center gap-2">
+            <PageBtn onClick={() => setPage(0)} disabled={safePage === 0}>« First</PageBtn>
+            <PageBtn onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={safePage === 0}>Prev</PageBtn>
+            <span
+              className="px-2"
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                fontWeight: 700,
+                color: "var(--color-text)",
+                fontVariantNumeric: "tabular-nums",
+                letterSpacing: "0.04em",
+              }}
+            >
+              {safePage + 1} / {pageCount}
+            </span>
+            <PageBtn onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={safePage === pageCount - 1}>Next</PageBtn>
+            <PageBtn onClick={() => setPage(pageCount - 1)} disabled={safePage === pageCount - 1}>Last »</PageBtn>
+          </div>
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+function PageBtn({
+  children,
+  onClick,
+  disabled,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={clsx(
+        "rounded-[var(--r-4)] border border-[var(--color-line)] bg-[var(--color-press)] px-2.5 py-1 transition-colors",
+        disabled
+          ? "cursor-not-allowed opacity-40"
+          : "hover:border-[var(--accent-line)] hover:text-[var(--accent-soft)]",
+      )}
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: 10.5,
+        fontWeight: 600,
+        letterSpacing: "0.14em",
+        textTransform: "uppercase",
+        color: "var(--color-text-muted)",
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
