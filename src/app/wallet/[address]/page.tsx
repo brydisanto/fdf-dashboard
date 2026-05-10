@@ -7,6 +7,7 @@ import { tierLabel, TIER_META } from "@/components/WalletBadge";
 import { CompositionPie, type CompositionSlice } from "@/components/CompositionPie";
 import { WalletFlowChart } from "@/components/WalletFlowChart";
 import { WalletHoldingsTable } from "@/components/WalletHoldingsTable";
+import { getWalletLabel } from "@/lib/data/wallet-labels";
 import { fmtNum, fmtTimeAgo, fmtUsd, shortAddr } from "@/lib/format";
 
 export const revalidate = 60;
@@ -16,7 +17,12 @@ export const revalidate = 60;
 const COLOR_SOCCER = "var(--color-broadcast)";
 
 export default async function WalletPage(props: PageProps<"/wallet/[address]">) {
-  const { address } = await props.params;
+  const { address: rawAddress } = await props.params;
+  // Normalize to lowercase for downstream API calls — Tenero
+  // accepts lowercase reliably; mixed-case checksum addresses can
+  // 404 depending on which case the user pasted in. Internal
+  // caches and the trade-feed map already key off lowercase.
+  const address = rawAddress.toLowerCase();
   const [profile, flow, fun] = await Promise.all([
     getWalletPortfolio(address),
     getWalletFlow(address, 7),
@@ -38,6 +44,9 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
 
   // Top NFL holding by USD — drives the TOP HOLDING stat cell.
   const topNflHolding = nflHoldings.slice().sort((a, b) => b.balanceValueUsd - a.balanceValueUsd)[0];
+
+  // Friendly label (e.g. "FDF Marketplace") if this is a known wallet.
+  const label = getWalletLabel(address);
 
   const slices: CompositionSlice[] = [
     { key: "nfl", label: "NFL", value: nflValue, color: "var(--accent)" },
@@ -115,21 +124,50 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
                 </Pill>
               ) : null}
               <Pill tone="muted">{profile.holdingsCount} HOLDINGS</Pill>
+              {label?.systemWallet ? <Pill tone="info">SYSTEM WALLET</Pill> : null}
               {flow.rotationDirection === "into-nfl" ? <Pill tone="gain">ROTATING INTO NFL</Pill> : null}
               {flow.rotationDirection === "out-of-nfl" ? <Pill tone="loss">ROTATING OUT OF NFL</Pill> : null}
             </div>
-            <h1
-              className="m-0"
-              style={{
-                fontFamily: "var(--font-display)",
-                fontWeight: 800,
-                fontSize: "clamp(28px, 3.5vw, 48px)",
-                lineHeight: 1,
-                letterSpacing: "0.005em",
-              }}
-            >
-              {shortAddr(address, 6, 6).toUpperCase()}
-            </h1>
+            {label ? (
+              <>
+                <h1
+                  className="m-0"
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontWeight: 800,
+                    fontSize: "clamp(28px, 3.5vw, 48px)",
+                    lineHeight: 1,
+                    letterSpacing: "0.005em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {label.name}
+                </h1>
+                <div
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 12,
+                    color: "var(--color-text-dim)",
+                    marginTop: -4,
+                  }}
+                >
+                  {shortAddr(address, 8, 8)}
+                </div>
+              </>
+            ) : (
+              <h1
+                className="m-0"
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontWeight: 800,
+                  fontSize: "clamp(28px, 3.5vw, 48px)",
+                  lineHeight: 1,
+                  letterSpacing: "0.005em",
+                }}
+              >
+                {shortAddr(address, 6, 6).toUpperCase()}
+              </h1>
+            )}
             <div
               className="flex flex-wrap items-center gap-x-4 gap-y-1"
               style={{

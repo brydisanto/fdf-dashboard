@@ -2,6 +2,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import { Fish, Sparkles } from "lucide-react";
 import { fmtUsd, shortAddr } from "@/lib/format";
+import { getWalletLabel } from "@/lib/data/wallet-labels";
 import type { WalletTier } from "@/lib/types";
 
 // Single source of truth for tier visuals — the wallet page hero
@@ -91,6 +92,7 @@ export function WalletBadge({
   compact?: boolean;
 }) {
   const meta = TIER_META[tier];
+  const label = getWalletLabel(address);
   // NFL-only — never fall back to total. A wallet currently
   // holding 0 NFL displays $0 here even if it has Soccer / $FUN
   // balances; the badge is specifically the NFL portfolio value.
@@ -133,12 +135,16 @@ export function WalletBadge({
       {!compact ? (
         <span
           style={{
-            fontFamily: "var(--font-mono)",
+            // Labelled wallets render their friendly name in the UI
+            // font (and pull a touch brighter) so they read as
+            // "this is a known entity" instead of "anonymous addr".
+            fontFamily: label ? "var(--font-ui)" : "var(--font-mono)",
             fontSize: "11px",
-            color: "var(--color-text-muted)",
+            fontWeight: label ? 600 : undefined,
+            color: label ? "var(--color-text)" : "var(--color-text-muted)",
           }}
         >
-          {shortAddr(address)}
+          {label ? label.name : shortAddr(address)}
         </span>
       ) : null}
       <span className="h-3 w-px bg-[var(--color-line)]" />

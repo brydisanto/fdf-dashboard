@@ -7,6 +7,7 @@ import { ChevronDown, ChevronUp, Fish } from "lucide-react";
 import { fmtNum, fmtTimeAgo, fmtUsd, shortAddr } from "@/lib/format";
 import { TIER_META, tierLabel } from "./WalletBadge";
 import { ROSTER_BY_ID } from "@/lib/data/roster";
+import { getWalletLabel } from "@/lib/data/wallet-labels";
 import type { TopNflWallet } from "@/lib/data";
 import type { WalletTier } from "@/lib/types";
 
@@ -142,9 +143,12 @@ export function TopWalletsTable({ wallets }: { wallets: TopNflWallet[] }) {
                       href={`/wallet/${w.address}`}
                       className="inline-flex items-center gap-2 hover:text-[var(--color-text)]"
                       style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 12,
-                        color: "var(--color-text-muted)",
+                        fontFamily: getWalletLabel(w.address) ? "var(--font-ui)" : "var(--font-mono)",
+                        fontSize: 12.5,
+                        fontWeight: getWalletLabel(w.address) ? 600 : undefined,
+                        color: getWalletLabel(w.address)
+                          ? "var(--color-text)"
+                          : "var(--color-text-muted)",
                       }}
                     >
                       <Fish
@@ -152,7 +156,7 @@ export function TopWalletsTable({ wallets }: { wallets: TopNflWallet[] }) {
                         height={meta.iconPx}
                         style={{ color: meta.color }}
                       />
-                      {shortAddr(w.address, 6, 6)}
+                      {getWalletLabel(w.address)?.name ?? shortAddr(w.address, 6, 6)}
                     </Link>
                   </Cell>
                   <CenterCell>

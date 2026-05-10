@@ -860,7 +860,7 @@ export async function getTopNflWallets(limit = 100, perPool = 100): Promise<TopN
     }
   }
 
-  return Array.from(byAddr.entries())
+  const aggregated = Array.from(byAddr.entries())
     .map(([address, v]) => ({
       address,
       nflValueUsd: +v.nflValueUsd.toFixed(2),
@@ -873,6 +873,70 @@ export async function getTopNflWallets(limit = 100, perPool = 100): Promise<TopN
     }))
     .sort((a, b) => b.nflValueUsd - a.nflValueUsd)
     .slice(0, limit);
+
+  // Refine the top candidates with an on-chain balanceOfBatch read.
+  // The aggregation above misses positions where the wallet ranks
+  // outside our perPool window (e.g. a wallet sitting at #251 of a
+  // pool when perPool=250), which can undercount NFL value by 30%+
+  // for diversified holders. The on-chain read is exact and matches
+  // what the wallet detail page renders.
+  const priceByToken = new Map(
+    players.map((p) => [ROSTER_BY_ID.get(p.id)!.tokenAddress, p.priceUsd]),
+  );
+  const refineFns = aggregated.map((w) => () =>
+    refineNflValueOnchain(w.address, priceByToken),
+  );
+  const refinements = await chunked(refineFns, 6);
+
+  const refined = aggregated.map((w, i) => {
+    const r = refinements[i];
+    if (!r) return w; // RPC failed for this wallet — keep aggregated value
+    return {
+      ...w,
+      nflValueUsd: r.nflValueUsd,
+      positions: r.positions,
+      topPositionPlayerId: r.topPositionPlayerId ?? w.topPositionPlayerId,
+      topPositionUsd: r.topPositionUsd,
+      tier: tierForValue(r.nflValueUsd),
+    };
+  });
+
+  // Re-sort after refinement so the leaderboard order reflects the
+  // exact on-chain values, not the (possibly under-counted)
+  // aggregated estimates.
+  return refined.sort((a, b) => b.nflValueUsd - a.nflValueUsd);
+}
+
+// Returns null on RPC failure so the caller can keep the aggregated
+// fallback. Returns a refined snapshot otherwise.
+async function refineNflValueOnchain(
+  address: string,
+  priceByToken: Map<string, number>,
+): Promise<{
+  nflValueUsd: number;
+  positions: number;
+  topPositionPlayerId: string | null;
+  topPositionUsd: number;
+} | null> {
+  const onchain = await readWalletNflBalances(address, priceByToken);
+  if (onchain == null) return null;
+  let nflValueUsd = 0;
+  let topPositionUsd = 0;
+  let topPositionPlayerId: string | null = null;
+  for (const h of onchain) {
+    nflValueUsd += h.balanceValueUsd;
+    if (h.balanceValueUsd > topPositionUsd) {
+      topPositionUsd = h.balanceValueUsd;
+      const player = ROSTER.find((r) => r.tokenAddress === h.tokenAddress);
+      topPositionPlayerId = player?.id ?? null;
+    }
+  }
+  return {
+    nflValueUsd: +nflValueUsd.toFixed(2),
+    positions: onchain.length,
+    topPositionPlayerId,
+    topPositionUsd: +topPositionUsd.toFixed(2),
+  };
 }
 
 export async function getPoolStats(id: string): Promise<PoolStats | null> {
