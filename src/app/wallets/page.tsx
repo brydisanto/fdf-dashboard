@@ -91,11 +91,11 @@ export default async function WalletsPage() {
               textTransform: "uppercase",
             }}
           >
-            Who&apos;s holding the bag?
+            Top NFL Wallets
           </h1>
           <p className="m-0 max-w-[80ch] text-[var(--color-text-muted)]" style={{ fontSize: "15px" }}>
-            Top {total} NFL token holders ranked by NFL portfolio value, aggregated from every
-            player pool. Click any wallet to drill into their full portfolio.
+            Top 500 NFL token holders ranked by NFL portfolio value, aggregated from every
+            player pool.
           </p>
         </div>
       </div>
