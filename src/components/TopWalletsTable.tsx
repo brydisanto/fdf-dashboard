@@ -11,7 +11,7 @@ import { getWalletLabel } from "@/lib/data/wallet-labels";
 import type { TopNflWallet } from "@/lib/data";
 import type { WalletTier } from "@/lib/types";
 
-type SortKey = "nflValueUsd" | "positions" | "firstHeldAt" | "lastActiveAt";
+type SortKey = "nflValueUsd" | "positions" | "funValueUsd" | "firstHeldAt" | "lastActiveAt";
 type TierFilter = "ALL" | WalletTier;
 
 const TIERS: TierFilter[] = ["ALL", "whale", "shark", "dolphin", "fish", "shrimp"];
@@ -92,7 +92,7 @@ export function TopWalletsTable({ wallets }: { wallets: TopNflWallet[] }) {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[920px] text-[13px]">
+        <table className="w-full min-w-[1080px] text-[13px]">
           <thead style={{ background: "color-mix(in oklab, var(--color-press) 50%, transparent)" }}>
             <tr className="border-b border-[var(--color-line)]">
               <Th align="center" className="pl-5">#</Th>
@@ -105,6 +105,9 @@ export function TopWalletsTable({ wallets }: { wallets: TopNflWallet[] }) {
                 Positions
               </Th>
               <Th align="center">Top Holding</Th>
+              <Th align="center" sortKey="funValueUsd" current={sortKey} dir={sortDir} onSort={onSort}>
+                $FUN
+              </Th>
               <Th align="center" sortKey="firstHeldAt" current={sortKey} dir={sortDir} onSort={onSort}>
                 First Held
               </Th>
@@ -205,6 +208,20 @@ export function TopWalletsTable({ wallets }: { wallets: TopNflWallet[] }) {
                     )}
                   </NumCell>
                   <NumCell>
+                    {w.funValueUsd > 0 ? (
+                      <div className="inline-flex items-baseline gap-1.5">
+                        <span style={{ color: "var(--color-text)", fontWeight: 600 }}>
+                          {fmtUsdSmart(w.funValueUsd)}
+                        </span>
+                        <span style={{ color: "var(--color-text-dim)", fontSize: 11 }}>
+                          {fmtNum(w.funBalance, { compact: true, digits: 2 })}
+                        </span>
+                      </div>
+                    ) : (
+                      <span style={{ color: "var(--color-text-dim)" }}>—</span>
+                    )}
+                  </NumCell>
+                  <NumCell>
                     <span style={{ color: "var(--color-text-muted)" }}>
                       {w.firstHeldAt ? fmtTimeAgo(w.firstHeldAt) : "—"}
                     </span>
@@ -227,7 +244,7 @@ export function TopWalletsTable({ wallets }: { wallets: TopNflWallet[] }) {
             })}
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-5 py-12 text-center text-sm text-[var(--color-text-muted)]">
+                <td colSpan={9} className="px-5 py-12 text-center text-sm text-[var(--color-text-muted)]">
                   No wallets match this filter.
                 </td>
               </tr>

@@ -16,7 +16,7 @@ import type {
 } from "../types";
 import { ROSTER, ROSTER_BY_ID, ROSTER_BY_TOKEN, FOOTBALLFUN_CONTRACT, type NflPlayer } from "./roster";
 import { POOL_FEE_RATE, FEE_RATE_BUY, FEE_RATE_SELL, FEE_RATE_SWAP } from "../constants";
-import { readManyWalletsNflBalances, readWalletNflBalances, readFunBalance } from "./onchain-client";
+import { readManyFunBalances, readManyWalletsNflBalances, readWalletNflBalances, readFunBalance } from "./onchain-client";
 
 export { POOL_FEE_RATE, FEE_RATE_BUY, FEE_RATE_SELL, FEE_RATE_SWAP };
 
@@ -798,6 +798,8 @@ export interface TopNflWallet {
   firstHeldAt: number;      // earliest startHoldingAt across NFL holdings
   lastActiveAt: number;     // latest lastActiveAt across NFL holdings
   tier: WalletTier;
+  funBalance: number;       // raw $FUN token count, decimal-adjusted
+  funValueUsd: number;      // funBalance × current $FUN spot price
 }
 export async function getTopNflWallets(limit = 100, perPool = 100): Promise<TopNflWallet[]> {
   const players = await getPlayers();
@@ -860,7 +862,7 @@ export async function getTopNflWallets(limit = 100, perPool = 100): Promise<TopN
     }
   }
 
-  const aggregated = Array.from(byAddr.entries())
+  const aggregated: TopNflWallet[] = Array.from(byAddr.entries())
     .map(([address, v]) => ({
       address,
       nflValueUsd: +v.nflValueUsd.toFixed(2),
@@ -870,6 +872,8 @@ export async function getTopNflWallets(limit = 100, perPool = 100): Promise<TopN
       firstHeldAt: v.firstHeldAt,
       lastActiveAt: v.lastActiveAt,
       tier: tierForValue(v.nflValueUsd),
+      funBalance: 0,    // populated by the bulk $FUN reader below
+      funValueUsd: 0,
     }))
     .sort((a, b) => b.nflValueUsd - a.nflValueUsd)
     .slice(0, limit);
@@ -887,14 +891,30 @@ export async function getTopNflWallets(limit = 100, perPool = 100): Promise<TopN
   const priceByToken = new Map(
     players.map((p) => [ROSTER_BY_ID.get(p.id)!.tokenAddress, p.priceUsd]),
   );
-  const refinementMap = await readManyWalletsNflBalances(
-    aggregated.map((w) => w.address),
-    priceByToken,
-  );
+  const addresses = aggregated.map((w) => w.address);
 
-  const refined = aggregated.map((w) => {
-    const onchain = refinementMap.get(w.address.toLowerCase());
-    if (onchain == null) return w; // RPC failed for this wallet — keep aggregated
+  // NFL balances + $FUN balances + $FUN price all fetched in
+  // parallel. $FUN reads are simple ERC-20 balanceOf calls so
+  // multicall handles them cleanly (unlike the NFL nested-array
+  // path that needs the flat-batch shape).
+  const [refinementMap, funMap, funInfo] = await Promise.all([
+    readManyWalletsNflBalances(addresses, priceByToken),
+    readManyFunBalances(addresses),
+    getFunPriceInfo(),
+  ]);
+  const funPrice = funInfo.priceUsd;
+
+  const refined: TopNflWallet[] = aggregated.map((w) => {
+    const lower = w.address.toLowerCase();
+    const funBalance = funMap.get(lower) ?? 0;
+    const funValueUsd = +(funBalance * funPrice).toFixed(2);
+
+    const onchain = refinementMap.get(lower);
+    if (onchain == null) {
+      // RPC failed for NFL — keep aggregated NFL but still apply
+      // refined $FUN.
+      return { ...w, funBalance, funValueUsd };
+    }
     let nflValueUsd = 0;
     let topPositionUsd = 0;
     let topPositionPlayerId: string | null = null;
@@ -913,6 +933,8 @@ export async function getTopNflWallets(limit = 100, perPool = 100): Promise<TopN
       topPositionPlayerId: topPositionPlayerId ?? w.topPositionPlayerId,
       topPositionUsd: +topPositionUsd.toFixed(2),
       tier: tierForValue(nflValueUsd),
+      funBalance,
+      funValueUsd,
     };
   });
 
