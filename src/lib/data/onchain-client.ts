@@ -129,15 +129,21 @@ export async function readWalletNflBalances(
 }
 
 /**
- * Bulk variant — read many wallets' NFL balances in a single eth_call
- * via viem multicall (Multicall3 on Base). N individual calls would
- * hammer the public RPC and most would return null due to throttling,
- * leaving the leaderboard's "refine" pass stuck with aggregated
- * estimates. This batches them: one balanceOfBatch per wallet, all
- * bundled into one outer multicall, chunked to keep payloads sane.
+ * Bulk variant — read many wallets' NFL balances using a flattened
+ * balanceOfBatch call per chunk. Each chunk handles N wallets in
+ * one straight eth_call: the wallets array becomes [w1×72, w2×72,
+ * ..., wN×72] and the ids array becomes [t1..t72, t1..t72, ...] N
+ * times. The contract returns a flat list of N×72 balances, which
+ * we slice back per wallet.
  *
- * Returns a Map keyed by lowercase address. Wallets whose individual
- * call failed map to null so callers can fall back to upstream data.
+ * This is dramatically more reliable than per-wallet readContract
+ * (which throttled on the public RPC and returned null for most
+ * calls, leaving the leaderboard stuck with aggregated estimates)
+ * AND simpler than wrapping per-wallet calls in Multicall3 (which
+ * adds another layer of args-shape mismatch to debug).
+ *
+ * Returns a Map keyed by lowercase address. Chunks that error map
+ * every wallet in that chunk to null so callers can fall back.
  */
 export async function readManyWalletsNflBalances(
   addresses: string[],
@@ -146,48 +152,45 @@ export async function readManyWalletsNflBalances(
   const out = new Map<string, WalletHolding[] | null>();
   if (addresses.length === 0) return out;
 
-  // Multicall3 has practical limits on payload size. ~25 wallets per
-  // batch keeps each multicall under ~2000 inner calls equivalent
-  // and well below RPC payload caps.
+  // 25 wallets × 72 tokens = 1800 entries per call. Result payload
+  // is ~58KB encoded — well under any RPC's response size limit.
   const CHUNK = 25;
   const now = Date.now();
+  const tokenCount = ROSTER.length;
 
   for (let i = 0; i < addresses.length; i += CHUNK) {
     const slice = addresses.slice(i, i + CHUNK);
-    const contracts = slice.map((addr) => ({
-      address: FOOTBALLFUN_CONTRACT as Address,
-      abi: ERC1155_ABI,
-      functionName: "balanceOfBatch" as const,
-      args: [
-        ROSTER.map(() => addr as Address),
-        TOKEN_ID_BIG,
-      ] as const,
-    }));
+    // Flatten: each wallet repeated tokenCount times, token IDs
+    // repeated for each wallet.
+    const flatWallets: Address[] = [];
+    const flatTokens: bigint[] = [];
+    for (const addr of slice) {
+      for (let k = 0; k < tokenCount; k++) {
+        flatWallets.push(addr as Address);
+        flatTokens.push(TOKEN_ID_BIG[k]);
+      }
+    }
 
-    let results: { status: "success" | "failure"; result?: readonly bigint[] }[];
+    let raw: readonly bigint[];
     try {
-      results = await client.multicall({
-        contracts,
-        allowFailure: true,
-      }) as { status: "success" | "failure"; result?: readonly bigint[] }[];
+      raw = await client.readContract({
+        address: FOOTBALLFUN_CONTRACT as Address,
+        abi: ERC1155_ABI,
+        functionName: "balanceOfBatch",
+        args: [flatWallets, flatTokens],
+      });
     } catch {
-      // Whole batch blew up — every wallet in this slice falls back.
       for (const addr of slice) out.set(addr.toLowerCase(), null);
       continue;
     }
 
+    // Slice the flat result back per wallet.
     for (let j = 0; j < slice.length; j++) {
       const addr = slice[j];
-      const r = results[j];
-      const key = addr.toLowerCase();
-      if (!r || r.status !== "success" || !r.result) {
-        out.set(key, null);
-        continue;
-      }
-      const raw = r.result;
+      const offset = j * tokenCount;
       const holdings: WalletHolding[] = [];
-      for (let k = 0; k < ROSTER.length; k++) {
-        const balanceRaw = raw[k] ?? 0n;
+      for (let k = 0; k < tokenCount; k++) {
+        const balanceRaw = raw[offset + k] ?? 0n;
         if (balanceRaw === 0n) continue;
         const player = ROSTER[k];
         const balance = Number(balanceRaw) / 10 ** SHARE_DECIMALS;
@@ -205,7 +208,7 @@ export async function readManyWalletsNflBalances(
         });
       }
       holdings.sort((a, b) => b.balanceValueUsd - a.balanceValueUsd);
-      out.set(key, holdings);
+      out.set(addr.toLowerCase(), holdings);
     }
   }
 
