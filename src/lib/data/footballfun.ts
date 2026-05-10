@@ -16,7 +16,7 @@ import type {
 } from "../types";
 import { ROSTER, ROSTER_BY_ID, ROSTER_BY_TOKEN, FOOTBALLFUN_CONTRACT, type NflPlayer } from "./roster";
 import { POOL_FEE_RATE, FEE_RATE_BUY, FEE_RATE_SELL, FEE_RATE_SWAP } from "../constants";
-import { readWalletNflBalances, readFunBalance } from "./onchain-client";
+import { readManyWalletsNflBalances, readWalletNflBalances, readFunBalance } from "./onchain-client";
 
 export { POOL_FEE_RATE, FEE_RATE_BUY, FEE_RATE_SELL, FEE_RATE_SWAP };
 
@@ -880,63 +880,50 @@ export async function getTopNflWallets(limit = 100, perPool = 100): Promise<TopN
   // pool when perPool=250), which can undercount NFL value by 30%+
   // for diversified holders. The on-chain read is exact and matches
   // what the wallet detail page renders.
+  //
+  // Bulk-batched via Multicall3 — earlier per-wallet RPC calls were
+  // throttled by the public Base RPC and returned null for most
+  // wallets, leaving the leaderboard stuck with aggregated estimates.
   const priceByToken = new Map(
     players.map((p) => [ROSTER_BY_ID.get(p.id)!.tokenAddress, p.priceUsd]),
   );
-  const refineFns = aggregated.map((w) => () =>
-    refineNflValueOnchain(w.address, priceByToken),
+  const refinementMap = await readManyWalletsNflBalances(
+    aggregated.map((w) => w.address),
+    priceByToken,
   );
-  const refinements = await chunked(refineFns, 6);
 
-  const refined = aggregated.map((w, i) => {
-    const r = refinements[i];
-    if (!r) return w; // RPC failed for this wallet — keep aggregated value
+  const refined = aggregated.map((w) => {
+    const onchain = refinementMap.get(w.address.toLowerCase());
+    if (onchain == null) return w; // RPC failed for this wallet — keep aggregated
+    let nflValueUsd = 0;
+    let topPositionUsd = 0;
+    let topPositionPlayerId: string | null = null;
+    for (const h of onchain) {
+      nflValueUsd += h.balanceValueUsd;
+      if (h.balanceValueUsd > topPositionUsd) {
+        topPositionUsd = h.balanceValueUsd;
+        const player = ROSTER.find((r) => r.tokenAddress === h.tokenAddress);
+        topPositionPlayerId = player?.id ?? null;
+      }
+    }
     return {
       ...w,
-      nflValueUsd: r.nflValueUsd,
-      positions: r.positions,
-      topPositionPlayerId: r.topPositionPlayerId ?? w.topPositionPlayerId,
-      topPositionUsd: r.topPositionUsd,
-      tier: tierForValue(r.nflValueUsd),
+      nflValueUsd: +nflValueUsd.toFixed(2),
+      positions: onchain.length,
+      topPositionPlayerId: topPositionPlayerId ?? w.topPositionPlayerId,
+      topPositionUsd: +topPositionUsd.toFixed(2),
+      tier: tierForValue(nflValueUsd),
     };
   });
 
   // Re-sort after refinement so the leaderboard order reflects the
   // exact on-chain values, not the (possibly under-counted)
-  // aggregated estimates.
-  return refined.sort((a, b) => b.nflValueUsd - a.nflValueUsd);
-}
-
-// Returns null on RPC failure so the caller can keep the aggregated
-// fallback. Returns a refined snapshot otherwise.
-async function refineNflValueOnchain(
-  address: string,
-  priceByToken: Map<string, number>,
-): Promise<{
-  nflValueUsd: number;
-  positions: number;
-  topPositionPlayerId: string | null;
-  topPositionUsd: number;
-} | null> {
-  const onchain = await readWalletNflBalances(address, priceByToken);
-  if (onchain == null) return null;
-  let nflValueUsd = 0;
-  let topPositionUsd = 0;
-  let topPositionPlayerId: string | null = null;
-  for (const h of onchain) {
-    nflValueUsd += h.balanceValueUsd;
-    if (h.balanceValueUsd > topPositionUsd) {
-      topPositionUsd = h.balanceValueUsd;
-      const player = ROSTER.find((r) => r.tokenAddress === h.tokenAddress);
-      topPositionPlayerId = player?.id ?? null;
-    }
-  }
-  return {
-    nflValueUsd: +nflValueUsd.toFixed(2),
-    positions: onchain.length,
-    topPositionPlayerId,
-    topPositionUsd: +topPositionUsd.toFixed(2),
-  };
+  // aggregated estimates. Filter out wallets whose refined value
+  // came back as 0 — those are stale aggregations for wallets
+  // that have since fully exited NFL.
+  return refined
+    .filter((w) => w.nflValueUsd > 0)
+    .sort((a, b) => b.nflValueUsd - a.nflValueUsd);
 }
 
 export async function getPoolStats(id: string): Promise<PoolStats | null> {

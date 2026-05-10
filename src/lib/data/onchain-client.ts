@@ -127,3 +127,87 @@ export async function readWalletNflBalances(
   out.sort((a, b) => b.balanceValueUsd - a.balanceValueUsd);
   return out;
 }
+
+/**
+ * Bulk variant — read many wallets' NFL balances in a single eth_call
+ * via viem multicall (Multicall3 on Base). N individual calls would
+ * hammer the public RPC and most would return null due to throttling,
+ * leaving the leaderboard's "refine" pass stuck with aggregated
+ * estimates. This batches them: one balanceOfBatch per wallet, all
+ * bundled into one outer multicall, chunked to keep payloads sane.
+ *
+ * Returns a Map keyed by lowercase address. Wallets whose individual
+ * call failed map to null so callers can fall back to upstream data.
+ */
+export async function readManyWalletsNflBalances(
+  addresses: string[],
+  priceByTokenAddress: Map<string, number>,
+): Promise<Map<string, WalletHolding[] | null>> {
+  const out = new Map<string, WalletHolding[] | null>();
+  if (addresses.length === 0) return out;
+
+  // Multicall3 has practical limits on payload size. ~25 wallets per
+  // batch keeps each multicall under ~2000 inner calls equivalent
+  // and well below RPC payload caps.
+  const CHUNK = 25;
+  const now = Date.now();
+
+  for (let i = 0; i < addresses.length; i += CHUNK) {
+    const slice = addresses.slice(i, i + CHUNK);
+    const contracts = slice.map((addr) => ({
+      address: FOOTBALLFUN_CONTRACT as Address,
+      abi: ERC1155_ABI,
+      functionName: "balanceOfBatch" as const,
+      args: [
+        ROSTER.map(() => addr as Address),
+        TOKEN_ID_BIG,
+      ] as const,
+    }));
+
+    let results: { status: "success" | "failure"; result?: readonly bigint[] }[];
+    try {
+      results = await client.multicall({
+        contracts,
+        allowFailure: true,
+      }) as { status: "success" | "failure"; result?: readonly bigint[] }[];
+    } catch {
+      // Whole batch blew up — every wallet in this slice falls back.
+      for (const addr of slice) out.set(addr.toLowerCase(), null);
+      continue;
+    }
+
+    for (let j = 0; j < slice.length; j++) {
+      const addr = slice[j];
+      const r = results[j];
+      const key = addr.toLowerCase();
+      if (!r || r.status !== "success" || !r.result) {
+        out.set(key, null);
+        continue;
+      }
+      const raw = r.result;
+      const holdings: WalletHolding[] = [];
+      for (let k = 0; k < ROSTER.length; k++) {
+        const balanceRaw = raw[k] ?? 0n;
+        if (balanceRaw === 0n) continue;
+        const player = ROSTER[k];
+        const balance = Number(balanceRaw) / 10 ** SHARE_DECIMALS;
+        const priceUsd = priceByTokenAddress.get(player.tokenAddress) ?? 0;
+        holdings.push({
+          tokenAddress: player.tokenAddress,
+          symbol: player.symbol,
+          name: player.displayName,
+          imageUrl: undefined,
+          priceUsd,
+          balance,
+          balanceValueUsd: +(balance * priceUsd).toFixed(2),
+          startHoldingAt: 0,
+          lastActiveAt: now,
+        });
+      }
+      holdings.sort((a, b) => b.balanceValueUsd - a.balanceValueUsd);
+      out.set(key, holdings);
+    }
+  }
+
+  return out;
+}
