@@ -47,12 +47,6 @@ export function TopWalletsTable({ wallets }: { wallets: TopNflWallet[] }) {
     setPage(0);
   };
 
-  // Reference: largest NFL value drives the bar widths in the value cell.
-  // Pinned to the top of the *current sort* so bars rescale per filter
-  // (e.g. filtering to Sharks rebases bars to the top Shark, not the
-  // global top).
-  const top = filtered[0]?.nflValueUsd ?? 0;
-
   // Pagination math — clamp page when filter shrinks the list.
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
@@ -98,7 +92,7 @@ export function TopWalletsTable({ wallets }: { wallets: TopNflWallet[] }) {
               <Th align="center" className="pl-5">#</Th>
               <Th>Wallet</Th>
               <Th align="center">Tier</Th>
-              <Th align="center" sortKey="nflValueUsd" current={sortKey} dir={sortDir} onSort={onSort}>
+              <Th align="center" sortKey="nflValueUsd" current={sortKey} dir={sortDir} onSort={onSort} emphasized>
                 NFL Value
               </Th>
               <Th align="center" sortKey="positions" current={sortKey} dir={sortDir} onSort={onSort}>
@@ -120,7 +114,6 @@ export function TopWalletsTable({ wallets }: { wallets: TopNflWallet[] }) {
             {pageRows.map((w, i) => {
               const globalIdx = start + i;
               const meta = TIER_META[w.tier];
-              const barPct = top > 0 ? (w.nflValueUsd / top) * 100 : 0;
               const topPlayer = w.topPositionPlayerId ? ROSTER_BY_ID.get(w.topPositionPlayerId) : null;
               return (
                 <tr
@@ -176,19 +169,24 @@ export function TopWalletsTable({ wallets }: { wallets: TopNflWallet[] }) {
                       {tierLabel(w.tier)}
                     </span>
                   </CenterCell>
-                  <NumCell>
-                    <div className="flex items-center justify-center gap-2">
-                      <span className="holdings-bar" style={{ width: 56 }}>
-                        <span
-                          className="holdings-bar-fill"
-                          style={{ width: `${Math.max(2, Math.min(100, barPct))}%` }}
-                        />
-                      </span>
-                      <span className="font-semibold text-[var(--color-text)]" style={{ minWidth: 64, textAlign: "right" }}>
-                        {fmtUsdSmart(w.nflValueUsd)}
-                      </span>
-                    </div>
-                  </NumCell>
+                  {/* Primary metric: accent-soft color + heavier
+                      weight + faint accent-tint cell wash so the
+                      NFL Value column reads as the headline number
+                      across the row. */}
+                  <td
+                    className="text-center"
+                    style={{
+                      padding: "var(--row-pad-y) 12px",
+                      fontFamily: "var(--font-mono)",
+                      fontVariantNumeric: "tabular-nums",
+                      fontSize: 14,
+                      fontWeight: 700,
+                      color: "var(--accent-soft)",
+                      background: "color-mix(in oklab, var(--accent) 4%, transparent)",
+                    }}
+                  >
+                    {fmtUsdSmart(w.nflValueUsd)}
+                  </td>
                   <NumCell>{fmtNum(w.positions)}</NumCell>
                   <NumCell>
                     {topPlayer ? (
@@ -369,6 +367,7 @@ function Th({
   current,
   dir,
   onSort,
+  emphasized,
 }: {
   children: React.ReactNode;
   align?: "left" | "center" | "right";
@@ -377,6 +376,10 @@ function Th({
   current?: SortKey;
   dir?: "asc" | "desc";
   onSort?: (key: SortKey) => void;
+  // Highlights the column header with an accent-tint wash —
+  // matches the body cells of the highlighted column so the
+  // headline metric reads as a continuous accent band top to bottom.
+  emphasized?: boolean;
 }) {
   const isSortable = !!sortKey && !!onSort;
   const active = isSortable && current === sortKey;
@@ -386,8 +389,15 @@ function Th({
     fontWeight: 600,
     letterSpacing: "0.18em",
     textTransform: "uppercase",
-    color: active ? "var(--color-text)" : "var(--color-text-dim)",
+    color: emphasized
+      ? "var(--accent-soft)"
+      : active
+        ? "var(--color-text)"
+        : "var(--color-text-dim)",
     textAlign: align,
+    background: emphasized
+      ? "color-mix(in oklab, var(--accent) 4%, transparent)"
+      : undefined,
   };
   return (
     <th className={clsx("px-3 py-3 select-none", className)} style={baseStyle}>
