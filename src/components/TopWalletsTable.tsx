@@ -11,7 +11,7 @@ import { getWalletLabel } from "@/lib/data/wallet-labels";
 import type { TopNflWallet } from "@/lib/data";
 import type { WalletTier } from "@/lib/types";
 
-type SortKey = "nflValueUsd" | "positions" | "funValueUsd" | "firstHeldAt" | "lastActiveAt";
+type SortKey = "nflValueUsd" | "positions" | "funBalance" | "firstHeldAt" | "lastActiveAt";
 type TierFilter = "ALL" | WalletTier;
 
 const TIERS: TierFilter[] = ["ALL", "whale", "shark", "dolphin", "fish", "shrimp"];
@@ -105,7 +105,7 @@ export function TopWalletsTable({ wallets }: { wallets: TopNflWallet[] }) {
                 Positions
               </Th>
               <Th align="center">Top Holding</Th>
-              <Th align="center" sortKey="funValueUsd" current={sortKey} dir={sortDir} onSort={onSort}>
+              <Th align="center" sortKey="funBalance" current={sortKey} dir={sortDir} onSort={onSort}>
                 $FUN
               </Th>
               <Th align="center" sortKey="firstHeldAt" current={sortKey} dir={sortDir} onSort={onSort}>
@@ -208,15 +208,10 @@ export function TopWalletsTable({ wallets }: { wallets: TopNflWallet[] }) {
                     )}
                   </NumCell>
                   <NumCell>
-                    {w.funValueUsd > 0 ? (
-                      <div className="inline-flex items-baseline gap-1.5">
-                        <span style={{ color: "var(--color-text)", fontWeight: 600 }}>
-                          {fmtUsdSmart(w.funValueUsd)}
-                        </span>
-                        <span style={{ color: "var(--color-text-dim)", fontSize: 11 }}>
-                          {fmtNum(w.funBalance, { compact: true, digits: 2 })}
-                        </span>
-                      </div>
+                    {w.funBalance > 0 ? (
+                      <span style={{ color: "var(--color-text)", fontWeight: 600 }}>
+                        {fmtNum(w.funBalance, { compact: true, digits: 2 })}
+                      </span>
                     ) : (
                       <span style={{ color: "var(--color-text-dim)" }}>—</span>
                     )}
