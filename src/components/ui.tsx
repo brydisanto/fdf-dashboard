@@ -71,7 +71,7 @@ export function CardHeader({
 export function Delta({
   value,
   className,
-  digits = 2,
+  digits = 1,
   withSign = true,
 }: {
   value: number;
