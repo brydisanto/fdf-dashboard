@@ -25,29 +25,24 @@ export function LargestHoldersTable({
     );
   }
 
-  // Largest holder's share defines the bar's "100%" so smaller holders
-  // visually scale against the biggest player on the cap table.
-  const top = holders[0]?.sharePct ?? 0;
-
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[720px] text-[13px]">
         <thead style={{ background: "color-mix(in oklab, var(--color-press) 50%, transparent)" }}>
           <tr className="border-b border-[var(--color-line)]">
-            <Th align="center" className="pl-5">#</Th>
-            <Th>Wallet</Th>
-            <Th align="right">Balance</Th>
-            <Th align="right">Value</Th>
-            <Th align="right">Share</Th>
-            <Th align="right">First Held</Th>
-            <Th align="right" className="pr-5">Last Active</Th>
+            <Th align="left" className="pl-5">#</Th>
+            <Th align="left">Wallet</Th>
+            <Th>Balance</Th>
+            <Th>Value</Th>
+            <Th>Share</Th>
+            <Th>First Held</Th>
+            <Th className="pr-5">Last Active</Th>
           </tr>
         </thead>
         <tbody>
           {holders.map((h, i) => {
             const snap = wallets?.[h.address.toLowerCase()];
             const valueUsd = h.balance * priceUsd;
-            const barPct = top > 0 ? (h.sharePct / top) * 100 : 0;
             return (
               <tr
                 key={h.address}
@@ -62,12 +57,12 @@ export function LargestHoldersTable({
                     fontWeight: 700,
                     color: "var(--color-text-dim)",
                     fontSize: 11,
-                    textAlign: "center",
+                    textAlign: "left",
                   }}
                 >
                   {i + 1}
                 </td>
-                <Cell>
+                <td className="px-3" style={{ padding: "var(--row-pad-y) 12px", textAlign: "left" }}>
                   {snap && snap.totalValueUsd > 0 ? (
                     <WalletBadge
                       address={snap.address}
@@ -89,21 +84,11 @@ export function LargestHoldersTable({
                       {shortAddr(h.address, 6, 6)}
                     </Link>
                   )}
-                </Cell>
+                </td>
                 <NumCell>{fmtNum(h.balance, { compact: true })}</NumCell>
                 <NumCell className="font-semibold">{fmtUsd(valueUsd, { compact: true })}</NumCell>
                 <NumCell>
-                  <div className="flex items-center justify-end gap-2">
-                    <span className="holdings-bar" style={{ width: 60 }}>
-                      <span
-                        className="holdings-bar-fill"
-                        style={{ width: `${Math.max(2, Math.min(100, barPct))}%` }}
-                      />
-                    </span>
-                    <span style={{ minWidth: 48 }}>
-                      {h.sharePct >= 0.01 ? `${h.sharePct.toFixed(2)}%` : "<0.01%"}
-                    </span>
-                  </div>
+                  {h.sharePct >= 0.01 ? `${h.sharePct.toFixed(2)}%` : "<0.01%"}
                 </NumCell>
                 <NumCell className="text-[var(--color-text-muted)]">
                   {h.startHoldingAt ? fmtTimeAgo(h.startHoldingAt) : "—"}
@@ -115,7 +100,6 @@ export function LargestHoldersTable({
                     fontFamily: "var(--font-mono)",
                     fontSize: 11,
                     fontVariantNumeric: "tabular-nums",
-                    textAlign: "right",
                     color: "var(--color-text-muted)",
                   }}
                 >
@@ -130,19 +114,10 @@ export function LargestHoldersTable({
   );
 }
 
-function Cell({ children }: { children: React.ReactNode }) {
-  return (
-    <td className="px-3" style={{ padding: "var(--row-pad-y) 12px" }}>
-      {children}
-    </td>
-  );
-}
-
 function NumCell({ children, className }: { children: React.ReactNode; className?: string }) {
-  const cls = `text-right${className ? ` ${className}` : ""}`;
   return (
     <td
-      className={cls}
+      className={className}
       style={{
         padding: "var(--row-pad-y) 12px",
         fontFamily: "var(--font-mono)",

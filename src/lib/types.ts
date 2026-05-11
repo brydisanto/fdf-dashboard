@@ -21,6 +21,10 @@ export interface TokenStats {
   playerId: string;
   priceUsd: number;
   change1h: number;
+  // 6h % change. Populated from our own snapshot indexer (no upstream
+  // field maps to this window). Falls back to 0 during the indexer's
+  // first 6 hours after deploy.
+  change6h: number;
   change24h: number;
   change7d: number;
   marketCap: number;

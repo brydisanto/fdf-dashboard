@@ -193,6 +193,10 @@ function buildPlayerSummary(player: NflPlayer, row: TeneroTokenRow): PlayerSumma
   // spot-to-spot change was 0%.
   const refPrice = liveSpot > 0 ? liveSpot : (lastTrade > 0 ? lastTrade : price);
   const change1h  = pctChange(refPrice, Number(row.price?.price_1h_ago ?? refPrice));
+  // 6h has no native upstream field — fill from the snapshot indexer
+  // later in getPlayers(). Initial value is 0% so the column renders
+  // cleanly while the indexer warms up.
+  const change6h  = 0;
   const change24h = pctChange(refPrice, Number(row.price?.price_1d_ago ?? refPrice));
   const change7d  = pctChange(refPrice, Number(row.price?.price_7d_ago ?? refPrice));
 
@@ -222,6 +226,7 @@ function buildPlayerSummary(player: NflPlayer, row: TeneroTokenRow): PlayerSumma
     playerId: player.id,
     priceUsd: price,
     change1h,
+    change6h,
     change24h,
     change7d,
     marketCap,
@@ -403,15 +408,21 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
     // sell-side adjusted spot (× 0.97), but for % comparisons we use
     // raw spot vs raw historical spot on both sides — the fee cancels.
     let got1h = false;
+    let got6h = false;
     let got24h = false;
     let got7d = false;
     if (history) {
       const at1h = priceAt(history, roster.tokenIdSuffix, nowMs - 3600_000);
+      const at6h = priceAt(history, roster.tokenIdSuffix, nowMs - 6 * 3600_000);
       const at24h = priceAt(history, roster.tokenIdSuffix, nowMs - 86_400_000);
       const at7d = priceAt(history, roster.tokenIdSuffix, nowMs - 7 * 86_400_000);
       if (at1h != null) {
         summary.change1h = +(((spot - at1h) / at1h) * 100).toFixed(2);
         got1h = true;
+      }
+      if (at6h != null) {
+        summary.change6h = +(((spot - at6h) / at6h) * 100).toFixed(2);
+        got6h = true;
       }
       if (at24h != null) {
         summary.change24h = +(((spot - at24h) / at24h) * 100).toFixed(2);
@@ -422,7 +433,7 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
         got7d = true;
       }
     }
-    if (got1h && got24h && got7d) return;
+    if (got1h && got6h && got24h && got7d) return;
 
     // Fallback (cold-start period before the snapshot fills in): keep
     // the OHLC override for fresh-activity divergence cases. Skip when
@@ -539,6 +550,7 @@ export async function getPlayer(id: string): Promise<PlayerSummary | null> {
     // first, OHLC fallback when the snapshot history doesn't reach.
     const spot = Number(data?.price?.current_price ?? 0);
     let got1h = false;
+    let got6h = false;
     let got24h = false;
     let got7d = false;
     if (spot > 0) {
@@ -546,11 +558,16 @@ export async function getPlayer(id: string): Promise<PlayerSummary | null> {
       if (history) {
         const nowMs = Date.now();
         const at1h = priceAt(history, player.tokenIdSuffix, nowMs - 3600_000);
+        const at6h = priceAt(history, player.tokenIdSuffix, nowMs - 6 * 3600_000);
         const at24h = priceAt(history, player.tokenIdSuffix, nowMs - 86_400_000);
         const at7d = priceAt(history, player.tokenIdSuffix, nowMs - 7 * 86_400_000);
         if (at1h != null) {
           summary.change1h = +(((spot - at1h) / at1h) * 100).toFixed(2);
           got1h = true;
+        }
+        if (at6h != null) {
+          summary.change6h = +(((spot - at6h) / at6h) * 100).toFixed(2);
+          got6h = true;
         }
         if (at24h != null) {
           summary.change24h = +(((spot - at24h) / at24h) * 100).toFixed(2);
@@ -564,7 +581,7 @@ export async function getPlayer(id: string): Promise<PlayerSummary | null> {
     }
     const needsOhlcFallback =
       spot > 0 &&
-      !(got1h && got24h && got7d) &&
+      !(got1h && got6h && got24h && got7d) &&
       (summary.volume24h > 0 || summary.volume7d > 0) &&
       !(
         isPriceSnapshotReliable(data?.price?.price_1h_ago, spot) &&
@@ -623,21 +640,52 @@ export async function getPriceSeries(id: string, tf: Timeframe): Promise<PricePo
     "ALL": null,
   };
   const cutoff = windowSec[tf];
+  const nowSec = Math.floor(Date.now() / 1000);
+
+  // Pull OHLC bars from the upstream first — bars represent actual
+  // trade activity, so they're the canonical source when they exist.
+  let ohlcPoints: PricePoint[] = [];
   try {
     const data = await tget<TeneroOhlcRow[]>(path, REVALIDATE.ohlc);
-    if (!Array.isArray(data)) return [];
-    const nowSec = Math.floor(Date.now() / 1000);
-    return data
-      .filter((row) => cutoff == null || Number(row.time ?? 0) >= nowSec - cutoff)
-      .map((row) => ({
-        t: row.time * 1000,
-        price: Number(row.close),
-        volume: Number(row.volume ?? 0),
-      }))
-      .sort((a, b) => a.t - b.t);
+    if (Array.isArray(data)) {
+      ohlcPoints = data
+        .filter((row) => cutoff == null || Number(row.time ?? 0) >= nowSec - cutoff)
+        .map((row) => ({
+          t: row.time * 1000,
+          price: Number(row.close),
+          volume: Number(row.volume ?? 0),
+        }));
+    }
   } catch {
-    return [];
+    /* fall through to snapshot-only */
   }
+
+  // Augment with snapshot points within the same window — gives quiet
+  // tokens a continuous line on the chart even when no trades hit. For
+  // tokens with frequent OHLC activity this is mostly redundant but the
+  // dedupe below keeps the output clean.
+  const history = await readPriceHistory();
+  let snapshotPoints: PricePoint[] = [];
+  if (history && cutoff != null) {
+    const cutoffMs = (nowSec - cutoff) * 1000;
+    const idx = history.tokenIds.indexOf(player.tokenIdSuffix);
+    if (idx >= 0) {
+      for (const s of history.snapshots) {
+        if (s.ts < cutoffMs) continue;
+        const p = s.prices[idx];
+        if (p > 0) snapshotPoints.push({ t: s.ts, price: p, volume: 0 });
+      }
+    }
+  }
+
+  // Merge OHLC + snapshot, dedupe by minute-bucket so we don't double
+  // up when both sources happen to record the same window. OHLC wins on
+  // duplicate buckets because it represents real trade activity.
+  const bucketMs = 60_000;
+  const merged = new Map<number, PricePoint>();
+  for (const pt of snapshotPoints) merged.set(Math.floor(pt.t / bucketMs), pt);
+  for (const pt of ohlcPoints) merged.set(Math.floor(pt.t / bucketMs), pt);
+  return Array.from(merged.values()).sort((a, b) => a.t - b.t);
 }
 
 export async function getTrades(id: string, limit = 30): Promise<Trade[]> {
