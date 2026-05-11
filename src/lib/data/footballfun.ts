@@ -347,7 +347,7 @@ function tinySparkline(row: TeneroTokenRow): number[] {
 
 export async function getPlayers(): Promise<PlayerSummary[]> {
   const map = await fetchNflTokenMap();
-  return ROSTER.map((player) => {
+  const summaries = ROSTER.map((player) => {
     const row = map.get(player.tokenAddress);
     if (!row) {
       // Player not currently listed in Tenero response (e.g. delisted). Return zeroed.
@@ -370,6 +370,27 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
     summary.sparkline7d = tinySparkline(row);
     return summary;
   });
+
+  // The upstream's `price_*_ago` snapshot fields are unreliable for
+  // low-activity tokens — they silently fall back to `current_price`
+  // when no proper historical snapshot exists, which makes every short
+  // window read 0% even after a real curve move. Replace those values
+  // with OHLC-derived deltas so the % columns actually reflect what
+  // the bonding curve has done.
+  const fns = summaries.map((summary) => async () => {
+    const roster = ROSTER_BY_ID.get(summary.id);
+    if (!roster) return;
+    const row = map.get(roster.tokenAddress);
+    const spot = Number(row?.price?.current_price ?? 0);
+    if (spot <= 0) return;
+    const deltas = await fetchOhlcDeltas(roster.tokenAddress, spot);
+    if (deltas.change1h != null) summary.change1h = deltas.change1h;
+    if (deltas.change24h != null) summary.change24h = deltas.change24h;
+    if (deltas.change7d != null) summary.change7d = deltas.change7d;
+  });
+  await chunked(fns, 8);
+
+  return summaries;
 }
 
 export async function getPlayer(id: string): Promise<PlayerSummary | null> {
@@ -383,6 +404,15 @@ export async function getPlayer(id: string): Promise<PlayerSummary | null> {
     );
     const summary = buildPlayerSummary(player, data);
     summary.sparkline7d = tinySparkline(data);
+    // Same OHLC override as getPlayers() — upstream's price_*_ago is
+    // unreliable for low-activity tokens.
+    const spot = Number(data?.price?.current_price ?? 0);
+    if (spot > 0) {
+      const deltas = await fetchOhlcDeltas(player.tokenAddress, spot);
+      if (deltas.change1h != null) summary.change1h = deltas.change1h;
+      if (deltas.change24h != null) summary.change24h = deltas.change24h;
+      if (deltas.change7d != null) summary.change7d = deltas.change7d;
+    }
     return summary;
   } catch {
     // Fall back to the bulk list if the per-token call fails for any reason.
@@ -742,6 +772,50 @@ async function fetchOhlcBars(
   } catch {
     return [];
   }
+}
+
+/**
+ * Derive 1h/24h/7d % changes from hourly OHLC bars instead of trusting
+ * the upstream's `price_*_ago` snapshot fields, which fall back to
+ * `current_price` for low-activity tokens and produce phantom 0% reads
+ * after real curve moves.
+ *
+ * Strategy: fetch 168 most-recent active hourly bars. For each window,
+ * find the most recent bar whose timestamp is ≤ (now − window) — that
+ * bar's close approximates the spot at the anchor point. % = (spot
+ * vs anchor close). Returns null per field if no anchor bar exists
+ * (caller can keep the upstream value as a last-resort fallback).
+ */
+async function fetchOhlcDeltas(
+  tokenAddress: string,
+  currentSpot: number,
+): Promise<{ change1h: number | null; change24h: number | null; change7d: number | null }> {
+  const bars = await fetchOhlcBars(tokenAddress, "1h", 168);
+  if (bars.length === 0 || currentSpot <= 0) {
+    return { change1h: null, change24h: null, change7d: null };
+  }
+  const nowSec = Math.floor(Date.now() / 1000);
+  // Bars are newest-first. Find the most recent bar whose timestamp is
+  // at or before (now - windowSec).
+  const findAnchor = (windowSec: number): number | null => {
+    const cutoff = nowSec - windowSec;
+    for (const b of bars) {
+      if (Number(b.time ?? 0) <= cutoff) {
+        const close = Number(b.close ?? 0);
+        return close > 0 ? close : null;
+      }
+    }
+    return null;
+  };
+  const compute = (anchor: number | null): number | null => {
+    if (anchor == null || anchor <= 0) return null;
+    return +(((currentSpot - anchor) / anchor) * 100).toFixed(2);
+  };
+  return {
+    change1h: compute(findAnchor(3600)),
+    change24h: compute(findAnchor(86400)),
+    change7d: compute(findAnchor(7 * 86400)),
+  };
 }
 
 /**
