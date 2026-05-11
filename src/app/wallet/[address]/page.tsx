@@ -24,12 +24,17 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
   // 404 depending on which case the user pasted in. Internal
   // caches and the trade-feed map already key off lowercase.
   const address = rawAddress.toLowerCase();
-  const [profile, flow, fun, trades] = await Promise.all([
+  const [profile, flow, fun, allTrades] = await Promise.all([
     getWalletPortfolio(address),
     getWalletFlow(address, 7),
     getWalletFunPosition(address),
-    getWalletTrades(address, 30),
+    // Fetch a wider window so the NFL-only filter below still produces
+    // a useful 30-row table for wallets that trade a lot of Soccer too.
+    getWalletTrades(address, 100),
   ]);
+  // Hide Soccer activity from this table — wallet pages show NFL-only
+  // trades to match the NFL-focused framing of the rest of the dashboard.
+  const trades = allTrades.filter((t) => t.isNfl).slice(0, 30);
   const nflHoldings = profile.holdings.filter((h) => ROSTER_BY_TOKEN.has(h.tokenAddress));
   const soccerHoldings = profile.holdings.filter((h) => !ROSTER_BY_TOKEN.has(h.tokenAddress));
   const nflValue = nflHoldings.reduce((a, h) => a + h.balanceValueUsd, 0);
@@ -391,16 +396,12 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
         </div>
       </Card>
 
-      {/* Recent trades — last 30 on-chain events for this wallet */}
+      {/* Recent trades — last 30 NFL on-chain events for this wallet */}
       <div className="mt-4">
         <SectionHead
           title="Recent Trades"
-          hint={`Last ${trades.length} on-chain trade${trades.length === 1 ? "" : "s"} on Sport.fun · NFL and Soccer combined`}
-          right={
-            <Pill tone="muted">
-              {trades.filter((t) => t.isNfl).length} NFL · {trades.filter((t) => !t.isNfl).length} Soccer
-            </Pill>
-          }
+          hint={`Last ${trades.length} NFL on-chain trade${trades.length === 1 ? "" : "s"} on Sport.fun`}
+          right={<Pill tone="muted">{trades.length} NFL</Pill>}
         />
         <Card variant="press" padded={false}>
           <WalletTradesTable rows={trades} />

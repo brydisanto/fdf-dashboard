@@ -103,8 +103,8 @@ export function RecentTrades({
         <table className={clsx("w-full text-[13px]", compact ? "min-w-[560px]" : "min-w-[820px]")}>
           <thead style={{ background: "color-mix(in oklab, var(--color-press) 50%, transparent)" }}>
             <tr className="border-b border-[var(--color-line)]">
-              <Th align="center">Flow</Th>
-              {showPlayer ? <Th>Player</Th> : null}
+              <Th align="left">Flow</Th>
+              {showPlayer ? <Th align="left">Player</Th> : null}
               <Th align="center">Price</Th>
               <Th align="center">Amount</Th>
               <Th align="center">Total</Th>
@@ -124,9 +124,9 @@ export function RecentTrades({
                     borderBottom: "1px solid var(--color-line)",
                   }}
                 >
-                  <CenterCell>
+                  <td className="px-3" style={{ padding: "var(--row-pad-y) 12px", textAlign: "left" }}>
                     <FlowBadge flow={t.flow} />
-                  </CenterCell>
+                  </td>
                   {showPlayer && player ? (
                     <Cell>
                       <Link href={`/player/${t.playerId}`} className="flex items-center gap-2 hover:text-[var(--accent-soft)]">
