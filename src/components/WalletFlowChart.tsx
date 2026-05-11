@@ -52,7 +52,7 @@ export function WalletFlowChart({
             contentStyle={{ background: "var(--color-press)", border: "1px solid var(--color-line-strong)", borderRadius: 8, fontSize: 12, color: "var(--color-text)" }}
             labelStyle={{ color: "var(--color-text)" }}
             itemStyle={{ color: "var(--color-text)" }}
-            labelFormatter={(v) => new Date(Number(v)).toLocaleDateString()}
+            labelFormatter={(v) => new Date(Number(v)).toLocaleDateString("en-US", { timeZone: "UTC" })}
             formatter={(v: unknown, name: unknown) => {
               const n = Number(v);
               const lbl = name === "nflNet" ? "NFL net" : "Soccer net";
@@ -69,5 +69,9 @@ export function WalletFlowChart({
 }
 
 function fmtDay(t: number) {
-  return new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  // Daily buckets in getWalletFlow are aligned to midnight UTC. Format
+  // labels in UTC too so a bucket like "May 11 00:00 UTC" doesn't display
+  // as "May 10" in western timezones — that mislabeling made today's
+  // bucket look like it was missing from the chart.
+  return new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
