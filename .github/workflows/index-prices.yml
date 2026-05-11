@@ -31,6 +31,12 @@ jobs:
           fetch-depth: 0
         continue-on-error: true
 
+      - name: Configure git identity
+        shell: bash
+        run: |
+          git config --global user.name "Gridiron Indexer"
+          git config --global user.email "indexer@users.noreply.github.com"
+
       - name: Bootstrap data branch if missing, then overlay main scripts
         shell: bash
         run: |
