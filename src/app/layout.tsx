@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { Atkinson_Hyperlegible, Big_Shoulders, JetBrains_Mono } from "next/font/google";
+import { Hanken_Grotesk, Big_Shoulders, JetBrains_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 
-const body = Atkinson_Hyperlegible({
+const body = Hanken_Grotesk({
   subsets: ["latin"],
-  weight: ["400", "700"],
+  weight: ["400", "500", "600", "700"],
   style: ["normal", "italic"],
   variable: "--font-body-raw",
 });
