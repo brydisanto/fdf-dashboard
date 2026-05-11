@@ -39,12 +39,8 @@ export default async function ValuePage() {
   const udByName = indexUdByName(getUnderdogRankings());
   const espnByName = indexEspnByName(getEspnRankings());
 
-  // Group roster by position; market positional rank within each.
-  // Ranked by market cap (price × circulating), matching the home
-  // table's overall # column. Earlier we ranked by raw share price,
-  // but that diverged from the rest of the dashboard because the
-  // bonding-curve circulating supply varies per token — two players
-  // at the same price aren't worth the same to the market.
+  // Group roster by position; market positional rank within each,
+  // sorted by raw share price (highest price = #1).
   const byPos = new Map<Position, typeof players>();
   for (const p of players) {
     if (!POS.includes(p.position as Position)) continue;
@@ -54,7 +50,7 @@ export default async function ValuePage() {
   }
   const marketPosRank = new Map<string, { rank: number; size: number }>();
   for (const [, list] of byPos) {
-    list.sort((a, b) => b.marketCap - a.marketCap);
+    list.sort((a, b) => b.priceUsd - a.priceUsd);
     list.forEach((p, i) => marketPosRank.set(p.id, { rank: i + 1, size: list.length }));
   }
 
