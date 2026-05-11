@@ -311,7 +311,7 @@ function ExtremeCard({
         >
           {title}
         </div>
-        <Pill tone={tone}>{tone === "gain" ? "Buy" : "Sell"}</Pill>
+        <Pill tone={tone}>{tone === "gain" ? "Good Value" : "Bad Value"}</Pill>
       </div>
       {players.length === 0 ? (
         <div className="text-[12px] text-[var(--color-text-dim)]">{empty}</div>
