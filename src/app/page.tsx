@@ -20,7 +20,14 @@ import { FreshnessIndicator } from "@/components/FreshnessIndicator";
 import { UniqueHoldersCard, UniqueHoldersCardSkeleton } from "@/components/UniqueHoldersCard";
 import { fmtUsd } from "@/lib/format";
 
-export const dynamic = "force-dynamic";
+// 60s ISR — Next.js serves cached HTML and regenerates in the
+// background. Navigations feel instant because the rendered page is
+// served from the edge cache rather than a full server render. The
+// underlying upstream fetches are already cached at their own
+// revalidate intervals (REVALIDATE.list/trades/etc.), so any data
+// that needs to be fresher than 60s still updates within its own
+// cache window.
+export const revalidate = 60;
 
 export default async function Home() {
   const [overview, players, feedAndFlow, dailyVolume] = await Promise.all([
