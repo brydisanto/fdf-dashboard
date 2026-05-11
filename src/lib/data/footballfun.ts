@@ -1,4 +1,5 @@
 import "server-only";
+import { getAddress } from "viem";
 import type {
   HolderBucket,
   MarketOverview,
@@ -1221,11 +1222,24 @@ export async function getWalletPortfolio(
   // Always returns a profile — even on upstream error or empty response —
   // so the wallet page can render a usable empty state instead of 404ing.
   let rows: TeneroHoldingRow[] = [];
+  // The upstream `/wallets/.../holdings` endpoint is currently
+  // case-sensitive in the opposite direction from most of its API:
+  // it only returns rows for the EIP-55 checksummed form of the
+  // address — lowercase comes back empty. Other endpoints (and our
+  // on-chain reader) accept lowercase fine, so we checksum just for
+  // this specific call. If checksumming throws (malformed input), we
+  // fall back to whatever the caller passed.
+  let queryAddress = address;
+  try {
+    queryAddress = getAddress(address);
+  } catch {
+    queryAddress = address;
+  }
   try {
     // Upstream rejects limit > 50 with `Request validation failed`. Page
     // through with cursors if a wallet holds more than 50 positions.
     const data = await tget<{ rows: TeneroHoldingRow[]; next: string | null }>(
-      `/wallets/${encodeURIComponent(address)}/holdings?limit=50`,
+      `/wallets/${encodeURIComponent(queryAddress)}/holdings?limit=50`,
       REVALIDATE.detail,
     );
     rows = data?.rows ?? [];
@@ -1237,7 +1251,7 @@ export async function getWalletPortfolio(
     while (cursor && safety < 6) {
       try {
         const next = await tget<{ rows: TeneroHoldingRow[]; next: string | null }>(
-          `/wallets/${encodeURIComponent(address)}/holdings?limit=50&cursor=${encodeURIComponent(cursor)}`,
+          `/wallets/${encodeURIComponent(queryAddress)}/holdings?limit=50&cursor=${encodeURIComponent(cursor)}`,
           REVALIDATE.detail,
         );
         if (!next?.rows?.length) break;
