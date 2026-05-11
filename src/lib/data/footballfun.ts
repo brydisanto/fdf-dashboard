@@ -435,10 +435,24 @@ export async function getPriceSeries(id: string, tf: Timeframe): Promise<PricePo
   };
   const { period, limit } = cfg[tf];
   const path = `/tokens/${encodeURIComponent(player.tokenAddress)}/ohlc?period=${period}&type=token&limit=${limit}`;
+  // The upstream OHLC endpoint returns the most-recent N bars that had
+  // ACTIVITY, not the last N chronological intervals. For low-activity
+  // tokens those bars can span months — so a "24H" chart ends up showing
+  // data going back to February. Filter on our side to the actual window.
+  const windowSec: Record<Timeframe, number | null> = {
+    "1H":  3600,
+    "24H": 86_400,
+    "7D":  7 * 86_400,
+    "30D": 30 * 86_400,
+    "ALL": null,
+  };
+  const cutoff = windowSec[tf];
   try {
     const data = await tget<TeneroOhlcRow[]>(path, REVALIDATE.ohlc);
     if (!Array.isArray(data)) return [];
+    const nowSec = Math.floor(Date.now() / 1000);
     return data
+      .filter((row) => cutoff == null || Number(row.time ?? 0) >= nowSec - cutoff)
       .map((row) => ({
         t: row.time * 1000,
         price: Number(row.close),

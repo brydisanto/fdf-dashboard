@@ -8,7 +8,7 @@ import {
 import { fmtPrice } from "@/lib/format";
 import type { PricePoint, Timeframe } from "@/lib/types";
 
-const TF_ORDER: Timeframe[] = ["1H", "24H", "7D", "30D", "ALL"];
+const TF_ORDER: Timeframe[] = ["24H", "7D", "30D", "ALL"];
 
 export function PlayerPriceChart({
   series,
@@ -26,7 +26,7 @@ export function PlayerPriceChart({
 
   const fmtTick = (t: number) => {
     const d = new Date(t);
-    if (tf === "1H" || tf === "24H") return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    if (tf === "24H") return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
 

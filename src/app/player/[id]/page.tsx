@@ -20,7 +20,7 @@ import { RecentTrades } from "@/components/RecentTrades";
 import { TEAM_COLORS, TEAM_NAMES } from "@/lib/data/players";
 import { fmtNum, fmtPrice, fmtUsd } from "@/lib/format";
 
-const TFS: Timeframe[] = ["1H", "24H", "7D", "30D", "ALL"];
+const TFS: Timeframe[] = ["24H", "7D", "30D", "ALL"];
 
 export const revalidate = 30;
 
