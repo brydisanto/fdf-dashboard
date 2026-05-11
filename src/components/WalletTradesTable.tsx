@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ExternalLink } from "lucide-react";
-import { fmtNum, fmtPrice, fmtTimeAgo, fmtUsd, shortAddr } from "@/lib/format";
+import { fmtNum, fmtPrice, fmtTimeAgo, fmtUsd } from "@/lib/format";
 import { TEAM_NAMES } from "@/lib/data/players";
 import type { WalletTradeRow } from "@/lib/types";
 
@@ -60,17 +60,11 @@ export function WalletTradesTable({ rows }: { rows: WalletTradeRow[] }) {
                   href={`https://basescan.org/tx/${r.txId}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="ml-auto inline-flex items-center gap-1 text-[var(--color-text-dim)] hover:text-[var(--accent-soft)]"
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: "11px",
-                    fontVariantNumeric: "tabular-nums",
-                    justifyContent: "flex-end",
-                  }}
+                  className="ml-auto inline-flex items-center justify-end text-[var(--color-text-dim)] hover:text-[var(--accent-soft)]"
                   title={r.txId}
+                  aria-label="View transaction on Basescan"
                 >
-                  {shortAddr(r.txId, 4, 4)}
-                  <ExternalLink className="h-3 w-3" strokeWidth={1.5} />
+                  <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.5} />
                 </a>
               </td>
             </tr>
