@@ -746,15 +746,34 @@ export async function getNflHotPlayers(): Promise<HotPlayerRow[]> {
   // (a cold player would rank last anyway).
   const active = players.filter((p) => p.volume24h > 0 || p.volume7d > 0);
 
+  // CRITICAL: the upstream's OHLC endpoint returns the most-recent N bars
+  // that had ACTIVITY — not the last N chronological hours/days. For sparse
+  // tokens those bars can stretch back days/weeks, so summing the raw
+  // response inflates short windows enormously (e.g. 6h showing 60+h of
+  // history). We request a generous limit, then filter to the actual window.
+  const nowSec = Math.floor(Date.now() / 1000);
+  const cutoff6h = nowSec - 6 * 3600;
+  const cutoff30d = nowSec - 30 * 86400;
+
   const fns = active.map((p) => async () => {
     const roster = ROSTER_BY_ID.get(p.id);
     if (!roster) return { id: p.id, volume6h: 0, volume30d: 0 };
     const [hourly, daily] = await Promise.all([
-      fetchOhlcBars(roster.tokenAddress, "1h", 6),
-      fetchOhlcBars(roster.tokenAddress, "1d", 30),
+      // 48 hourly bars-with-activity is plenty to cover the last 6h even
+      // on the busiest player — and lets the timestamp filter do its job
+      // when bars are sparse.
+      fetchOhlcBars(roster.tokenAddress, "1h", 48),
+      // 45 daily bars covers the last 30 days even when there are gaps.
+      fetchOhlcBars(roster.tokenAddress, "1d", 45),
     ]);
-    const volume6h = hourly.reduce((a, b) => a + Number(b.volume ?? 0), 0);
-    const volume30d = daily.reduce((a, b) => a + Number(b.volume ?? 0), 0);
+    const volume6h = hourly.reduce(
+      (a, b) => (Number(b.time ?? 0) >= cutoff6h ? a + Number(b.volume ?? 0) : a),
+      0,
+    );
+    const volume30d = daily.reduce(
+      (a, b) => (Number(b.time ?? 0) >= cutoff30d ? a + Number(b.volume ?? 0) : a),
+      0,
+    );
     return { id: p.id, volume6h, volume30d };
   });
 

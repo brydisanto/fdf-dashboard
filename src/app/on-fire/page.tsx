@@ -3,7 +3,10 @@ import { ArrowLeft, Flame } from "lucide-react";
 import { getNflHotPlayers } from "@/lib/data";
 import { Card, Pill } from "@/components/ui";
 import { HotPlayersTable } from "@/components/HotPlayersTable";
+import { PlayerAvatar } from "@/components/PlayerAvatar";
+import { TEAM_NAMES } from "@/lib/data/players";
 import { fmtNum, fmtUsd } from "@/lib/format";
+import type { HotPlayerRow } from "@/lib/data";
 
 export const metadata = {
   title: "On Fire · FDF Box Score",
@@ -69,39 +72,39 @@ export default async function OnFirePage() {
             }}
           />
         </div>
-        <div className="relative flex flex-col gap-6" style={{ padding: "32px 32px 28px" }}>
-          <div className="flex flex-wrap items-center gap-2">
-            <Pill tone="brand">
-              <Flame className="h-3 w-3" strokeWidth={2} />
-              On Fire
-            </Pill>
-            <Pill tone="info">
-              {onFireCount} {onFireCount === 1 ? "Player" : "Players"} heating up
-            </Pill>
+        <div
+          className="relative grid gap-6 items-center"
+          style={{ padding: "32px 32px 28px", gridTemplateColumns: "minmax(0, 1fr) auto" }}
+        >
+          <div className="flex flex-col gap-6 min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Pill tone="brand">
+                <Flame className="h-3 w-3" strokeWidth={2} />
+                On Fire
+              </Pill>
+              <Pill tone="info">
+                {onFireCount} {onFireCount === 1 ? "Player" : "Players"} heating up
+              </Pill>
+            </div>
+            <h1
+              className="m-0 text-[var(--color-text)]"
+              style={{
+                fontFamily: "var(--font-display)",
+                fontWeight: 900,
+                fontSize: "clamp(30px, 3.5vw, 48px)",
+                lineHeight: 1,
+                letterSpacing: "-0.005em",
+                textTransform: "uppercase",
+              }}
+            >
+              Who&rsquo;s Trading Hot
+            </h1>
+            <p className="m-0 max-w-[80ch] text-[var(--color-text-muted)]" style={{ fontSize: "15px" }}>
+              Top NFL player shares ranked by trading volume across 6h, 24h, 7d, and 30d windows.
+            </p>
           </div>
-          <h1
-            className="m-0 text-[var(--color-text)]"
-            style={{
-              fontFamily: "var(--font-display)",
-              fontWeight: 900,
-              fontSize: "clamp(30px, 3.5vw, 48px)",
-              lineHeight: 1,
-              letterSpacing: "-0.005em",
-              textTransform: "uppercase",
-            }}
-          >
-            What&rsquo;s Trading Hot
-          </h1>
-          <p className="m-0 max-w-[80ch] text-[var(--color-text-muted)]" style={{ fontSize: "15px" }}>
-            Top NFL player tokens ranked by trading volume across 6h, 24h, 7d, and 30d windows.
-            {leader ? (
-              <>
-                {" "}Today&rsquo;s leader: <Link href={`/player/${leader.id}`} className="text-[var(--color-text)] hover:text-[var(--accent-soft)]">
-                  {leader.firstName} {leader.lastName}
-                </Link> at {fmtUsd(leader.volume24h, { compact: true })} in 24h volume.
-              </>
-            ) : null}
-          </p>
+
+          {leader ? <LeaderCard leader={leader} /> : null}
         </div>
       </div>
 
@@ -141,8 +144,8 @@ function StatCell({
   sub?: string;
 }) {
   return (
-    <div className="stat-cell">
-      <div className="flex items-center gap-2">
+    <div className="stat-cell" style={{ alignItems: "center", textAlign: "center" }}>
+      <div className="flex items-center justify-center gap-2">
         <span className="block h-px w-4 bg-[var(--accent)]" />
         <span
           style={{
@@ -184,6 +187,82 @@ function StatCell({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function LeaderCard({ leader }: { leader: HotPlayerRow }) {
+  return (
+    <Link
+      href={`/player/${leader.id}`}
+      className="group block min-w-[260px] max-w-[320px] rounded-[var(--r-12)] border transition-colors"
+      style={{
+        borderColor: "color-mix(in oklab, var(--accent) 35%, var(--color-line))",
+        background: "color-mix(in oklab, var(--accent) 8%, var(--color-bench))",
+        padding: "16px 18px",
+      }}
+    >
+      <div
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: "0.2em",
+          textTransform: "uppercase",
+          color: "var(--accent-soft)",
+        }}
+      >
+        Today&rsquo;s Leader
+      </div>
+      <div className="mt-2.5 flex items-center gap-2.5">
+        <PlayerAvatar player={leader} size="sm" />
+        <div className="min-w-0">
+          <div
+            className="truncate text-[16px] font-semibold text-[var(--color-text)] group-hover:text-[var(--accent-soft)]"
+            style={{ lineHeight: 1.15 }}
+          >
+            {leader.firstName} {leader.lastName}
+          </div>
+          <div
+            className="mt-0.5 truncate"
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "10.5px",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--color-text-dim)",
+            }}
+          >
+            {leader.position} · {TEAM_NAMES[leader.team] ?? leader.team}
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 flex items-baseline gap-2">
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontWeight: 700,
+            fontSize: 22,
+            letterSpacing: "-0.02em",
+            color: "var(--color-text)",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {fmtUsd(leader.volume24h, { compact: true })}
+        </span>
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.18em",
+            textTransform: "uppercase",
+            color: "var(--color-text-dim)",
+          }}
+        >
+          24h volume
+        </span>
+      </div>
+    </Link>
   );
 }
 
