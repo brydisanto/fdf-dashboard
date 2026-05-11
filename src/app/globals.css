@@ -48,8 +48,8 @@
 
   /* ── Type ─────────────────────────────────────────────────────── */
   --font-display:       var(--font-display-raw), 'Big Shoulders Display', system-ui, sans-serif;
-  --font-ui:            var(--font-body-raw), 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
-  --font-sans:          var(--font-body-raw), 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-ui:            var(--font-body-raw), 'Geist', ui-sans-serif, system-ui, sans-serif;
+  --font-sans:          var(--font-body-raw), 'Geist', ui-sans-serif, system-ui, sans-serif;
   --font-mono:          var(--font-mono-raw), ui-monospace, 'SF Mono', monospace;
 
   /* ── Radii ────────────────────────────────────────────────────── */

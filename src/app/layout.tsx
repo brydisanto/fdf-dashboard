@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
-import { Hanken_Grotesk, Big_Shoulders, JetBrains_Mono } from "next/font/google";
+import { Geist, Big_Shoulders, JetBrains_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 
-const body = Hanken_Grotesk({
+const body = Geist({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  style: ["normal", "italic"],
   variable: "--font-body-raw",
 });
 

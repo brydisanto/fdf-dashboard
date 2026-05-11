@@ -169,12 +169,14 @@ function buildPlayerSummary(player: NflPlayer, row: TeneroTokenRow): PlayerSumma
   // — that one effectively averages the two. We do the same so our
   // headline market cap tracks the official chart instead of straddling
   // it by 1-2%.
+  // Use the last-trade price (`price_usd`) for display rather than the
+  // bonding-curve spot or an average — that's what Sport.fun's own UI
+  // shows and what users see on the FDF/Sport.fun trade screen. The
+  // curve spot can drift a percent or two above the last fill between
+  // trades, which made our display read higher than the source UI.
   const lastTrade = Number(row.price_usd ?? 0);
   const liveSpot  = Number(row.price?.current_price ?? 0);
-  const price =
-    lastTrade > 0 && liveSpot > 0 ? (lastTrade + liveSpot) / 2 :
-    lastTrade > 0 ? lastTrade :
-    liveSpot;
+  const price = lastTrade > 0 ? lastTrade : liveSpot;
   // % changes must compare spot-to-spot. The upstream's price_*_ago
   // fields are all snapshots of `current_price`, so if we anchor those
   // against our averaged display price we get a phantom delta whenever

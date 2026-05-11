@@ -44,7 +44,9 @@ export function fmtPrice(n: number) {
   if (n >= 1000) return fmtUsd(n, { digits: 2 });
   if (n >= 1)    return fmtUsd(n, { digits: 3 });
   if (n >= 0.01) return fmtUsd(n, { digits: 4 });
-  return fmtUsd(n, { digits: 6 });
+  // Cap sub-cent prices at 5 decimals so e.g. $0.008240 → $0.00824
+  // (matches Sport.fun's display precision).
+  return fmtUsd(n, { digits: 5 });
 }
 
 export function fmtTimeAgo(ts: number, now = Date.now()) {
