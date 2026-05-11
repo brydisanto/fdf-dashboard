@@ -925,52 +925,41 @@ async function fetchOhlcDeltas(
   // and the latest OHLC bar's close. When that gap exists, the latest
   // bar's close is our best estimate of the pre-activity spot, which we
   // can use as a fallback anchor when no in-band bar is available.
+  // Conservative override: only emit an OHLC-derived delta when there's
+  // CLEAR evidence of fresh activity — i.e. the live spot has diverged
+  // from the most-recent OHLC bar's close. That divergence is the
+  // unambiguous signal of an on-chain trade the upstream's snapshot
+  // hasn't picked up yet (the Jacobs/Swift/Brown case).
+  //
+  // Previous versions anchored against older bars within a sliding cap,
+  // but for sparse tokens that bar could be an outlier (Gibbs had a 45h-
+  // old bar that was a 6% dip relative to its neighbors, producing a
+  // fake +6.3% on the 24h delta). When there's no fresh-activity
+  // divergence, returning null lets the caller keep the upstream's
+  // value — usually 0% for these quiet tokens, which is closer to the
+  // truth than an outlier-driven OHLC anchor.
   const mostRecentBar = bars[0];
   const mostRecentClose = mostRecentBar ? Number(mostRecentBar.close ?? 0) : 0;
-  const hasFreshActivity =
-    mostRecentClose > 0 && Math.abs(currentSpot - mostRecentClose) / mostRecentClose > 1e-6;
-  // Bars are newest-first. Find the most recent bar whose timestamp sits
-  // in the [now - windowSec*1.5, now - windowSec] band — i.e. roughly
-  // at the anchor point we care about, with some slack for sparse data.
-  // The 1.5x cap matters: without it, a token whose only "older" bar
-  // is 40 days back would anchor the 24h delta against that ancient
-  // close, producing a misleading multi-percent move that has nothing
-  // to do with the last 24 hours.
-  //
-  // If no bar falls in the band BUT there's fresh-activity divergence,
-  // fall back to the most-recent bar's close: that's the pre-activity
-  // spot, and the move since represents the unreflected fresh activity
-  // we care about surfacing in short windows.
-  // Absolute lookback cap per window — bars OLDER than this don't count
-  // as a reasonable anchor for that window. Calibrated empirically: the
-  // 1.5x relative cap was too tight (e.g. for a 24h window, a 70-hour-old
-  // bar is still a fair anchor for "how much has the price moved roughly
-  // since yesterday", but a 40-day-old one isn't).
-  const ANCHOR_MAX_AGE: Record<number, number> = {
-    3600: 24 * 3600,        // 1h window → allow anchor up to 24h old
-    86400: 7 * 86400,       // 24h window → allow anchor up to 7d old
-    604800: 30 * 86400,     // 7d window → allow anchor up to 30d old
-  };
-  const findAnchor = (windowSec: number): number | null => {
-    const cutoff = nowSec - windowSec;
-    const maxAge = nowSec - (ANCHOR_MAX_AGE[windowSec] ?? windowSec * 7);
-    for (const b of bars) {
-      const t = Number(b.time ?? 0);
-      if (t <= cutoff && t >= maxAge) {
-        const close = Number(b.close ?? 0);
-        return close > 0 ? close : null;
-      }
-    }
-    return hasFreshActivity ? mostRecentClose : null;
-  };
-  const compute = (anchor: number | null): number | null => {
-    if (anchor == null || anchor <= 0) return null;
-    return +(((currentSpot - anchor) / anchor) * 100).toFixed(2);
-  };
+  if (mostRecentClose <= 0) {
+    return { change1h: null, change24h: null, change7d: null };
+  }
+  const divergence = Math.abs(currentSpot - mostRecentClose) / mostRecentClose;
+  // 0.01% threshold — anything smaller is rounding noise, not real
+  // unreflected activity.
+  if (divergence <= 1e-4) {
+    return { change1h: null, change24h: null, change7d: null };
+  }
+  // Fresh activity confirmed. The latest bar's close is the pre-trade
+  // spot; the move since reflects the unreflected fresh activity. Apply
+  // the same delta to all visible windows — for these "trade just
+  // happened" cases the user wants to SEE the move show up, and we
+  // don't have finer-grained data to attribute it to a specific window.
+  void nowSec; // retained for symmetry, unused under conservative path
+  const change = +(((currentSpot - mostRecentClose) / mostRecentClose) * 100).toFixed(2);
   return {
-    change1h: compute(findAnchor(3600)),
-    change24h: compute(findAnchor(86400)),
-    change7d: compute(findAnchor(7 * 86400)),
+    change1h: change,
+    change24h: change,
+    change7d: change,
   };
 }
 
