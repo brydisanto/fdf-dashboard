@@ -14,7 +14,7 @@ import type { PlayerSummary, Position } from "@/lib/types";
 type SortKey =
   | "rank" | "name" | "priceUsd" | "change1h" | "change24h" | "change7d"
   | "marketCap" | "volume24h" | "holders"
-  | "circulatingSupply" | "poolSupply";
+  | "activeSupply" | "circulatingSupply" | "poolSupply";
 
 const POSITIONS: (Position | "ALL")[] = ["ALL", "QB", "RB", "WR", "TE"];
 
@@ -113,6 +113,7 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
               <Th onClick={() => onSort("marketCap")} active={sortKey === "marketCap"} dir={sortDir}>Market Cap</Th>
               <Th onClick={() => onSort("volume24h")} active={sortKey === "volume24h"} dir={sortDir}>24h Vol</Th>
               <Th onClick={() => onSort("holders")} active={sortKey === "holders"} dir={sortDir}>Holders</Th>
+              <Th onClick={() => onSort("activeSupply")} active={sortKey === "activeSupply"} dir={sortDir}>Active Shares</Th>
               <Th onClick={() => onSort("circulatingSupply")} active={sortKey === "circulatingSupply"} dir={sortDir}>Circulating</Th>
               <Th onClick={() => onSort("poolSupply")} active={sortKey === "poolSupply"} dir={sortDir}>Pool Reserve</Th>
               <Th className="pr-5">7d Trend</Th>
@@ -163,12 +164,8 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
                   <NumCell>{fmtUsd(p.marketCap, { compact: true })}</NumCell>
                   <NumCell>{fmtUsd(p.volume24h, { compact: true })}</NumCell>
                   <NumCell>{fmtNum(p.holders, { compact: true })}</NumCell>
-                  <NumCell>
-                    {fmtNum(p.circulatingSupply, { compact: true, digits: 1 })}
-                    <span className="ml-1 text-[10px] text-[var(--color-text-dim)]">
-                      ({Math.round((p.circulatingSupply / Math.max(1, p.maxSupply)) * 100)}%)
-                    </span>
-                  </NumCell>
+                  <NumCell>{fmtNum(p.activeSupply, { compact: true, digits: 1 })}</NumCell>
+                  <NumCell>{fmtNum(p.circulatingSupply, { compact: true, digits: 1 })}</NumCell>
                   <NumCell>{fmtNum(p.poolSupply, { compact: true, digits: 1 })}</NumCell>
                   <Cell className="pr-5">
                     <Sparkline data={p.sparkline7d} positive={p.change7d >= 0} className="ml-auto" />
