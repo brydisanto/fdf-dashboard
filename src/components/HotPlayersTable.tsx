@@ -100,12 +100,12 @@ export function HotPlayersTable({ players }: { players: HotPlayerRow[] }) {
             <tr className="border-b border-[var(--color-line)]">
               <Th onClick={() => onSort("rank")} active={sortKey === "rank"} dir={sortDir} className="w-12 pl-5">#</Th>
               <Th onClick={() => onSort("name")} active={sortKey === "name"} dir={sortDir}>Player</Th>
-              <Th onClick={() => onSort("priceUsd")} active={sortKey === "priceUsd"} dir={sortDir} align="right">Price</Th>
-              <Th onClick={() => onSort("change24h")} active={sortKey === "change24h"} dir={sortDir} align="right">24h %</Th>
-              <Th onClick={() => onSort("volume6h")} active={sortKey === "volume6h"} dir={sortDir} align="right">6h Vol</Th>
-              <Th onClick={() => onSort("volume24h")} active={sortKey === "volume24h"} dir={sortDir} align="right">24h Vol</Th>
-              <Th onClick={() => onSort("volume7d")} active={sortKey === "volume7d"} dir={sortDir} align="right">7d Vol</Th>
-              <Th onClick={() => onSort("heat")} active={sortKey === "heat"} dir={sortDir} align="right" className="pr-5">Heat</Th>
+              <Th onClick={() => onSort("priceUsd")} active={sortKey === "priceUsd"} dir={sortDir}>Price</Th>
+              <Th onClick={() => onSort("change24h")} active={sortKey === "change24h"} dir={sortDir}>24h %</Th>
+              <Th onClick={() => onSort("volume6h")} active={sortKey === "volume6h"} dir={sortDir}>6h Vol</Th>
+              <Th onClick={() => onSort("volume24h")} active={sortKey === "volume24h"} dir={sortDir}>24h Vol</Th>
+              <Th onClick={() => onSort("volume7d")} active={sortKey === "volume7d"} dir={sortDir}>7d Vol</Th>
+              <Th onClick={() => onSort("heat")} active={sortKey === "heat"} dir={sortDir} className="pr-5">Heat</Th>
             </tr>
           </thead>
           <tbody>
@@ -122,9 +122,9 @@ export function HotPlayersTable({ players }: { players: HotPlayerRow[] }) {
                   {ranked.get(p.id)}
                 </td>
                 <td className="px-3" style={{ padding: "var(--row-pad-y) 12px" }}>
-                  <Link href={`/player/${p.id}`} className="flex items-center gap-2.5">
+                  <Link href={`/player/${p.id}`} className="flex items-center justify-center gap-2.5">
                     <PlayerAvatar player={p} size="sm" />
-                    <div className="min-w-0">
+                    <div className="min-w-0 text-left">
                       <div className="truncate font-semibold text-[14px] group-hover:text-[var(--accent-soft)]">
                         {p.firstName} {p.lastName}
                       </div>
@@ -145,13 +145,13 @@ export function HotPlayersTable({ players }: { players: HotPlayerRow[] }) {
                 </td>
                 <NumCell>{fmtPrice(p.priceUsd)}</NumCell>
                 <td className="px-3" style={{ padding: "var(--row-pad-y) 12px" }}>
-                  <div className="text-right"><Delta value={p.change24h} /></div>
+                  <div className="flex justify-center"><Delta value={p.change24h} /></div>
                 </td>
                 <NumCell>{p.volume6h > 0 ? fmtUsd(p.volume6h, { compact: true }) : <span className="text-[var(--color-text-dim)]">—</span>}</NumCell>
                 <NumCell>{p.volume24h > 0 ? fmtUsd(p.volume24h, { compact: true }) : <span className="text-[var(--color-text-dim)]">—</span>}</NumCell>
                 <NumCell>{p.volume7d > 0 ? fmtUsd(p.volume7d, { compact: true }) : <span className="text-[var(--color-text-dim)]">—</span>}</NumCell>
                 <td className="pr-5" style={{ padding: "var(--row-pad-y) 12px" }}>
-                  <div className="ml-auto flex justify-end">
+                  <div className="flex justify-center">
                     <HeatPill heat={p.heat} />
                   </div>
                 </td>
@@ -238,7 +238,7 @@ function HeatPill({ heat }: { heat: number }) {
 function NumCell({ children }: { children: React.ReactNode }) {
   return (
     <td
-      className="mono px-3 text-right"
+      className="mono px-3"
       style={{ padding: "var(--row-pad-y) 12px", fontVariantNumeric: "tabular-nums" }}
     >
       {children}
@@ -304,13 +304,12 @@ function Seg<T extends string>({
 }
 
 function Th({
-  children, onClick, active, dir, align = "left", className,
+  children, onClick, active, dir, className,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   active?: boolean;
   dir?: "asc" | "desc";
-  align?: "left" | "right";
   className?: string;
 }) {
   return (
@@ -323,16 +322,12 @@ function Th({
         letterSpacing: "0.18em",
         textTransform: "uppercase",
         color: active ? "var(--color-text)" : "var(--color-text-dim)",
-        textAlign: align,
       }}
     >
       {onClick ? (
         <button
           onClick={onClick}
-          className={clsx(
-            "inline-flex items-center gap-1 hover:text-[var(--color-text)]",
-            align === "right" && "ml-auto",
-          )}
+          className="inline-flex items-center gap-1 hover:text-[var(--color-text)]"
         >
           <span>{children}</span>
           {active && dir ? (

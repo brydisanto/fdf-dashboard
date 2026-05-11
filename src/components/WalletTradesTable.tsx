@@ -21,10 +21,10 @@ export function WalletTradesTable({ rows }: { rows: WalletTradeRow[] }) {
             <Th className="w-24 pl-5">Time</Th>
             <Th className="w-20">Side</Th>
             <Th>Asset</Th>
-            <Th align="right">Shares</Th>
-            <Th align="right">Price</Th>
-            <Th align="right">USD Value</Th>
-            <Th align="right" className="w-20 pr-5">Tx</Th>
+            <Th>Shares</Th>
+            <Th>Price</Th>
+            <Th>USD Value</Th>
+            <Th className="w-20 pr-5">Tx</Th>
           </tr>
         </thead>
         <tbody>
@@ -60,7 +60,7 @@ export function WalletTradesTable({ rows }: { rows: WalletTradeRow[] }) {
                   href={`https://basescan.org/tx/${r.txId}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="ml-auto inline-flex items-center justify-end text-[var(--color-text-dim)] hover:text-[var(--accent-soft)]"
+                  className="inline-flex items-center justify-center text-[var(--color-text-dim)] hover:text-[var(--accent-soft)]"
                   title={r.txId}
                   aria-label="View transaction on Basescan"
                 >
@@ -110,7 +110,7 @@ function AssetCell({ row }: { row: WalletTradeRow }) {
     : row.symbol;
 
   const body = (
-    <div className="flex items-center gap-2.5">
+    <div className="flex items-center justify-center gap-2.5">
       <div className="min-w-0">
         <div className="truncate font-semibold text-[14px] text-[var(--color-text)]">
           {row.name || row.symbol || "—"}
@@ -144,7 +144,7 @@ function AssetCell({ row }: { row: WalletTradeRow }) {
 function NumCell({ children }: { children: React.ReactNode }) {
   return (
     <td
-      className="mono px-3 text-right"
+      className="mono px-3"
       style={{ padding: "var(--row-pad-y) 12px", fontVariantNumeric: "tabular-nums" }}
     >
       {children}
@@ -154,11 +154,9 @@ function NumCell({ children }: { children: React.ReactNode }) {
 
 function Th({
   children,
-  align = "left",
   className,
 }: {
   children: React.ReactNode;
-  align?: "left" | "right";
   className?: string;
 }) {
   return (
@@ -171,7 +169,6 @@ function Th({
         letterSpacing: "0.18em",
         textTransform: "uppercase",
         color: "var(--color-text-dim)",
-        textAlign: align,
       }}
     >
       {children}

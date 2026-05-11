@@ -100,6 +100,15 @@ html, body {
   background-size: 48px 48px;
 }
 
+/* Center-align all table cells by default. Individual cells can still
+   override with their own text-align / flex justification when needed
+   (e.g. an asset cell containing an avatar + name should use a flex
+   container with justify-center to center the whole composition). */
+table th,
+table td {
+  text-align: center;
+}
+
 /* Mono eyebrow — section + stat labels */
 .mono-eyebrow {
   font-family: var(--font-mono);

@@ -106,16 +106,16 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
             <tr className="border-b border-[var(--color-line)]">
               <Th onClick={() => onSort("rank")}    active={sortKey === "rank"}    dir={sortDir} className="w-12 pl-5">#</Th>
               <Th onClick={() => onSort("name")}    active={sortKey === "name"}    dir={sortDir}>Player</Th>
-              <Th onClick={() => onSort("priceUsd")} active={sortKey === "priceUsd"} dir={sortDir} align="right">Price</Th>
-              <Th onClick={() => onSort("change1h")} active={sortKey === "change1h"} dir={sortDir} align="right">1h</Th>
-              <Th onClick={() => onSort("change24h")} active={sortKey === "change24h"} dir={sortDir} align="right">24h</Th>
-              <Th onClick={() => onSort("change7d")} active={sortKey === "change7d"} dir={sortDir} align="right">7d</Th>
-              <Th onClick={() => onSort("marketCap")} active={sortKey === "marketCap"} dir={sortDir} align="right">Market Cap</Th>
-              <Th onClick={() => onSort("volume24h")} active={sortKey === "volume24h"} dir={sortDir} align="right">24h Vol</Th>
-              <Th onClick={() => onSort("holders")} active={sortKey === "holders"} dir={sortDir} align="right">Holders</Th>
-              <Th onClick={() => onSort("circulatingSupply")} active={sortKey === "circulatingSupply"} dir={sortDir} align="right">Circulating</Th>
-              <Th onClick={() => onSort("poolSupply")} active={sortKey === "poolSupply"} dir={sortDir} align="right">Pool Reserve</Th>
-              <Th align="right" className="pr-5">7d Trend</Th>
+              <Th onClick={() => onSort("priceUsd")} active={sortKey === "priceUsd"} dir={sortDir}>Price</Th>
+              <Th onClick={() => onSort("change1h")} active={sortKey === "change1h"} dir={sortDir}>1h</Th>
+              <Th onClick={() => onSort("change24h")} active={sortKey === "change24h"} dir={sortDir}>24h</Th>
+              <Th onClick={() => onSort("change7d")} active={sortKey === "change7d"} dir={sortDir}>7d</Th>
+              <Th onClick={() => onSort("marketCap")} active={sortKey === "marketCap"} dir={sortDir}>Market Cap</Th>
+              <Th onClick={() => onSort("volume24h")} active={sortKey === "volume24h"} dir={sortDir}>24h Vol</Th>
+              <Th onClick={() => onSort("holders")} active={sortKey === "holders"} dir={sortDir}>Holders</Th>
+              <Th onClick={() => onSort("circulatingSupply")} active={sortKey === "circulatingSupply"} dir={sortDir}>Circulating</Th>
+              <Th onClick={() => onSort("poolSupply")} active={sortKey === "poolSupply"} dir={sortDir}>Pool Reserve</Th>
+              <Th className="pr-5">7d Trend</Th>
             </tr>
           </thead>
           <tbody>
@@ -135,9 +135,9 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
                     {ranked.get(p.id)}
                   </td>
                   <td className="px-3" style={{ padding: "var(--row-pad-y) 12px" }}>
-                    <Link href={`/player/${p.id}`} className="flex items-center gap-2.5">
+                    <Link href={`/player/${p.id}`} className="flex items-center justify-center gap-2.5">
                       <PlayerAvatar player={p} size="sm" />
-                      <div className="min-w-0">
+                      <div className="min-w-0 text-left">
                         <div className="truncate font-semibold text-[14px] group-hover:text-[var(--accent-soft)]">
                           {p.firstName} {p.lastName}
                         </div>
@@ -157,9 +157,9 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
                     </Link>
                   </td>
                   <NumCell>{fmtPrice(p.priceUsd)}</NumCell>
-                  <Cell><div className="text-right"><Delta value={p.change1h} /></div></Cell>
-                  <Cell><div className="text-right"><Delta value={p.change24h} /></div></Cell>
-                  <Cell><div className="text-right"><Delta value={p.change7d} /></div></Cell>
+                  <Cell><div className="flex justify-center"><Delta value={p.change1h} /></div></Cell>
+                  <Cell><div className="flex justify-center"><Delta value={p.change24h} /></div></Cell>
+                  <Cell><div className="flex justify-center"><Delta value={p.change7d} /></div></Cell>
                   <NumCell>{fmtUsd(p.marketCap, { compact: true })}</NumCell>
                   <NumCell>{fmtUsd(p.volume24h, { compact: true })}</NumCell>
                   <NumCell>{fmtNum(p.holders, { compact: true })}</NumCell>
@@ -214,7 +214,7 @@ function Cell({ children, className }: { children: React.ReactNode; className?: 
 function NumCell({ children }: { children: React.ReactNode }) {
   return (
     <td
-      className="mono px-3 text-right"
+      className="mono px-3"
       style={{ padding: "var(--row-pad-y) 12px", fontVariantNumeric: "tabular-nums" }}
     >
       {children}
@@ -280,13 +280,12 @@ function Seg<T extends string>({
 }
 
 function Th({
-  children, onClick, active, dir, align = "left", className,
+  children, onClick, active, dir, className,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   active?: boolean;
   dir?: "asc" | "desc";
-  align?: "left" | "right";
   className?: string;
 }) {
   return (
@@ -299,16 +298,12 @@ function Th({
         letterSpacing: "0.18em",
         textTransform: "uppercase",
         color: active ? "var(--color-text)" : "var(--color-text-dim)",
-        textAlign: align,
       }}
     >
       {onClick ? (
         <button
           onClick={onClick}
-          className={clsx(
-            "inline-flex items-center gap-1 hover:text-[var(--color-text)]",
-            align === "right" && "ml-auto",
-          )}
+          className="inline-flex items-center gap-1 hover:text-[var(--color-text)]"
         >
           <span>{children}</span>
           {active && dir ? (

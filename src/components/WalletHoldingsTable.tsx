@@ -60,16 +60,16 @@ export function WalletHoldingsTable({
     <div>
       <div className="overflow-x-auto">
         <table className={clsx("w-full text-sm", variant === "nfl" ? "min-w-[680px]" : "min-w-[640px]")}>
-          <thead className="text-left text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-dim)]">
+          <thead className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-dim)]">
             <tr className="border-b border-[var(--color-border)]">
               <Th onClick={() => onSort("name")}              active={sortKey === "name"}              dir={sortDir}>
                 {variant === "nfl" ? "Player" : "Token"}
               </Th>
-              <Th onClick={() => onSort("balance")}           active={sortKey === "balance"}           dir={sortDir} align="right">Balance</Th>
-              <Th onClick={() => onSort("priceUsd")}          active={sortKey === "priceUsd"}          dir={sortDir} align="right">Price</Th>
-              <Th onClick={() => onSort("balanceValueUsd")}   active={sortKey === "balanceValueUsd"}   dir={sortDir} align="right">Value</Th>
-              <Th onClick={() => onSort("startHoldingAt")}    active={sortKey === "startHoldingAt"}    dir={sortDir} align="right">First Held</Th>
-              <Th onClick={() => onSort("lastActiveAt")}      active={sortKey === "lastActiveAt"}      dir={sortDir} align="right">Last Active</Th>
+              <Th onClick={() => onSort("balance")}           active={sortKey === "balance"}           dir={sortDir}>Balance</Th>
+              <Th onClick={() => onSort("priceUsd")}          active={sortKey === "priceUsd"}          dir={sortDir}>Price</Th>
+              <Th onClick={() => onSort("balanceValueUsd")}   active={sortKey === "balanceValueUsd"}   dir={sortDir}>Value</Th>
+              <Th onClick={() => onSort("startHoldingAt")}    active={sortKey === "startHoldingAt"}    dir={sortDir}>First Held</Th>
+              <Th onClick={() => onSort("lastActiveAt")}      active={sortKey === "lastActiveAt"}      dir={sortDir}>Last Active</Th>
             </tr>
           </thead>
           <tbody>
@@ -79,9 +79,9 @@ export function WalletHoldingsTable({
                 <tr key={h.tokenAddress} className="border-b border-[var(--color-border)]/60 last:border-b-0 hover:bg-[var(--color-surface-2)]/60">
                   <td className="px-3 py-2.5">
                     {player ? (
-                      <Link href={`/player/${player.id}`} className="flex items-center gap-2 hover:text-[var(--color-brand-soft)]">
+                      <Link href={`/player/${player.id}`} className="flex items-center justify-center gap-2 hover:text-[var(--color-brand-soft)]">
                         <PlayerAvatar player={player} size="sm" />
-                        <div>
+                        <div className="text-left">
                           <div className="font-medium">{player.firstName} {player.lastName}</div>
                           <div className="text-[11px] text-[var(--color-text-dim)]">{player.position} · {player.team}</div>
                         </div>
@@ -93,13 +93,13 @@ export function WalletHoldingsTable({
                       </div>
                     )}
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular">{fmtNum(h.balance, { digits: 2 })}</td>
-                  <td className="px-3 py-2.5 text-right tabular">{fmtPrice(h.priceUsd)}</td>
-                  <td className="px-3 py-2.5 text-right tabular font-medium">{fmtUsd(h.balanceValueUsd, { compact: true })}</td>
-                  <td className="px-3 py-2.5 text-right text-xs text-[var(--color-text-muted)]">
+                  <td className="px-3 py-2.5 tabular">{fmtNum(h.balance, { digits: 2 })}</td>
+                  <td className="px-3 py-2.5 tabular">{fmtPrice(h.priceUsd)}</td>
+                  <td className="px-3 py-2.5 tabular font-medium">{fmtUsd(h.balanceValueUsd, { compact: true })}</td>
+                  <td className="px-3 py-2.5 text-xs text-[var(--color-text-muted)]">
                     {h.startHoldingAt ? fmtTimeAgo(h.startHoldingAt) : "—"}
                   </td>
-                  <td className="px-3 py-2.5 text-right text-xs text-[var(--color-text-muted)]">
+                  <td className="px-3 py-2.5 text-xs text-[var(--color-text-muted)]">
                     {h.lastActiveAt ? fmtTimeAgo(h.lastActiveAt) : "—"}
                   </td>
                 </tr>
@@ -138,13 +138,12 @@ export function WalletHoldingsTable({
 }
 
 function Th({
-  children, onClick, active, dir, align = "left",
+  children, onClick, active, dir,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   active: boolean;
   dir: "asc" | "desc";
-  align?: "left" | "right";
 }) {
   return (
     <th className="px-3 py-2 font-medium">
@@ -152,7 +151,6 @@ function Th({
         onClick={onClick}
         className={clsx(
           "inline-flex items-center gap-1 hover:text-[var(--color-text)]",
-          align === "right" && "ml-auto float-right",
           active && "text-[var(--color-text)]",
         )}
       >

@@ -90,7 +90,7 @@ export function TopWalletsTable({ wallets }: { wallets: TopNflWallet[] }) {
           <thead style={{ background: "color-mix(in oklab, var(--color-press) 50%, transparent)" }}>
             <tr className="border-b border-[var(--color-line)]">
               <Th align="center" className="pl-5">#</Th>
-              <Th>Wallet</Th>
+              <Th align="center">Wallet</Th>
               <Th align="center">Tier</Th>
               <Th align="center" sortKey="nflValueUsd" current={sortKey} dir={sortDir} onSort={onSort} emphasized>
                 NFL Value
@@ -329,8 +329,8 @@ function fmtUsdSmart(n: number): string {
 
 function Cell({ children }: { children: React.ReactNode }) {
   return (
-    <td className="px-3" style={{ padding: "var(--row-pad-y) 12px" }}>
-      {children}
+    <td className="px-3 text-center" style={{ padding: "var(--row-pad-y) 12px" }}>
+      <div className="flex items-center justify-center">{children}</div>
     </td>
   );
 }
