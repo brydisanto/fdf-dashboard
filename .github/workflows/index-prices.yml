@@ -31,17 +31,34 @@ jobs:
           fetch-depth: 0
         continue-on-error: true
 
-      - name: Bootstrap from main if data branch missing or empty
+      - name: Bootstrap data branch if missing, then overlay main scripts
         shell: bash
         run: |
           set -e
           if [ ! -f "scripts/index-prices.mjs" ]; then
-            echo "data branch missing the script — bootstrapping from main"
+            echo "data branch missing the script — bootstrapping"
             git init -b data
             git remote remove origin 2>/dev/null || true
             git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
             git fetch origin main
-            git reset --hard origin/main
+            # Try to fetch existing data branch — may not exist on the
+            # very first run.
+            git fetch origin data 2>/dev/null || true
+            if git show-ref --verify --quiet refs/remotes/origin/data; then
+              # Existing data branch — start from there so we preserve
+              # the accumulated snapshot history (and any sibling
+              # indexers' data files), then overlay main's latest
+              # scripts/workflows on top so we run current logic.
+              git reset --hard origin/data
+              git checkout origin/main -- scripts/ .github/workflows/ 2>/dev/null || true
+              git add -A
+              if ! git diff --staged --quiet; then
+                git commit -m "Sync scripts from main"
+              fi
+            else
+              # No existing data branch — start clean from main.
+              git reset --hard origin/main
+            fi
           fi
 
       - name: Sync latest scripts from main into the data branch

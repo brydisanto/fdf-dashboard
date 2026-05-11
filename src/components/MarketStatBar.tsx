@@ -17,7 +17,7 @@ export function MarketStatBar({
 }) {
   type Stat = { label: string; value: string; delta?: number | null; sub: string };
   const stats: Stat[] = [
-    { label: "NFL Market Cap",   value: fmtUsd(data.totalMarketCap, { compact: true }), delta: data.marketCapChange24h, sub: "Price × circulating supply" },
+    { label: "NFL Market Cap",   value: fmtUsd(data.totalMarketCap, { compact: true, digits: 2 }), delta: data.marketCapChange24h, sub: "Price × circulating supply" },
     { label: "24h Volume",       value: fmtUsd(data.totalVolume24h, { compact: true }), delta: data.volumeChange24h,    sub: `${fmtNum(data.totalTrades24h)} trades` },
     { label: "Total TVL",        value: fmtUsd(data.totalTvl, { compact: true }), delta: null, sub: `${data.listedPlayers} player pools` },
     { label: "$FUN",             value: fmtUsd(data.funPriceUsd, { digits: 4 }), delta: data.funChange24h,              sub: "Sport.fun token · 24h" },

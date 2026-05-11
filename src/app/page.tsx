@@ -89,7 +89,7 @@ export default async function Home() {
                       fontVariantNumeric: "tabular-nums",
                     }}
                   >
-                    {fmtUsd(overview.totalMarketCap, { compact: true })}
+                    {fmtUsd(overview.totalMarketCap, { compact: true, digits: 2 })}
                   </span>
                   <Delta value={overview.marketCapChange24h} />
                 </div>
