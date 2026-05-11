@@ -25,6 +25,9 @@ export interface TokenStats {
   change7d: number;
   marketCap: number;
   volume24h: number;
+  // 7d rolling volume, sourced directly from the upstream `volume_7d_usd`
+  // metric — free on every token row, no extra fetch.
+  volume7d: number;
   trades24h: number;
   holders: number;
   circulatingSupply: number;

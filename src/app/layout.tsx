@@ -72,6 +72,7 @@ function SiteHeader() {
           <NavLink href="/#trades">Trades</NavLink>
           <NavLink href="/wallets">Wallets</NavLink>
           <NavLink href="/value">Value</NavLink>
+          <NavLink href="/on-fire">On Fire</NavLink>
         </nav>
         <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-[var(--r-8)] border border-[var(--color-line)] bg-[var(--color-bench)]">
           <span className="live-dot inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-turf)]" />

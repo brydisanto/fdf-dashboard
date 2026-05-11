@@ -20,6 +20,7 @@ export {
   tierForValue,
   getNflFlowRollup,
   getNflDailyVolume,
+  getNflHotPlayers,
   getNflTradeFeedAndFlow,
   getUniqueNflHolderCount,
   getHolderHistory,
@@ -37,4 +38,5 @@ export type {
   WalletFunPosition,
   TopHolder,
   TopNflWallet,
+  HotPlayerRow,
 } from "./footballfun";

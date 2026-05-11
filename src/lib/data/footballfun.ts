@@ -203,6 +203,7 @@ function buildPlayerSummary(player: NflPlayer, row: TeneroTokenRow): PlayerSumma
     change7d,
     marketCap,
     volume24h: Number(row.metrics?.volume_1d_usd ?? 0),
+    volume7d: Number(row.metrics?.volume_7d_usd ?? 0),
     trades24h: Number(row.metrics?.swaps_1d ?? 0),
     holders: Number(row.holder_count ?? 0),
     circulatingSupply: circulating,
@@ -692,6 +693,83 @@ export async function getNflDailyVolume(days = 30): Promise<{ t: number; volumeU
     out.push({ t: day, volumeUsd: Math.round(buckets.get(day) ?? 0) });
   }
   return out;
+}
+
+// ---------- Hot players (On Fire page) ----------
+
+export interface HotPlayerRow extends PlayerSummary {
+  // Rolling volume windows in USD. 24h and 7d come straight from the
+  // upstream `/tokens` metrics. 6h and 30d are computed from OHLC bars
+  // because the upstream doesn't expose those exact windows.
+  volume6h: number;
+  volume30d: number;
+  // Acceleration ratio: (6h volume × 4) ÷ 24h volume. >1 means the
+  // last 6h is running hotter than the 24h average → "heating up".
+  // 0 when 24h volume is 0 (cold player, ignore).
+  heat: number;
+}
+
+// Fetch a single OHLC window directly. Mirrors `getPriceSeries` but lets
+// callers pick an arbitrary period/limit so we can target the exact
+// volume windows the On Fire page needs without bending the public
+// Timeframe enum.
+async function fetchOhlcBars(
+  tokenAddress: string,
+  period: string,
+  limit: number,
+): Promise<TeneroOhlcRow[]> {
+  const path = `/tokens/${encodeURIComponent(tokenAddress)}/ohlc?period=${period}&type=token&limit=${limit}`;
+  try {
+    const data = await tget<TeneroOhlcRow[]>(path, REVALIDATE.ohlc);
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Build the On Fire leaderboard. Volume windows:
+ *   - 6h  → sum of the last 6 hourly OHLC bars
+ *   - 24h → upstream `metrics.volume_1d_usd` (free, already on PlayerSummary)
+ *   - 7d  → upstream `metrics.volume_7d_usd` (free)
+ *   - 30d → sum of the last 30 daily OHLC bars
+ *
+ * Two extra OHLC fetches per player. Both are cached by Next.js for 5min
+ * via REVALIDATE.ohlc, so the first render is the only slow one — after
+ * that the page is essentially free.
+ */
+export async function getNflHotPlayers(): Promise<HotPlayerRow[]> {
+  const players = await getPlayers();
+
+  // Skip the OHLC fetches for players with zero recent activity — saves
+  // ~half the API calls in the offseason without changing the leaderboard
+  // (a cold player would rank last anyway).
+  const active = players.filter((p) => p.volume24h > 0 || p.volume7d > 0);
+
+  const fns = active.map((p) => async () => {
+    const roster = ROSTER_BY_ID.get(p.id);
+    if (!roster) return { id: p.id, volume6h: 0, volume30d: 0 };
+    const [hourly, daily] = await Promise.all([
+      fetchOhlcBars(roster.tokenAddress, "1h", 6),
+      fetchOhlcBars(roster.tokenAddress, "1d", 30),
+    ]);
+    const volume6h = hourly.reduce((a, b) => a + Number(b.volume ?? 0), 0);
+    const volume30d = daily.reduce((a, b) => a + Number(b.volume ?? 0), 0);
+    return { id: p.id, volume6h, volume30d };
+  });
+
+  // 6 concurrent players × 2 fetches = 12 inflight; well under the
+  // upstream's 100/min budget while keeping wall time reasonable.
+  const results = await chunked(fns, 6);
+  const byId = new Map(results.map((r) => [r.id, r]));
+
+  return players.map((p) => {
+    const r = byId.get(p.id);
+    const volume6h = r?.volume6h ?? 0;
+    const volume30d = r?.volume30d ?? 0;
+    const heat = p.volume24h > 0 ? (volume6h * 4) / p.volume24h : 0;
+    return { ...p, volume6h, volume30d, heat };
+  });
 }
 
 // Paginate the holder list up to a generous cap so the breakdown
