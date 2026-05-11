@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
-import { Geist, Big_Shoulders, JetBrains_Mono } from "next/font/google";
+import { Atkinson_Hyperlegible, Big_Shoulders, JetBrains_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 
-const geistSans = Geist({
+const body = Atkinson_Hyperlegible({
   subsets: ["latin"],
-  variable: "--font-geist-sans",
+  weight: ["400", "700"],
+  style: ["normal", "italic"],
+  variable: "--font-body-raw",
 });
 
 const display = Big_Shoulders({
@@ -32,7 +34,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${display.variable} ${mono.variable} h-full antialiased`}
+      className={`${body.variable} ${display.variable} ${mono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <SiteHeader />
