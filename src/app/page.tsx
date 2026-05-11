@@ -13,7 +13,6 @@ import { MarketCapChart } from "@/components/MarketCharts";
 import { MarketPulse } from "@/components/MarketPulse";
 import { MoversList } from "@/components/MoversList";
 import { PlayersTable } from "@/components/PlayersTable";
-import { PoolsTable } from "@/components/PoolsTable";
 import { RecentTrades } from "@/components/RecentTrades";
 import { LiveTicker } from "@/components/LiveTicker";
 import { FreshnessIndicator } from "@/components/FreshnessIndicator";
@@ -48,7 +47,6 @@ export default async function Home() {
   for (const [k, v] of snapshotMap) walletSnapshots[k] = v;
 
   const activePoolsCount = players.filter((p) => p.volume24h > 0 || p.trades24h > 0).length;
-  const topPools = players.slice().sort((a, b) => b.tvl - a.tvl).slice(0, 20);
   const generatedAt = Date.now();
   const tickerMovers = players
     .slice()
@@ -178,32 +176,6 @@ export default async function Home() {
           </div>
           <Card variant="press" padded={false}>
             <RecentTrades trades={recent} wallets={walletSnapshots} />
-          </Card>
-        </section>
-
-        <section id="pools" className="mt-10 scroll-mt-20">
-          <div className="mb-4 flex items-end justify-between gap-4">
-            <div>
-              <h2
-                style={{
-                  fontFamily: "var(--font-display)",
-                  fontWeight: 800,
-                  fontSize: "26px",
-                  letterSpacing: "0.02em",
-                  textTransform: "uppercase",
-                  lineHeight: 1.1,
-                }}
-              >
-                Top Pools by TVL
-              </h2>
-              <p className="mt-1 text-[12px] text-[var(--color-text-dim)]">
-                Sport.fun AMM pool depth · click any column to sort.
-              </p>
-            </div>
-            <Pill tone="muted">3% buy/sell · 5% swap</Pill>
-          </div>
-          <Card variant="press" padded={false}>
-            <PoolsTable players={topPools} />
           </Card>
         </section>
 

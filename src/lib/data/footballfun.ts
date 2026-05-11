@@ -39,7 +39,10 @@ const REVALIDATE = {
   list:    15,        // /tokens list — drives mcap, prices, supplies
   detail:  30,
   ohlc:    300,       // 5 min — OHLC bars don't change intraday
-  trades:  20,
+  trades:  45,        // bumped from 20s — under ISR (revalidate=60), the
+                      // trade fetches were misaligned with the page cycle
+                      // and getting hit twice per regen; 45s lets the
+                      // page cache absorb most regens.
   wallet:  300,       // 5 min — wallet snapshots for trade-feed badges
   holders: 1800,      // 30 min — full holder pagination is hundreds of calls
 } as const;
@@ -418,7 +421,7 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
     const roster = ROSTER_BY_ID.get(s.id);
     if (roster) priceByToken.set(roster.tokenAddress, s.priceUsd);
   }
-  const nonActive = await readManyWalletsNflBalances(NON_ACTIVE_WALLETS, priceByToken);
+  const nonActive = await getNonActiveBalances(priceByToken);
   for (const summary of summaries) {
     const roster = ROSTER_BY_ID.get(summary.id);
     if (!roster) continue;
@@ -458,6 +461,40 @@ const NON_ACTIVE_WALLETS = [
   FOOTBALLFUN_CONTRACT.toLowerCase(),
 ];
 
+// Module-level cache for the platform-wallet balance lookup. These
+// balances change slowly (only when the marketplace lists/delists or
+// when the bonding curve mints/burns) so a 5-minute TTL is a fair
+// trade-off between freshness and avoiding a public-RPC call on every
+// getPlayers() invocation. Without this cache, every ISR regeneration
+// of the home page (and every player/wallet page render) was firing a
+// fresh balanceOfBatch — when the RPC was slow or rate-limited, it
+// could time out and starve the rest of the page render of budget.
+let nonActiveBalanceCache: {
+  ts: number;
+  data: Map<string, WalletHolding[] | null>;
+} | null = null;
+const NON_ACTIVE_CACHE_TTL_MS = 5 * 60 * 1000;
+
+async function getNonActiveBalances(
+  priceByToken: Map<string, number>,
+): Promise<Map<string, WalletHolding[] | null>> {
+  const now = Date.now();
+  if (nonActiveBalanceCache && now - nonActiveBalanceCache.ts < NON_ACTIVE_CACHE_TTL_MS) {
+    return nonActiveBalanceCache.data;
+  }
+  try {
+    const data = await readManyWalletsNflBalances(NON_ACTIVE_WALLETS, priceByToken);
+    nonActiveBalanceCache = { ts: now, data };
+    return data;
+  } catch {
+    // If the RPC fully fails, return whatever's cached (even if stale)
+    // so getPlayers can finish. Active Shares may be slightly off until
+    // the next successful refresh — better than blocking the whole page.
+    if (nonActiveBalanceCache) return nonActiveBalanceCache.data;
+    return new Map();
+  }
+}
+
 export async function getPlayer(id: string): Promise<PlayerSummary | null> {
   const player = ROSTER_BY_ID.get(id);
   if (!player) return null;
@@ -490,7 +527,7 @@ export async function getPlayer(id: string): Promise<PlayerSummary | null> {
     // Apply the same Active Shares definition as getPlayers — total
     // supply minus what the platform-side wallets hold.
     const priceByToken = new Map([[player.tokenAddress, summary.priceUsd]]);
-    const nonActive = await readManyWalletsNflBalances(NON_ACTIVE_WALLETS, priceByToken);
+    const nonActive = await getNonActiveBalances(priceByToken);
     let excluded = 0;
     for (const addr of NON_ACTIVE_WALLETS) {
       const holdings = nonActive.get(addr);
@@ -636,7 +673,11 @@ async function getNflTradesAndFlow(perPool = 50): Promise<{ trades: Trade[]; flo
   const active = players.filter((p) => p.volume24h > 0 || p.trades24h > 0);
   const targets = active.length > 0 ? active : players.slice(0, 20);
   const fns = targets.map((p) => () => getTrades(p.id, perPool));
-  const all = await chunked(fns, 6);
+  // Drop to concurrency 4 (was 6) — under ISR regeneration the home
+  // page fires 50+ trade fetches alongside OHLC + token list calls in
+  // a burst, and Tenero's 100 req/min limit was getting tripped, which
+  // returned empty rows. Slower fan-out keeps us under the limit.
+  const all = await chunked(fns, 4);
   const classified = all.flat().sort((a, b) => b.timestamp - a.timestamp);
 
   const cutoff = Date.now() - 24 * 3600 * 1000;
