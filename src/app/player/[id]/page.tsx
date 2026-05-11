@@ -53,7 +53,7 @@ export default async function PlayerPage(props: PageProps<"/player/[id]">) {
   for (const [k, v] of snapshotMap) wallets[k] = v;
 
   const supplyShare = player.circulatingSupply / player.maxSupply;
-  const activeShare = player.activeSupply / Math.max(1, player.circulatingSupply);
+  const poolShare = player.poolSupply / Math.max(1, player.maxSupply);
   const teamColor = TEAM_COLORS[player.team] ?? "var(--accent)";
   const initials = `${player.firstName[0] ?? ""}${player.lastName[0] ?? ""}`;
   const fullTeam = TEAM_NAMES[player.team] ?? player.team;
@@ -207,14 +207,14 @@ export default async function PlayerPage(props: PageProps<"/player/[id]">) {
         <StatCell label="Pool TVL" value={fmtUsd(player.tvl, { compact: true })} sub="Sport.fun AMM" />
         <StatCell label="Holders" value={fmtNum(player.holders, { compact: true })} sub="Distinct wallets" />
         <StatCell
-          label="Active Shares"
-          value={fmtNum(player.activeSupply, { compact: true })}
-          sub={`${(activeShare * 100).toFixed(1)}% of circulating`}
-        />
-        <StatCell
           label="Circulating"
           value={fmtNum(player.circulatingSupply, { compact: true })}
           sub={`${(supplyShare * 100).toFixed(1)}% of max`}
+        />
+        <StatCell
+          label="Pool Reserve"
+          value={fmtNum(player.poolSupply, { compact: true })}
+          sub={`${(poolShare * 100).toFixed(1)}% unminted`}
         />
       </div>
 

@@ -185,11 +185,15 @@ function buildPlayerSummary(player: NflPlayer, row: TeneroTokenRow): PlayerSumma
   const circulating = Number(row.circulating_supply ?? 0);
   const marketCap = Math.round(price * circulating);
 
-  // Pool supply ≈ USD value of base side ÷ price per share. "Active" is
-  // the rest of circulating — shares held by user wallets, not parked in
-  // AMM reserves.
-  const poolSupply = price > 0 ? Math.max(0, Math.round(Number(row.base_liquidity_usd ?? 0) / price)) : 0;
-  const activeSupply = Math.max(0, circulating - poolSupply);
+  // Sport.fun runs a bonding curve, not a paired AMM — the Sport.fun
+  // contract itself holds every share that hasn't been bought yet. The
+  // upstream's `circulating_supply` already excludes those contract
+  // holdings and represents exactly the shares sitting in user wallets,
+  // so `activeSupply` is just `circulating`. `poolSupply` is the unsold
+  // bonding-curve inventory: total cap minus circulating.
+  const totalSupply = Number(row.total_supply ?? 0);
+  const poolSupply = Math.max(0, totalSupply - circulating);
+  const activeSupply = circulating;
 
   return {
     id: player.id,
@@ -211,7 +215,7 @@ function buildPlayerSummary(player: NflPlayer, row: TeneroTokenRow): PlayerSumma
     circulatingSupply: circulating,
     poolSupply,
     activeSupply,
-    maxSupply: Number(row.total_supply ?? 0),
+    maxSupply: totalSupply,
     tvl: Number(row.total_liquidity_usd ?? 0),
     // ATH/ATL aren't returned in this row; show current as a placeholder.
     // The OHLC endpoint can give a real value later.
