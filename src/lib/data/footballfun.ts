@@ -793,12 +793,21 @@ async function fetchOhlcDeltas(
     return { change1h: null, change24h: null, change7d: null };
   }
   const nowSec = Math.floor(Date.now() / 1000);
-  // Bars are newest-first. Find the most recent bar whose timestamp is
-  // at or before (now - windowSec).
+  // Bars are newest-first. Find the most recent bar whose timestamp sits
+  // in the [now - windowSec*1.5, now - windowSec] band — i.e. roughly
+  // at the anchor point we care about, with some slack for sparse data.
+  // The 1.5x cap matters: without it, a token whose only "older" bar
+  // is 40 days back would anchor the 24h delta against that ancient
+  // close, producing a misleading multi-percent move that has nothing
+  // to do with the last 24 hours. If no bar falls in the band, return
+  // null so the caller keeps the upstream value (or whatever default
+  // applies).
   const findAnchor = (windowSec: number): number | null => {
     const cutoff = nowSec - windowSec;
+    const maxAge = nowSec - Math.floor(windowSec * 1.5);
     for (const b of bars) {
-      if (Number(b.time ?? 0) <= cutoff) {
+      const t = Number(b.time ?? 0);
+      if (t <= cutoff && t >= maxAge) {
         const close = Number(b.close ?? 0);
         return close > 0 ? close : null;
       }
