@@ -104,8 +104,8 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
         <table className="w-full min-w-[1180px] text-[13px]">
           <thead style={{ background: "color-mix(in oklab, var(--color-press) 50%, transparent)" }}>
             <tr className="border-b border-[var(--color-line)]">
-              <Th onClick={() => onSort("rank")}    active={sortKey === "rank"}    dir={sortDir} className="w-12 pl-5">#</Th>
-              <Th onClick={() => onSort("name")}    active={sortKey === "name"}    dir={sortDir}>Player</Th>
+              <Th onClick={() => onSort("rank")}    active={sortKey === "rank"}    dir={sortDir} align="left" className="w-12 pl-5">#</Th>
+              <Th onClick={() => onSort("name")}    active={sortKey === "name"}    dir={sortDir} align="left">Player</Th>
               <Th onClick={() => onSort("priceUsd")} active={sortKey === "priceUsd"} dir={sortDir}>Price</Th>
               <Th onClick={() => onSort("change1h")} active={sortKey === "change1h"} dir={sortDir}>1h</Th>
               <Th onClick={() => onSort("change24h")} active={sortKey === "change24h"} dir={sortDir}>24h</Th>
@@ -130,14 +130,14 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
                 >
                   <td
                     className="pl-5 pr-2"
-                    style={{ padding: "var(--row-pad-y) 8px var(--row-pad-y) 20px", fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--color-text-dim)", fontSize: "11px" }}
+                    style={{ padding: "var(--row-pad-y) 8px var(--row-pad-y) 20px", fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--color-text-dim)", fontSize: "11px", textAlign: "left" }}
                   >
                     {ranked.get(p.id)}
                   </td>
-                  <td className="px-3" style={{ padding: "var(--row-pad-y) 12px" }}>
-                    <Link href={`/player/${p.id}`} className="flex items-center justify-center gap-2.5">
+                  <td className="px-3" style={{ padding: "var(--row-pad-y) 12px", textAlign: "left" }}>
+                    <Link href={`/player/${p.id}`} className="flex items-center gap-2.5">
                       <PlayerAvatar player={p} size="sm" />
-                      <div className="min-w-0 text-left">
+                      <div className="min-w-0">
                         <div className="truncate font-semibold text-[14px] group-hover:text-[var(--accent-soft)]">
                           {p.firstName} {p.lastName}
                         </div>
@@ -280,12 +280,13 @@ function Seg<T extends string>({
 }
 
 function Th({
-  children, onClick, active, dir, className,
+  children, onClick, active, dir, align, className,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   active?: boolean;
   dir?: "asc" | "desc";
+  align?: "left" | "right" | "center";
   className?: string;
 }) {
   return (
@@ -298,6 +299,7 @@ function Th({
         letterSpacing: "0.18em",
         textTransform: "uppercase",
         color: active ? "var(--color-text)" : "var(--color-text-dim)",
+        ...(align ? { textAlign: align } : null),
       }}
     >
       {onClick ? (

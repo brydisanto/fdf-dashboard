@@ -62,7 +62,7 @@ export function WalletHoldingsTable({
         <table className={clsx("w-full text-sm", variant === "nfl" ? "min-w-[680px]" : "min-w-[640px]")}>
           <thead className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-dim)]">
             <tr className="border-b border-[var(--color-border)]">
-              <Th onClick={() => onSort("name")}              active={sortKey === "name"}              dir={sortDir}>
+              <Th onClick={() => onSort("name")}              active={sortKey === "name"}              dir={sortDir} align="left">
                 {variant === "nfl" ? "Player" : "Token"}
               </Th>
               <Th onClick={() => onSort("balance")}           active={sortKey === "balance"}           dir={sortDir}>Balance</Th>
@@ -77,11 +77,11 @@ export function WalletHoldingsTable({
               const player = variant === "nfl" ? ROSTER_BY_TOKEN.get(h.tokenAddress) : null;
               return (
                 <tr key={h.tokenAddress} className="border-b border-[var(--color-border)]/60 last:border-b-0 hover:bg-[var(--color-surface-2)]/60">
-                  <td className="px-3 py-2.5">
+                  <td className="px-3 py-2.5" style={{ textAlign: "left" }}>
                     {player ? (
-                      <Link href={`/player/${player.id}`} className="flex items-center justify-center gap-2 hover:text-[var(--color-brand-soft)]">
+                      <Link href={`/player/${player.id}`} className="flex items-center gap-2 hover:text-[var(--color-brand-soft)]">
                         <PlayerAvatar player={player} size="sm" />
-                        <div className="text-left">
+                        <div>
                           <div className="font-medium">{player.firstName} {player.lastName}</div>
                           <div className="text-[11px] text-[var(--color-text-dim)]">{player.position} · {player.team}</div>
                         </div>
@@ -138,15 +138,19 @@ export function WalletHoldingsTable({
 }
 
 function Th({
-  children, onClick, active, dir,
+  children, onClick, active, dir, align,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   active: boolean;
   dir: "asc" | "desc";
+  align?: "left" | "right" | "center";
 }) {
   return (
-    <th className="px-3 py-2 font-medium">
+    <th
+      className="px-3 py-2 font-medium"
+      style={align ? { textAlign: align } : undefined}
+    >
       <button
         onClick={onClick}
         className={clsx(

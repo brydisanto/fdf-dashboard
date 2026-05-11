@@ -20,7 +20,7 @@ export function WalletTradesTable({ rows }: { rows: WalletTradeRow[] }) {
           <tr className="border-b border-[var(--color-line)]">
             <Th className="w-24 pl-5">Time</Th>
             <Th className="w-20">Side</Th>
-            <Th>Asset</Th>
+            <Th align="left">Asset</Th>
             <Th>Shares</Th>
             <Th>Price</Th>
             <Th>USD Value</Th>
@@ -49,7 +49,7 @@ export function WalletTradesTable({ rows }: { rows: WalletTradeRow[] }) {
               <td className="px-3" style={{ padding: "var(--row-pad-y) 12px" }}>
                 <SidePill side={r.side} />
               </td>
-              <td className="px-3" style={{ padding: "var(--row-pad-y) 12px" }}>
+              <td className="px-3" style={{ padding: "var(--row-pad-y) 12px", textAlign: "left" }}>
                 <AssetCell row={r} />
               </td>
               <NumCell>{fmtNum(r.baseAmount)}</NumCell>
@@ -110,7 +110,7 @@ function AssetCell({ row }: { row: WalletTradeRow }) {
     : row.symbol;
 
   const body = (
-    <div className="flex items-center justify-center gap-2.5">
+    <div className="flex items-center gap-2.5">
       <div className="min-w-0">
         <div className="truncate font-semibold text-[14px] text-[var(--color-text)]">
           {row.name || row.symbol || "—"}
@@ -154,9 +154,11 @@ function NumCell({ children }: { children: React.ReactNode }) {
 
 function Th({
   children,
+  align,
   className,
 }: {
   children: React.ReactNode;
+  align?: "left" | "right" | "center";
   className?: string;
 }) {
   return (
@@ -169,6 +171,7 @@ function Th({
         letterSpacing: "0.18em",
         textTransform: "uppercase",
         color: "var(--color-text-dim)",
+        ...(align ? { textAlign: align } : null),
       }}
     >
       {children}
