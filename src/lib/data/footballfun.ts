@@ -175,9 +175,18 @@ function buildPlayerSummary(player: NflPlayer, row: TeneroTokenRow): PlayerSumma
     lastTrade > 0 && liveSpot > 0 ? (lastTrade + liveSpot) / 2 :
     lastTrade > 0 ? lastTrade :
     liveSpot;
-  const change1h  = pctChange(price, Number(row.price?.price_1h_ago ?? price));
-  const change24h = pctChange(price, Number(row.price?.price_1d_ago ?? price));
-  const change7d  = pctChange(price, Number(row.price?.price_7d_ago ?? price));
+  // % changes must compare spot-to-spot. The upstream's price_*_ago
+  // fields are all snapshots of `current_price`, so if we anchor those
+  // against our averaged display price we get a phantom delta whenever
+  // last_trade and current_price diverge (common during quiet hours
+  // when the bonding-curve spot drifts away from the most recent trade).
+  // Example: Josh Allen with last_trade=$0.0184, spot=$0.0197, and a
+  // flat 1d/7d showed -3.1% with the averaged anchor when the real
+  // spot-to-spot change was 0%.
+  const refPrice = liveSpot > 0 ? liveSpot : (lastTrade > 0 ? lastTrade : price);
+  const change1h  = pctChange(refPrice, Number(row.price?.price_1h_ago ?? refPrice));
+  const change24h = pctChange(refPrice, Number(row.price?.price_1d_ago ?? refPrice));
+  const change7d  = pctChange(refPrice, Number(row.price?.price_7d_ago ?? refPrice));
 
   // The upstream `marketcap_usd` field is actually FDV (price × total
   // supply 25M). The real circulating market cap is price × circulating
