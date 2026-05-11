@@ -8,7 +8,7 @@ import {
 import { fmtPrice } from "@/lib/format";
 import type { PricePoint, Timeframe } from "@/lib/types";
 
-const TF_ORDER: Timeframe[] = ["1H", "24H", "7D", "30D", "ALL"];
+const TF_ORDER: Timeframe[] = ["24H", "7D", "30D", "ALL"];
 
 export function PlayerPriceChart({
   series,
@@ -26,7 +26,7 @@ export function PlayerPriceChart({
 
   const fmtTick = (t: number) => {
     const d = new Date(t);
-    if (tf === "1H" || tf === "24H") return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    if (tf === "24H") return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
 
@@ -60,7 +60,8 @@ export function PlayerPriceChart({
             <XAxis
               dataKey="t"
               tickFormatter={fmtTick}
-              stroke="var(--color-text-dim)"
+              stroke="var(--color-text-muted)"
+              tick={{ fill: "var(--color-text)" }}
               tickLine={false}
               axisLine={false}
               fontSize={11}
@@ -69,7 +70,8 @@ export function PlayerPriceChart({
             <YAxis
               dataKey="price"
               domain={["auto", "auto"]}
-              stroke="var(--color-text-dim)"
+              stroke="var(--color-text-muted)"
+              tick={{ fill: "var(--color-text)" }}
               tickFormatter={(v) => fmtPrice(v as number)}
               tickLine={false}
               axisLine={false}
@@ -78,14 +80,17 @@ export function PlayerPriceChart({
             />
             <Tooltip
               contentStyle={{
-                background: "var(--color-surface-2)",
-                border: "1px solid var(--color-border-strong)",
+                background: "var(--color-press)",
+                border: "1px solid var(--color-line-strong)",
                 borderRadius: 8,
                 fontSize: 12,
+                color: "var(--color-text)",
               }}
+              labelStyle={{ color: "var(--color-text)" }}
+              itemStyle={{ color: "var(--color-text)" }}
               labelFormatter={(v) => new Date(Number(v)).toLocaleString()}
               formatter={(v) => [fmtPrice(Number(v)), "Price"] as [string, string]}
-              cursor={{ stroke: "var(--color-border-strong)", strokeDasharray: "3 3" }}
+              cursor={{ stroke: "var(--color-line-strong)", strokeDasharray: "3 3" }}
             />
             <Area
               type="monotone"

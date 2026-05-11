@@ -6,7 +6,7 @@ export default function NotFound() {
       <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-text-dim)]">404</div>
       <h1 className="mt-2 text-2xl font-bold tracking-tight">Player not listed</h1>
       <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-        This player isn&apos;t on the Gridiron NFL market yet, or the URL is malformed.
+        This player isn&apos;t on the FDF Box Score NFL market yet, or the URL is malformed.
       </p>
       <Link
         href="/"

@@ -11,51 +11,66 @@ const fmtTick = (t: number) => {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
 
+const tooltipStyle = {
+  background: "var(--color-press)",
+  border: "1px solid var(--color-line-strong)",
+  borderRadius: 8,
+  fontSize: 12,
+  fontFamily: "var(--font-mono)",
+  color: "var(--color-text)",
+};
+// Recharts renders the label + each item with their own inline
+// styles that override contentStyle, so we explicitly set both.
+const tooltipLabelStyle = { color: "var(--color-text)" };
+const tooltipItemStyle = { color: "var(--color-text)" };
+const tickStyle = {
+  fill: "var(--color-text-dim)",
+  fontFamily: "var(--font-mono)",
+  fontSize: 11,
+};
+
 export function MarketCapChart({ data }: { data: PricePoint[] }) {
   return (
-    <div className="h-[260px] w-full">
+    <div className="h-[280px] w-full">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id="mcGrad" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%"  stopColor="var(--color-brand)" stopOpacity="0.4" />
-              <stop offset="100%" stopColor="var(--color-brand)" stopOpacity="0" />
+              <stop offset="0%"  stopColor="var(--accent)" stopOpacity="0.4" />
+              <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
             </linearGradient>
           </defs>
           <XAxis
             dataKey="t"
             tickFormatter={fmtTick}
-            stroke="var(--color-text-dim)"
+            stroke="var(--color-line-strong)"
+            tick={tickStyle}
             tickLine={false}
             axisLine={false}
-            fontSize={11}
             minTickGap={32}
           />
           <YAxis
             dataKey="price"
             domain={["auto", "auto"]}
-            stroke="var(--color-text-dim)"
+            stroke="var(--color-line-strong)"
+            tick={tickStyle}
             tickFormatter={(v) => fmtUsd(v, { compact: true })}
             tickLine={false}
             axisLine={false}
-            fontSize={11}
             width={64}
           />
           <Tooltip
-            contentStyle={{
-              background: "var(--color-surface-2)",
-              border: "1px solid var(--color-border-strong)",
-              borderRadius: 8,
-              fontSize: 12,
-            }}
+            contentStyle={tooltipStyle}
+            labelStyle={tooltipLabelStyle}
+            itemStyle={tooltipItemStyle}
             labelFormatter={(v) => new Date(Number(v)).toLocaleString()}
             formatter={(v) => [fmtUsd(Number(v), { compact: true }), "Market Cap"] as [string, string]}
-            cursor={{ stroke: "var(--color-border-strong)", strokeDasharray: "3 3" }}
+            cursor={{ stroke: "var(--color-line-strong)", strokeDasharray: "2 4" }}
           />
           <Area
             type="monotone"
             dataKey="price"
-            stroke="var(--color-brand)"
+            stroke="var(--accent)"
             strokeWidth={2}
             fill="url(#mcGrad)"
             isAnimationActive={false}
@@ -74,35 +89,32 @@ export function VolumeChart({ data }: { data: PricePoint[] }) {
           <XAxis
             dataKey="t"
             tickFormatter={(t) => new Date(t).toLocaleTimeString("en-US", { hour: "numeric" })}
-            stroke="var(--color-text-dim)"
+            stroke="var(--color-line-strong)"
+            tick={tickStyle}
             tickLine={false}
             axisLine={false}
-            fontSize={11}
             minTickGap={24}
           />
           <YAxis
             dataKey="volume"
-            stroke="var(--color-text-dim)"
+            stroke="var(--color-line-strong)"
+            tick={tickStyle}
             tickFormatter={(v) => fmtUsd(v, { compact: true })}
             tickLine={false}
             axisLine={false}
-            fontSize={11}
             width={56}
           />
           <Tooltip
-            cursor={{ fill: "rgba(255,255,255,0.05)" }}
-            contentStyle={{
-              background: "var(--color-surface-2)",
-              border: "1px solid var(--color-border-strong)",
-              borderRadius: 8,
-              fontSize: 12,
-            }}
+            cursor={{ fill: "color-mix(in oklab, var(--color-text) 4%, transparent)" }}
+            contentStyle={tooltipStyle}
+            labelStyle={tooltipLabelStyle}
+            itemStyle={tooltipItemStyle}
             labelFormatter={(v) => new Date(Number(v)).toLocaleString()}
             formatter={(v) => [fmtUsd(Number(v), { compact: true }), "Volume"] as [string, string]}
           />
           <Bar
             dataKey="volume"
-            fill="var(--color-brand)"
+            fill="var(--accent)"
             radius={[3, 3, 0, 0]}
             isAnimationActive={false}
           />

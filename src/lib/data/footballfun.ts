@@ -1,4 +1,5 @@
 import "server-only";
+import { getAddress } from "viem";
 import type {
   HolderBucket,
   MarketOverview,
@@ -11,12 +12,14 @@ import type {
   WalletHolding,
   WalletProfile,
   WalletTier,
+  WalletTradeRow,
   WindowKey,
   WindowStats,
 } from "../types";
 import { ROSTER, ROSTER_BY_ID, ROSTER_BY_TOKEN, FOOTBALLFUN_CONTRACT, type NflPlayer } from "./roster";
 import { POOL_FEE_RATE, FEE_RATE_BUY, FEE_RATE_SELL, FEE_RATE_SWAP } from "../constants";
-import { readWalletNflBalances, readFunBalance } from "./onchain-client";
+import { readManyFunBalances, readManyWalletsNflBalances, readWalletNflBalances, readFunBalance } from "./onchain-client";
+import { priceAt, readPriceHistory } from "./price-indexer";
 
 export { POOL_FEE_RATE, FEE_RATE_BUY, FEE_RATE_SELL, FEE_RATE_SWAP };
 
@@ -37,7 +40,10 @@ const REVALIDATE = {
   list:    15,        // /tokens list — drives mcap, prices, supplies
   detail:  30,
   ohlc:    300,       // 5 min — OHLC bars don't change intraday
-  trades:  20,
+  trades:  45,        // bumped from 20s — under ISR (revalidate=60), the
+                      // trade fetches were misaligned with the page cycle
+                      // and getting hit twice per regen; 45s lets the
+                      // page cache absorb most regens.
   wallet:  300,       // 5 min — wallet snapshots for trade-feed badges
   holders: 1800,      // 30 min — full holder pagination is hundreds of calls
 } as const;
@@ -167,15 +173,32 @@ function buildPlayerSummary(player: NflPlayer, row: TeneroTokenRow): PlayerSumma
   // — that one effectively averages the two. We do the same so our
   // headline market cap tracks the official chart instead of straddling
   // it by 1-2%.
+  // Sport.fun's UI displays the SELL-side price — spot × (1 − sell_fee)
+  // — which is what a holder would actually receive if they hit "sell"
+  // right now. The curve spot itself is the mid-price; what users see
+  // on the trade screen is post-fee execution. Probed Robinson/Gibbs/
+  // Allen/Bowers/Taylor against FDF and the sell-side formula matches
+  // within rounding for every one.
   const lastTrade = Number(row.price_usd ?? 0);
   const liveSpot  = Number(row.price?.current_price ?? 0);
-  const price =
-    lastTrade > 0 && liveSpot > 0 ? (lastTrade + liveSpot) / 2 :
-    lastTrade > 0 ? lastTrade :
-    liveSpot;
-  const change1h  = pctChange(price, Number(row.price?.price_1h_ago ?? price));
-  const change24h = pctChange(price, Number(row.price?.price_1d_ago ?? price));
-  const change7d  = pctChange(price, Number(row.price?.price_7d_ago ?? price));
+  const sellPrice = liveSpot > 0 ? liveSpot * (1 - FEE_RATE_SELL) : 0;
+  const price = sellPrice > 0 ? sellPrice : lastTrade;
+  // % changes must compare spot-to-spot. The upstream's price_*_ago
+  // fields are all snapshots of `current_price`, so if we anchor those
+  // against our averaged display price we get a phantom delta whenever
+  // last_trade and current_price diverge (common during quiet hours
+  // when the bonding-curve spot drifts away from the most recent trade).
+  // Example: Josh Allen with last_trade=$0.0184, spot=$0.0197, and a
+  // flat 1d/7d showed -3.1% with the averaged anchor when the real
+  // spot-to-spot change was 0%.
+  const refPrice = liveSpot > 0 ? liveSpot : (lastTrade > 0 ? lastTrade : price);
+  const change1h  = pctChange(refPrice, Number(row.price?.price_1h_ago ?? refPrice));
+  // 6h has no native upstream field — fill from the snapshot indexer
+  // later in getPlayers(). Initial value is 0% so the column renders
+  // cleanly while the indexer warms up.
+  const change6h  = 0;
+  const change24h = pctChange(refPrice, Number(row.price?.price_1d_ago ?? refPrice));
+  const change7d  = pctChange(refPrice, Number(row.price?.price_7d_ago ?? refPrice));
 
   // The upstream `marketcap_usd` field is actually FDV (price × total
   // supply 25M). The real circulating market cap is price × circulating
@@ -183,11 +206,15 @@ function buildPlayerSummary(player: NflPlayer, row: TeneroTokenRow): PlayerSumma
   const circulating = Number(row.circulating_supply ?? 0);
   const marketCap = Math.round(price * circulating);
 
-  // Pool supply ≈ USD value of base side ÷ price per share. "Active" is
-  // the rest of circulating — shares held by user wallets, not parked in
-  // AMM reserves.
-  const poolSupply = price > 0 ? Math.max(0, Math.round(Number(row.base_liquidity_usd ?? 0) / price)) : 0;
-  const activeSupply = Math.max(0, circulating - poolSupply);
+  // Sport.fun runs a bonding curve, not a paired AMM — the Sport.fun
+  // contract itself holds every share that hasn't been bought yet. The
+  // upstream's `circulating_supply` already excludes those contract
+  // holdings and represents exactly the shares sitting in user wallets,
+  // so `activeSupply` is just `circulating`. `poolSupply` is the unsold
+  // bonding-curve inventory: total cap minus circulating.
+  const totalSupply = Number(row.total_supply ?? 0);
+  const poolSupply = Math.max(0, totalSupply - circulating);
+  const activeSupply = circulating;
 
   return {
     id: player.id,
@@ -199,16 +226,18 @@ function buildPlayerSummary(player: NflPlayer, row: TeneroTokenRow): PlayerSumma
     playerId: player.id,
     priceUsd: price,
     change1h,
+    change6h,
     change24h,
     change7d,
     marketCap,
     volume24h: Number(row.metrics?.volume_1d_usd ?? 0),
+    volume7d: Number(row.metrics?.volume_7d_usd ?? 0),
     trades24h: Number(row.metrics?.swaps_1d ?? 0),
     holders: Number(row.holder_count ?? 0),
     circulatingSupply: circulating,
     poolSupply,
     activeSupply,
-    maxSupply: Number(row.total_supply ?? 0),
+    maxSupply: totalSupply,
     tvl: Number(row.total_liquidity_usd ?? 0),
     // ATH/ATL aren't returned in this row; show current as a placeholder.
     // The OHLC endpoint can give a real value later.
@@ -331,7 +360,7 @@ function tinySparkline(row: TeneroTokenRow): number[] {
 
 export async function getPlayers(): Promise<PlayerSummary[]> {
   const map = await fetchNflTokenMap();
-  return ROSTER.map((player) => {
+  const summaries = ROSTER.map((player) => {
     const row = map.get(player.tokenAddress);
     if (!row) {
       // Player not currently listed in Tenero response (e.g. delisted). Return zeroed.
@@ -354,6 +383,156 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
     summary.sparkline7d = tinySparkline(row);
     return summary;
   });
+
+  // Override the upstream's unreliable price_*_ago deltas with values
+  // computed from our own 15-minute price-history snapshot (written by
+  // .github/workflows/index-prices.yml, read from the data branch via
+  // raw.githubusercontent.com). This is a single file fetch per render
+  // instead of 72 OHLC fetches, and it gives precise historical spot
+  // prices regardless of trade density.
+  //
+  // The OHLC override stays as a fallback for the cold-start period
+  // before the snapshot history fills in (first 7 days after deploy)
+  // and for tokens not yet in the snapshot's tokenIds list.
+  const history = await readPriceHistory();
+  const nowMs = Date.now();
+  const enrichers = summaries.map((summary) => async () => {
+    const roster = ROSTER_BY_ID.get(summary.id);
+    if (!roster) return;
+    const row = map.get(roster.tokenAddress);
+    if (!row) return;
+    const spot = Number(row.price?.current_price ?? 0);
+    if (spot <= 0) return;
+
+    // Primary path: snapshot-derived deltas. The display price is the
+    // sell-side adjusted spot (× 0.97), but for % comparisons we use
+    // raw spot vs raw historical spot on both sides — the fee cancels.
+    let got1h = false;
+    let got6h = false;
+    let got24h = false;
+    let got7d = false;
+    if (history) {
+      const at1h = priceAt(history, roster.tokenIdSuffix, nowMs - 3600_000);
+      const at6h = priceAt(history, roster.tokenIdSuffix, nowMs - 6 * 3600_000);
+      const at24h = priceAt(history, roster.tokenIdSuffix, nowMs - 86_400_000);
+      const at7d = priceAt(history, roster.tokenIdSuffix, nowMs - 7 * 86_400_000);
+      if (at1h != null) {
+        summary.change1h = +(((spot - at1h) / at1h) * 100).toFixed(2);
+        got1h = true;
+      }
+      if (at6h != null) {
+        summary.change6h = +(((spot - at6h) / at6h) * 100).toFixed(2);
+        got6h = true;
+      }
+      if (at24h != null) {
+        summary.change24h = +(((spot - at24h) / at24h) * 100).toFixed(2);
+        got24h = true;
+      }
+      if (at7d != null) {
+        summary.change7d = +(((spot - at7d) / at7d) * 100).toFixed(2);
+        got7d = true;
+      }
+    }
+    if (got1h && got6h && got24h && got7d) return;
+
+    // Fallback (cold-start period before the snapshot fills in): keep
+    // the OHLC override for fresh-activity divergence cases. Skip when
+    // the token is inactive or the upstream snapshots are reliable.
+    if (summary.volume24h <= 0 && summary.volume7d <= 0) return;
+    if (
+      isPriceSnapshotReliable(row.price?.price_1h_ago, spot) &&
+      isPriceSnapshotReliable(row.price?.price_1d_ago, spot) &&
+      isPriceSnapshotReliable(row.price?.price_7d_ago, spot)
+    ) {
+      return;
+    }
+    const deltas = await fetchOhlcDeltas(roster.tokenAddress, spot);
+    if (!got1h && deltas.change1h != null) summary.change1h = deltas.change1h;
+    if (!got24h && deltas.change24h != null) summary.change24h = deltas.change24h;
+    if (!got7d && deltas.change7d != null) summary.change7d = deltas.change7d;
+  });
+  await chunked(enrichers, 8);
+
+  // Active Shares = total supply minus what's parked in platform-side
+  // wallets (the FDF Marketplace + the Sport.fun swap router contract).
+  // Reads both wallets' balances on-chain in a single batched call.
+  const priceByToken = new Map<string, number>();
+  for (const s of summaries) {
+    const roster = ROSTER_BY_ID.get(s.id);
+    if (roster) priceByToken.set(roster.tokenAddress, s.priceUsd);
+  }
+  const nonActive = await getNonActiveBalances(priceByToken);
+  for (const summary of summaries) {
+    const roster = ROSTER_BY_ID.get(summary.id);
+    if (!roster) continue;
+    let excluded = 0;
+    for (const addr of NON_ACTIVE_WALLETS) {
+      const holdings = nonActive.get(addr);
+      if (!holdings) continue;
+      const h = holdings.find((x) => x.tokenAddress === roster.tokenAddress);
+      if (h) excluded += h.balance;
+    }
+    summary.activeSupply = Math.max(0, summary.maxSupply - Math.round(excluded));
+  }
+
+  return summaries;
+}
+
+// The upstream's price_*_ago fields fall back to `current_price` when
+// no real historical snapshot exists. A non-trivial difference from
+// current means the upstream actually has a real snapshot for that
+// window — we should trust it rather than override with OHLC.
+function isPriceSnapshotReliable(snapshot: number | undefined, currentPrice: number): boolean {
+  if (snapshot == null || !Number.isFinite(snapshot) || snapshot <= 0 || currentPrice <= 0) {
+    return false;
+  }
+  return Math.abs(currentPrice - snapshot) / currentPrice > 1e-6;
+}
+
+// Wallets whose holdings shouldn't count toward "Active Shares" — these
+// are platform-side custodians, not regular trader wallets:
+//   - FDF Marketplace: the secondary-market escrow contract
+//   - FOOTBALLFUN_CONTRACT: the Sport.fun ERC-1155 itself, which holds
+//     every share that hasn't been minted out of the bonding curve yet
+// All lowercase because readManyWalletsNflBalances keys its result map
+// off the lowercased input addresses.
+const NON_ACTIVE_WALLETS = [
+  "0x4fdce033b9f30019337ddc5cc028dc023580585e",
+  FOOTBALLFUN_CONTRACT.toLowerCase(),
+];
+
+// Module-level cache for the platform-wallet balance lookup. These
+// balances change slowly (only when the marketplace lists/delists or
+// when the bonding curve mints/burns) so a 5-minute TTL is a fair
+// trade-off between freshness and avoiding a public-RPC call on every
+// getPlayers() invocation. Without this cache, every ISR regeneration
+// of the home page (and every player/wallet page render) was firing a
+// fresh balanceOfBatch — when the RPC was slow or rate-limited, it
+// could time out and starve the rest of the page render of budget.
+let nonActiveBalanceCache: {
+  ts: number;
+  data: Map<string, WalletHolding[] | null>;
+} | null = null;
+const NON_ACTIVE_CACHE_TTL_MS = 5 * 60 * 1000;
+
+async function getNonActiveBalances(
+  priceByToken: Map<string, number>,
+): Promise<Map<string, WalletHolding[] | null>> {
+  const now = Date.now();
+  if (nonActiveBalanceCache && now - nonActiveBalanceCache.ts < NON_ACTIVE_CACHE_TTL_MS) {
+    return nonActiveBalanceCache.data;
+  }
+  try {
+    const data = await readManyWalletsNflBalances(NON_ACTIVE_WALLETS, priceByToken);
+    nonActiveBalanceCache = { ts: now, data };
+    return data;
+  } catch {
+    // If the RPC fully fails, return whatever's cached (even if stale)
+    // so getPlayers can finish. Active Shares may be slightly off until
+    // the next successful refresh — better than blocking the whole page.
+    if (nonActiveBalanceCache) return nonActiveBalanceCache.data;
+    return new Map();
+  }
 }
 
 export async function getPlayer(id: string): Promise<PlayerSummary | null> {
@@ -367,6 +546,66 @@ export async function getPlayer(id: string): Promise<PlayerSummary | null> {
     );
     const summary = buildPlayerSummary(player, data);
     summary.sparkline7d = tinySparkline(data);
+    // Same enrichment pipeline as getPlayers() — snapshot-derived deltas
+    // first, OHLC fallback when the snapshot history doesn't reach.
+    const spot = Number(data?.price?.current_price ?? 0);
+    let got1h = false;
+    let got6h = false;
+    let got24h = false;
+    let got7d = false;
+    if (spot > 0) {
+      const history = await readPriceHistory();
+      if (history) {
+        const nowMs = Date.now();
+        const at1h = priceAt(history, player.tokenIdSuffix, nowMs - 3600_000);
+        const at6h = priceAt(history, player.tokenIdSuffix, nowMs - 6 * 3600_000);
+        const at24h = priceAt(history, player.tokenIdSuffix, nowMs - 86_400_000);
+        const at7d = priceAt(history, player.tokenIdSuffix, nowMs - 7 * 86_400_000);
+        if (at1h != null) {
+          summary.change1h = +(((spot - at1h) / at1h) * 100).toFixed(2);
+          got1h = true;
+        }
+        if (at6h != null) {
+          summary.change6h = +(((spot - at6h) / at6h) * 100).toFixed(2);
+          got6h = true;
+        }
+        if (at24h != null) {
+          summary.change24h = +(((spot - at24h) / at24h) * 100).toFixed(2);
+          got24h = true;
+        }
+        if (at7d != null) {
+          summary.change7d = +(((spot - at7d) / at7d) * 100).toFixed(2);
+          got7d = true;
+        }
+      }
+    }
+    const needsOhlcFallback =
+      spot > 0 &&
+      !(got1h && got6h && got24h && got7d) &&
+      (summary.volume24h > 0 || summary.volume7d > 0) &&
+      !(
+        isPriceSnapshotReliable(data?.price?.price_1h_ago, spot) &&
+        isPriceSnapshotReliable(data?.price?.price_1d_ago, spot) &&
+        isPriceSnapshotReliable(data?.price?.price_7d_ago, spot)
+      );
+    if (needsOhlcFallback) {
+      const deltas = await fetchOhlcDeltas(player.tokenAddress, spot);
+      if (!got1h && deltas.change1h != null) summary.change1h = deltas.change1h;
+      if (!got24h && deltas.change24h != null) summary.change24h = deltas.change24h;
+      if (!got7d && deltas.change7d != null) summary.change7d = deltas.change7d;
+    }
+    // Apply the same Active Shares definition as getPlayers — total
+    // supply minus what the platform-side wallets hold.
+    const priceByToken = new Map([[player.tokenAddress, summary.priceUsd]]);
+    const nonActive = await getNonActiveBalances(priceByToken);
+    let excluded = 0;
+    for (const addr of NON_ACTIVE_WALLETS) {
+      const holdings = nonActive.get(addr);
+      if (!holdings) continue;
+      const h = holdings.find((x) => x.tokenAddress === player.tokenAddress);
+      if (h) excluded += h.balance;
+    }
+    summary.activeSupply = Math.max(0, summary.maxSupply - Math.round(excluded));
     return summary;
   } catch {
     // Fall back to the bulk list if the per-token call fails for any reason.
@@ -389,19 +628,64 @@ export async function getPriceSeries(id: string, tf: Timeframe): Promise<PricePo
   };
   const { period, limit } = cfg[tf];
   const path = `/tokens/${encodeURIComponent(player.tokenAddress)}/ohlc?period=${period}&type=token&limit=${limit}`;
+  // The upstream OHLC endpoint returns the most-recent N bars that had
+  // ACTIVITY, not the last N chronological intervals. For low-activity
+  // tokens those bars can span months — so a "24H" chart ends up showing
+  // data going back to February. Filter on our side to the actual window.
+  const windowSec: Record<Timeframe, number | null> = {
+    "1H":  3600,
+    "24H": 86_400,
+    "7D":  7 * 86_400,
+    "30D": 30 * 86_400,
+    "ALL": null,
+  };
+  const cutoff = windowSec[tf];
+  const nowSec = Math.floor(Date.now() / 1000);
+
+  // Pull OHLC bars from the upstream first — bars represent actual
+  // trade activity, so they're the canonical source when they exist.
+  let ohlcPoints: PricePoint[] = [];
   try {
     const data = await tget<TeneroOhlcRow[]>(path, REVALIDATE.ohlc);
-    if (!Array.isArray(data)) return [];
-    return data
-      .map((row) => ({
-        t: row.time * 1000,
-        price: Number(row.close),
-        volume: Number(row.volume ?? 0),
-      }))
-      .sort((a, b) => a.t - b.t);
+    if (Array.isArray(data)) {
+      ohlcPoints = data
+        .filter((row) => cutoff == null || Number(row.time ?? 0) >= nowSec - cutoff)
+        .map((row) => ({
+          t: row.time * 1000,
+          price: Number(row.close),
+          volume: Number(row.volume ?? 0),
+        }));
+    }
   } catch {
-    return [];
+    /* fall through to snapshot-only */
   }
+
+  // Augment with snapshot points within the same window — gives quiet
+  // tokens a continuous line on the chart even when no trades hit. For
+  // tokens with frequent OHLC activity this is mostly redundant but the
+  // dedupe below keeps the output clean.
+  const history = await readPriceHistory();
+  let snapshotPoints: PricePoint[] = [];
+  if (history && cutoff != null) {
+    const cutoffMs = (nowSec - cutoff) * 1000;
+    const idx = history.tokenIds.indexOf(player.tokenIdSuffix);
+    if (idx >= 0) {
+      for (const s of history.snapshots) {
+        if (s.ts < cutoffMs) continue;
+        const p = s.prices[idx];
+        if (p > 0) snapshotPoints.push({ t: s.ts, price: p, volume: 0 });
+      }
+    }
+  }
+
+  // Merge OHLC + snapshot, dedupe by minute-bucket so we don't double
+  // up when both sources happen to record the same window. OHLC wins on
+  // duplicate buckets because it represents real trade activity.
+  const bucketMs = 60_000;
+  const merged = new Map<number, PricePoint>();
+  for (const pt of snapshotPoints) merged.set(Math.floor(pt.t / bucketMs), pt);
+  for (const pt of ohlcPoints) merged.set(Math.floor(pt.t / bucketMs), pt);
+  return Array.from(merged.values()).sort((a, b) => a.t - b.t);
 }
 
 export async function getTrades(id: string, limit = 30): Promise<Trade[]> {
@@ -490,7 +774,11 @@ async function getNflTradesAndFlow(perPool = 50): Promise<{ trades: Trade[]; flo
   const active = players.filter((p) => p.volume24h > 0 || p.trades24h > 0);
   const targets = active.length > 0 ? active : players.slice(0, 20);
   const fns = targets.map((p) => () => getTrades(p.id, perPool));
-  const all = await chunked(fns, 6);
+  // Drop to concurrency 4 (was 6) — under ISR regeneration the home
+  // page fires 50+ trade fetches alongside OHLC + token list calls in
+  // a burst, and Tenero's 100 req/min limit was getting tripped, which
+  // returned empty rows. Slower fan-out keeps us under the limit.
+  const all = await chunked(fns, 4);
   const classified = all.flat().sort((a, b) => b.timestamp - a.timestamp);
 
   const cutoff = Date.now() - 24 * 3600 * 1000;
@@ -564,7 +852,14 @@ export async function getNflFlowRollup(): Promise<FlowRollup> {
 
 // Combined fetch — call this when the page needs both the trade feed
 // and the flow rollup, so the underlying API calls are deduped.
-export async function getNflTradeFeedAndFlow(perPool = 50, feedLimit = 50): Promise<{
+//
+// We used to pair swap legs by tx_id and drop orphans, but the upstream
+// only returns the "received" leg of a player↔player swap in the token's
+// /trades endpoint — the corresponding swap-out leg never appears in the
+// other pool's feed. The pairing filter therefore stripped every swap,
+// which is why visibly-recent Telegram-announced swaps were missing from
+// the live feed. We now keep single-leg swaps as-is.
+export async function getNflTradeFeedAndFlow(perPool = 100, feedLimit = 50): Promise<{
   trades: Trade[];
   flow: FlowRollup;
 }> {
@@ -671,41 +966,411 @@ export async function getNflDailyVolume(days = 30): Promise<{ t: number; volumeU
   return out;
 }
 
-export async function getHolders(id: string): Promise<HolderBucket[]> {
-  const player = ROSTER_BY_ID.get(id);
-  if (!player) return [];
+// ---------- Hot players (On Fire page) ----------
+
+export interface HotPlayerRow extends PlayerSummary {
+  // Rolling volume windows in USD. 24h and 7d come straight from the
+  // upstream `/tokens` metrics. 6h is computed from hourly OHLC bars
+  // because the upstream doesn't expose that exact window.
+  volume6h: number;
+  // Momentum ratio: (24h volume × 7) ÷ 7d volume. >1 means today is
+  // hotter than the player's weekly average → trending up. We use the
+  // 24h/7d windows (rather than 6h/24h) because the upstream's short
+  // windows collapse to $0 across the entire roster during offseason
+  // quiet hours, which would leave heat empty for everyone. 24h/7d
+  // always has data when a player has traded in the past week.
+  heat: number;
+}
+
+// Fetch a single OHLC window directly. Mirrors `getPriceSeries` but lets
+// callers pick an arbitrary period/limit so we can target the exact
+// volume windows the On Fire page needs without bending the public
+// Timeframe enum.
+async function fetchOhlcBars(
+  tokenAddress: string,
+  period: string,
+  limit: number,
+): Promise<TeneroOhlcRow[]> {
+  const path = `/tokens/${encodeURIComponent(tokenAddress)}/ohlc?period=${period}&type=token&limit=${limit}`;
   try {
-    const data = await tget<ListResponse<TeneroHolderRow>>(
-      `/tokens/${encodeURIComponent(player.tokenAddress)}/holders?limit=50`,
-      REVALIDATE.detail,
-    );
-    const rows = data?.rows ?? [];
-    if (rows.length === 0) return [];
-
-    const balances = rows
-      .map((r) => Number(r.balance ?? 0))
-      .filter((n) => Number.isFinite(n) && n > 0)
-      .sort((a, b) => b - a);
-    const total = balances.reduce((a, b) => a + b, 0) || 1;
-
-    const buckets: HolderBucket[] = [
-      { label: "Whales (>1%)",     count: 0, share: 0 },
-      { label: "Large (0.1–1%)",   count: 0, share: 0 },
-      { label: "Mid (0.01–0.1%)",  count: 0, share: 0 },
-      { label: "Small (<0.01%)",   count: 0, share: 0 },
-    ];
-    for (const b of balances) {
-      const pct = (b / total) * 100;
-      if (pct > 1)         { buckets[0].count++; buckets[0].share += pct; }
-      else if (pct > 0.1)  { buckets[1].count++; buckets[1].share += pct; }
-      else if (pct > 0.01) { buckets[2].count++; buckets[2].share += pct; }
-      else                 { buckets[3].count++; buckets[3].share += pct; }
-    }
-    for (const b of buckets) b.share = +b.share.toFixed(2);
-    return buckets;
+    const data = await tget<TeneroOhlcRow[]>(path, REVALIDATE.ohlc);
+    return Array.isArray(data) ? data : [];
   } catch {
     return [];
   }
+}
+
+/**
+ * Derive 1h/24h/7d % changes from hourly OHLC bars instead of trusting
+ * the upstream's `price_*_ago` snapshot fields, which fall back to
+ * `current_price` for low-activity tokens and produce phantom 0% reads
+ * after real curve moves.
+ *
+ * Strategy: fetch 168 most-recent active hourly bars. For each window,
+ * find the most recent bar whose timestamp is ≤ (now − window) — that
+ * bar's close approximates the spot at the anchor point. % = (spot
+ * vs anchor close). Returns null per field if no anchor bar exists
+ * (caller can keep the upstream value as a last-resort fallback).
+ */
+async function fetchOhlcDeltas(
+  tokenAddress: string,
+  currentSpot: number,
+): Promise<{ change1h: number | null; change24h: number | null; change7d: number | null }> {
+  const bars = await fetchOhlcBars(tokenAddress, "1h", 168);
+  if (bars.length === 0 || currentSpot <= 0) {
+    return { change1h: null, change24h: null, change7d: null };
+  }
+  const nowSec = Math.floor(Date.now() / 1000);
+  // Fresh activity that hasn't propagated into the OHLC yet shows up as
+  // a divergence between `currentSpot` (upstream's live current_price)
+  // and the latest OHLC bar's close. When that gap exists, the latest
+  // bar's close is our best estimate of the pre-activity spot, which we
+  // can use as a fallback anchor when no in-band bar is available.
+  // Conservative override: only emit an OHLC-derived delta when there's
+  // CLEAR evidence of fresh activity — i.e. the live spot has diverged
+  // from the most-recent OHLC bar's close. That divergence is the
+  // unambiguous signal of an on-chain trade the upstream's snapshot
+  // hasn't picked up yet (the Jacobs/Swift/Brown case).
+  //
+  // Previous versions anchored against older bars within a sliding cap,
+  // but for sparse tokens that bar could be an outlier (Gibbs had a 45h-
+  // old bar that was a 6% dip relative to its neighbors, producing a
+  // fake +6.3% on the 24h delta). When there's no fresh-activity
+  // divergence, returning null lets the caller keep the upstream's
+  // value — usually 0% for these quiet tokens, which is closer to the
+  // truth than an outlier-driven OHLC anchor.
+  const mostRecentBar = bars[0];
+  const mostRecentClose = mostRecentBar ? Number(mostRecentBar.close ?? 0) : 0;
+  if (mostRecentClose <= 0) {
+    return { change1h: null, change24h: null, change7d: null };
+  }
+  const divergence = Math.abs(currentSpot - mostRecentClose) / mostRecentClose;
+  // 0.01% threshold — anything smaller is rounding noise, not real
+  // unreflected activity.
+  if (divergence <= 1e-4) {
+    return { change1h: null, change24h: null, change7d: null };
+  }
+  // Fresh activity confirmed. The latest bar's close is the pre-trade
+  // spot; the move since reflects the unreflected fresh activity. Apply
+  // the same delta to all visible windows — for these "trade just
+  // happened" cases the user wants to SEE the move show up, and we
+  // don't have finer-grained data to attribute it to a specific window.
+  void nowSec; // retained for symmetry, unused under conservative path
+  const change = +(((currentSpot - mostRecentClose) / mostRecentClose) * 100).toFixed(2);
+  return {
+    change1h: change,
+    change24h: change,
+    change7d: change,
+  };
+}
+
+/**
+ * Build the On Fire leaderboard. Volume windows:
+ *   - 6h  → sum of hourly OHLC bars whose timestamp falls in the last 6h
+ *   - 24h → upstream `metrics.volume_1d_usd` (free, already on PlayerSummary)
+ *   - 7d  → upstream `metrics.volume_7d_usd` (free)
+ *
+ * One OHLC fetch per active player, cached by Next.js for 5min via
+ * REVALIDATE.ohlc, so the first render is the only slow one — after
+ * that the page is essentially free.
+ */
+export async function getNflHotPlayers(): Promise<HotPlayerRow[]> {
+  const players = await getPlayers();
+
+  // Skip the OHLC fetches for players with zero recent activity — saves
+  // ~half the API calls in the offseason without changing the leaderboard
+  // (a cold player would rank last anyway).
+  const active = players.filter((p) => p.volume24h > 0 || p.volume7d > 0);
+
+  // CRITICAL: the upstream's OHLC endpoint returns the most-recent N bars
+  // that had ACTIVITY — not the last N chronological hours. For sparse
+  // tokens those bars can stretch back days, so summing the raw response
+  // inflates short windows enormously. We request a generous limit, then
+  // filter to the actual rolling 6h window via timestamp.
+  const nowSec = Math.floor(Date.now() / 1000);
+  const cutoff6h = nowSec - 6 * 3600;
+
+  const fns = active.map((p) => async () => {
+    const roster = ROSTER_BY_ID.get(p.id);
+    if (!roster) return { id: p.id, volume6h: 0 };
+    // 48 hourly bars-with-activity is plenty to cover the last 6h even
+    // on the busiest player — and lets the timestamp filter do its job
+    // when bars are sparse.
+    const hourly = await fetchOhlcBars(roster.tokenAddress, "1h", 48);
+    const volume6h = hourly.reduce(
+      (a, b) => (Number(b.time ?? 0) >= cutoff6h ? a + Number(b.volume ?? 0) : a),
+      0,
+    );
+    return { id: p.id, volume6h };
+  });
+
+  // Concurrency 8 — single fetch per player, plenty of headroom under
+  // the upstream's 100/min budget.
+  const results = await chunked(fns, 8);
+  const byId = new Map(results.map((r) => [r.id, r]));
+
+  return players.map((p) => {
+    const r = byId.get(p.id);
+    const volume6h = r?.volume6h ?? 0;
+    // Heat compares today's volume to the player's weekly average so it
+    // stays meaningful even when nothing has traded in the last 6h.
+    const heat = p.volume7d > 0 ? (p.volume24h * 7) / p.volume7d : 0;
+    return { ...p, volume6h, heat };
+  });
+}
+
+// Paginate the holder list up to a generous cap so the breakdown
+// buckets reflect the full population (not just the top 50). Tenero
+// returns a `next` cursor when more rows are available.
+async function fetchAllHolders(tokenAddress: string, maxPages = 14): Promise<TeneroHolderRow[]> {
+  const out: TeneroHolderRow[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < maxPages; page++) {
+    try {
+      const path: string = `/tokens/${encodeURIComponent(tokenAddress)}/holders?limit=50` +
+        (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "");
+      const data: ListResponse<TeneroHolderRow> | null = await tget<ListResponse<TeneroHolderRow>>(
+        path,
+        REVALIDATE.detail,
+      );
+      const rows = data?.rows ?? [];
+      out.push(...rows);
+      cursor = data?.next ?? null;
+      if (!cursor || rows.length === 0) break;
+    } catch {
+      break;
+    }
+  }
+  return out;
+}
+
+export async function getHolders(id: string): Promise<HolderBucket[]> {
+  const player = ROSTER_BY_ID.get(id);
+  if (!player) return [];
+  const rows = await fetchAllHolders(player.tokenAddress);
+  if (rows.length === 0) return [];
+
+  const balances = rows
+    .filter((r) => r.wallet_address?.toLowerCase() !== SWAP_ROUTER_LC)
+    .map((r) => Number(r.balance ?? 0))
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .sort((a, b) => b - a);
+  const total = balances.reduce((a, b) => a + b, 0) || 1;
+
+  const buckets: HolderBucket[] = [
+    { label: "Whales (>1%)",     count: 0, share: 0 },
+    { label: "Large (0.1–1%)",   count: 0, share: 0 },
+    { label: "Mid (0.01–0.1%)",  count: 0, share: 0 },
+    { label: "Small (<0.01%)",   count: 0, share: 0 },
+  ];
+  for (const b of balances) {
+    const pct = (b / total) * 100;
+    if (pct > 1)         { buckets[0].count++; buckets[0].share += pct; }
+    else if (pct > 0.1)  { buckets[1].count++; buckets[1].share += pct; }
+    else if (pct > 0.01) { buckets[2].count++; buckets[2].share += pct; }
+    else                 { buckets[3].count++; buckets[3].share += pct; }
+  }
+  for (const b of buckets) b.share = +b.share.toFixed(2);
+  return buckets;
+}
+
+// Top N holders for the player detail page's "Largest Holders" table.
+// Excludes the AMM router. Each row carries the share % of circulating
+// supply so the table can render a bar without re-summing.
+export interface TopHolder {
+  address: string;
+  balance: number;
+  sharePct: number;
+  startHoldingAt: number;
+  lastActiveAt: number;
+}
+export async function getTopHolders(id: string, limit = 25): Promise<TopHolder[]> {
+  const player = ROSTER_BY_ID.get(id);
+  if (!player) return [];
+  const rows = await fetchAllHolders(player.tokenAddress);
+  const filtered = rows
+    .filter((r) => r.wallet_address && r.wallet_address.toLowerCase() !== SWAP_ROUTER_LC)
+    .map((r) => ({
+      address: r.wallet_address,
+      balance: Number(r.balance ?? 0),
+      startHoldingAt: Number(r.start_holding_at ?? 0),
+      lastActiveAt: Number(r.last_active_at ?? 0),
+    }))
+    .filter((r) => Number.isFinite(r.balance) && r.balance > 0);
+  filtered.sort((a, b) => b.balance - a.balance);
+  const total = filtered.reduce((a, r) => a + r.balance, 0) || 1;
+  return filtered.slice(0, limit).map((r) => ({
+    ...r,
+    sharePct: +((r.balance / total) * 100).toFixed(3),
+  }));
+}
+
+// Cross-pool wallet leaderboard. Aggregates each NFL pool's top
+// holders into a global NFL-portfolio-value ranking — no per-wallet
+// API calls needed since each holder row already carries balance,
+// and we have current price per pool from getPlayers().
+//
+// Top-K per pool (default 100) trades exhaustiveness for speed;
+// the wealthy wallets we care about are by definition in the top
+// of every pool they touch, so K=100 captures essentially all of
+// them while keeping the upstream call count bounded.
+export interface TopNflWallet {
+  address: string;
+  nflValueUsd: number;
+  positions: number;        // distinct NFL pools held
+  topPositionPlayerId: string | null;
+  topPositionUsd: number;
+  firstHeldAt: number;      // earliest startHoldingAt across NFL holdings
+  lastActiveAt: number;     // latest lastActiveAt across NFL holdings
+  tier: WalletTier;
+  funBalance: number;       // raw $FUN token count, decimal-adjusted
+  funValueUsd: number;      // funBalance × current $FUN spot price
+}
+export async function getTopNflWallets(limit = 100, perPool = 100): Promise<TopNflWallet[]> {
+  const players = await getPlayers();
+  // Pull top-K holders for each pool in parallel (chunked).
+  const fns = players.map((p) => async () => {
+    const rows = await fetchAllHolders(
+      ROSTER_BY_ID.get(p.id)!.tokenAddress,
+      Math.ceil(perPool / 50),
+    );
+    const filtered = rows
+      .filter((r) => r.wallet_address && r.wallet_address.toLowerCase() !== SWAP_ROUTER_LC)
+      .map((r) => ({
+        address: r.wallet_address,
+        balance: Number(r.balance ?? 0),
+        startHoldingAt: Number(r.start_holding_at ?? 0),
+        lastActiveAt: Number(r.last_active_at ?? 0),
+      }))
+      .filter((r) => Number.isFinite(r.balance) && r.balance > 0);
+    filtered.sort((a, b) => b.balance - a.balance);
+    return { player: p, rows: filtered.slice(0, perPool) };
+  });
+  const results = await chunked(fns, 6);
+
+  type Agg = {
+    nflValueUsd: number;
+    positions: number;
+    topPositionPlayerId: string | null;
+    topPositionUsd: number;
+    firstHeldAt: number;
+    lastActiveAt: number;
+  };
+  const byAddr = new Map<string, Agg>();
+
+  for (const { player, rows } of results) {
+    const price = player.priceUsd;
+    if (!Number.isFinite(price) || price <= 0) continue;
+    for (const r of rows) {
+      const addr = r.address.toLowerCase();
+      const valueUsd = r.balance * price;
+      if (valueUsd <= 0) continue;
+      const cur = byAddr.get(addr) ?? {
+        nflValueUsd: 0,
+        positions: 0,
+        topPositionPlayerId: null as string | null,
+        topPositionUsd: 0,
+        firstHeldAt: 0,
+        lastActiveAt: 0,
+      };
+      cur.nflValueUsd += valueUsd;
+      cur.positions += 1;
+      if (valueUsd > cur.topPositionUsd) {
+        cur.topPositionUsd = valueUsd;
+        cur.topPositionPlayerId = player.id;
+      }
+      if (r.startHoldingAt && (cur.firstHeldAt === 0 || r.startHoldingAt < cur.firstHeldAt)) {
+        cur.firstHeldAt = r.startHoldingAt;
+      }
+      if (r.lastActiveAt > cur.lastActiveAt) cur.lastActiveAt = r.lastActiveAt;
+      byAddr.set(addr, cur);
+    }
+  }
+
+  const aggregated: TopNflWallet[] = Array.from(byAddr.entries())
+    .map(([address, v]) => ({
+      address,
+      nflValueUsd: +v.nflValueUsd.toFixed(2),
+      positions: v.positions,
+      topPositionPlayerId: v.topPositionPlayerId,
+      topPositionUsd: +v.topPositionUsd.toFixed(2),
+      firstHeldAt: v.firstHeldAt,
+      lastActiveAt: v.lastActiveAt,
+      tier: tierForValue(v.nflValueUsd),
+      funBalance: 0,    // populated by the bulk $FUN reader below
+      funValueUsd: 0,
+    }))
+    .sort((a, b) => b.nflValueUsd - a.nflValueUsd)
+    .slice(0, limit);
+
+  // Refine the top candidates with an on-chain balanceOfBatch read.
+  // The aggregation above misses positions where the wallet ranks
+  // outside our perPool window (e.g. a wallet sitting at #251 of a
+  // pool when perPool=250), which can undercount NFL value by 30%+
+  // for diversified holders. The on-chain read is exact and matches
+  // what the wallet detail page renders.
+  //
+  // Bulk-batched via Multicall3 — earlier per-wallet RPC calls were
+  // throttled by the public Base RPC and returned null for most
+  // wallets, leaving the leaderboard stuck with aggregated estimates.
+  const priceByToken = new Map(
+    players.map((p) => [ROSTER_BY_ID.get(p.id)!.tokenAddress, p.priceUsd]),
+  );
+  const addresses = aggregated.map((w) => w.address);
+
+  // NFL balances + $FUN balances + $FUN price all fetched in
+  // parallel. $FUN reads are simple ERC-20 balanceOf calls so
+  // multicall handles them cleanly (unlike the NFL nested-array
+  // path that needs the flat-batch shape).
+  const [refinementMap, funMap, funInfo] = await Promise.all([
+    readManyWalletsNflBalances(addresses, priceByToken),
+    readManyFunBalances(addresses),
+    getFunPriceInfo(),
+  ]);
+  const funPrice = funInfo.priceUsd;
+
+  const refined: TopNflWallet[] = aggregated.map((w) => {
+    const lower = w.address.toLowerCase();
+    const funBalance = funMap.get(lower) ?? 0;
+    const funValueUsd = +(funBalance * funPrice).toFixed(2);
+
+    const onchain = refinementMap.get(lower);
+    if (onchain == null) {
+      // RPC failed for NFL — keep aggregated NFL but still apply
+      // refined $FUN.
+      return { ...w, funBalance, funValueUsd };
+    }
+    let nflValueUsd = 0;
+    let topPositionUsd = 0;
+    let topPositionPlayerId: string | null = null;
+    for (const h of onchain) {
+      nflValueUsd += h.balanceValueUsd;
+      if (h.balanceValueUsd > topPositionUsd) {
+        topPositionUsd = h.balanceValueUsd;
+        const player = ROSTER.find((r) => r.tokenAddress === h.tokenAddress);
+        topPositionPlayerId = player?.id ?? null;
+      }
+    }
+    return {
+      ...w,
+      nflValueUsd: +nflValueUsd.toFixed(2),
+      positions: onchain.length,
+      topPositionPlayerId: topPositionPlayerId ?? w.topPositionPlayerId,
+      topPositionUsd: +topPositionUsd.toFixed(2),
+      tier: tierForValue(nflValueUsd),
+      funBalance,
+      funValueUsd,
+    };
+  });
+
+  // Re-sort after refinement so the leaderboard order reflects the
+  // exact on-chain values, not the (possibly under-counted)
+  // aggregated estimates. Filter out wallets whose refined value
+  // came back as 0 — those are stale aggregations for wallets
+  // that have since fully exited NFL.
+  return refined
+    .filter((w) => w.nflValueUsd > 0)
+    .sort((a, b) => b.nflValueUsd - a.nflValueUsd);
 }
 
 export async function getPoolStats(id: string): Promise<PoolStats | null> {
@@ -896,11 +1561,24 @@ export async function getWalletPortfolio(
   // Always returns a profile — even on upstream error or empty response —
   // so the wallet page can render a usable empty state instead of 404ing.
   let rows: TeneroHoldingRow[] = [];
+  // The upstream `/wallets/.../holdings` endpoint is currently
+  // case-sensitive in the opposite direction from most of its API:
+  // it only returns rows for the EIP-55 checksummed form of the
+  // address — lowercase comes back empty. Other endpoints (and our
+  // on-chain reader) accept lowercase fine, so we checksum just for
+  // this specific call. If checksumming throws (malformed input), we
+  // fall back to whatever the caller passed.
+  let queryAddress = address;
+  try {
+    queryAddress = getAddress(address);
+  } catch {
+    queryAddress = address;
+  }
   try {
     // Upstream rejects limit > 50 with `Request validation failed`. Page
     // through with cursors if a wallet holds more than 50 positions.
     const data = await tget<{ rows: TeneroHoldingRow[]; next: string | null }>(
-      `/wallets/${encodeURIComponent(address)}/holdings?limit=50`,
+      `/wallets/${encodeURIComponent(queryAddress)}/holdings?limit=50`,
       REVALIDATE.detail,
     );
     rows = data?.rows ?? [];
@@ -912,7 +1590,7 @@ export async function getWalletPortfolio(
     while (cursor && safety < 6) {
       try {
         const next = await tget<{ rows: TeneroHoldingRow[]; next: string | null }>(
-          `/wallets/${encodeURIComponent(address)}/holdings?limit=50&cursor=${encodeURIComponent(cursor)}`,
+          `/wallets/${encodeURIComponent(queryAddress)}/holdings?limit=50&cursor=${encodeURIComponent(cursor)}`,
           REVALIDATE.detail,
         );
         if (!next?.rows?.length) break;
@@ -954,22 +1632,28 @@ export async function getWalletPortfolio(
     ]));
     const onchainNfl = await readWalletNflBalances(address, priceByToken);
 
+    const upstreamNflRows = upstreamHoldings.filter((h) =>
+      ROSTER_BY_TOKEN.has(h.tokenAddress),
+    );
     const upstreamNflByToken = new Map(
-      upstreamHoldings
-        .filter((h) => ROSTER_BY_TOKEN.has(h.tokenAddress))
-        .map((h) => [h.tokenAddress, h]),
+      upstreamNflRows.map((h) => [h.tokenAddress, h]),
     );
 
-    // Merge: on-chain wins for balance/value (it's the source of truth);
-    // upstream contributes start/last-active timestamps when available.
-    const mergedNfl: WalletHolding[] = onchainNfl.map((onchain) => {
-      const u = upstreamNflByToken.get(onchain.tokenAddress);
-      return {
-        ...onchain,
-        startHoldingAt: u?.startHoldingAt ?? 0,
-        lastActiveAt: u?.lastActiveAt ?? onchain.lastActiveAt,
-      };
-    });
+    // Merge: on-chain wins for balance/value (it's the source of
+    // truth); upstream contributes start/last-active timestamps. If
+    // the on-chain RPC failed entirely (null), fall back to the
+    // upstream NFL rows so we don't misrepresent a holder as $0.
+    const mergedNfl: WalletHolding[] =
+      onchainNfl != null
+        ? onchainNfl.map((onchain) => {
+            const u = upstreamNflByToken.get(onchain.tokenAddress);
+            return {
+              ...onchain,
+              startHoldingAt: u?.startHoldingAt ?? 0,
+              lastActiveAt: u?.lastActiveAt ?? onchain.lastActiveAt,
+            };
+          })
+        : upstreamNflRows;
 
     // Non-NFL holdings still come from the upstream — we have no
     // on-chain enumeration of soccer pools.
@@ -1054,8 +1738,67 @@ interface TeneroWalletTradeRow {
   recipient: string;
   base_token_address: string;
   quote_token_address: string;
+  base_token_amount?: string | number;
   amount_usd: number;
+  price_usd?: number;
   block_time: number;
+  base_token?: {
+    address: string;
+    symbol: string;
+    name: string;
+    image_url?: string;
+  };
+}
+
+/**
+ * Recent trade feed for a single wallet. One upstream call (no
+ * pagination — just the most-recent `limit` rows), enriched with
+ * roster lookups so NFL rows can link to the player page.
+ */
+export async function getWalletTrades(
+  address: string,
+  limit = 30,
+): Promise<WalletTradeRow[]> {
+  // Same case-sensitivity quirk — the /wallets/.../trades endpoint
+  // returns 0 rows for lowercase addresses.
+  let queryAddress = address;
+  try {
+    queryAddress = getAddress(address);
+  } catch {
+    queryAddress = address;
+  }
+
+  let rows: TeneroWalletTradeRow[] = [];
+  try {
+    const data = await tget<{ rows: TeneroWalletTradeRow[]; next: string | null }>(
+      `/wallets/${encodeURIComponent(queryAddress)}/trades?limit=${limit}`,
+      REVALIDATE.wallet,
+    );
+    rows = data?.rows ?? [];
+  } catch {
+    return [];
+  }
+
+  return rows.map((r) => {
+    const isNfl = isNflTokenAddress(r.base_token_address);
+    const rosterPlayer = isNfl ? ROSTER_BY_TOKEN.get(r.base_token_address) : undefined;
+    const side: "buy" | "sell" = r.event_type === "sell" ? "sell" : "buy";
+    return {
+      txId: r.tx_id,
+      timestamp: Number(r.block_time ?? 0),
+      side,
+      isNfl,
+      symbol: r.base_token?.symbol ?? "",
+      name: r.base_token?.name ?? rosterPlayer?.displayName ?? "",
+      imageUrl: r.base_token?.image_url,
+      playerId: rosterPlayer?.id,
+      position: rosterPlayer?.position,
+      team: rosterPlayer?.team,
+      baseAmount: Number(r.base_token_amount ?? 0),
+      priceUsd: Number(r.price_usd ?? 0),
+      amountUsd: Number(r.amount_usd ?? 0),
+    };
+  });
 }
 
 export async function getWalletFlow(address: string, windowDays = 7): Promise<WalletFlowSummary> {
@@ -1063,12 +1806,22 @@ export async function getWalletFlow(address: string, windowDays = 7): Promise<Wa
   const dayMs = 24 * 3600 * 1000;
   const todayDay = Math.floor(Date.now() / dayMs) * dayMs;
 
+  // Same case-sensitivity quirk as /wallets/.../holdings — the upstream
+  // returns empty rows for lowercase addresses and full results for the
+  // EIP-55 checksummed form. Convert just for this call.
+  let queryAddress = address;
+  try {
+    queryAddress = getAddress(address);
+  } catch {
+    queryAddress = address;
+  }
+
   const collected: TeneroWalletTradeRow[] = [];
   let cursor: string | null = null;
   let safety = 0;
   try {
     do {
-      const path: string = `/wallets/${encodeURIComponent(address)}/trades?limit=50` +
+      const path: string = `/wallets/${encodeURIComponent(queryAddress)}/trades?limit=50` +
         (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "");
       const data = await tget<{ rows: TeneroWalletTradeRow[]; next: string | null }>(
         path, REVALIDATE.wallet,

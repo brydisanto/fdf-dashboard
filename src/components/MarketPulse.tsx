@@ -97,6 +97,7 @@ export function MarketPulse({
                   dataKey="t"
                   tickFormatter={fmtDay}
                   stroke="var(--color-text-muted)"
+                  tick={{ fill: "var(--color-text)" }}
                   tickLine={false}
                   axisLine={false}
                   fontSize={11}
@@ -104,6 +105,7 @@ export function MarketPulse({
                 />
                 <YAxis
                   stroke="var(--color-text-muted)"
+                  tick={{ fill: "var(--color-text)" }}
                   tickLine={false}
                   axisLine={false}
                   fontSize={11}
@@ -112,7 +114,9 @@ export function MarketPulse({
                 />
                 <Tooltip
                   cursor={{ fill: "rgba(255,255,255,0.05)" }}
-                  contentStyle={{ background: "var(--color-surface-2)", border: "1px solid var(--color-border-strong)", borderRadius: 8, fontSize: 12 }}
+                  contentStyle={{ background: "var(--color-press)", border: "1px solid var(--color-line-strong)", borderRadius: 8, fontSize: 12, color: "var(--color-text)" }}
+                  labelStyle={{ color: "var(--color-text)" }}
+                  itemStyle={{ color: "var(--color-text)" }}
                   labelFormatter={(v) => new Date(Number(v)).toLocaleDateString()}
                   formatter={(v) => [fmtUsd(Number(v), { compact: true }), "NFL Volume"] as [string, string]}
                 />
@@ -135,12 +139,14 @@ export function MarketPulse({
                 ]}
                 margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
               >
-                <XAxis dataKey="label" stroke="var(--color-text-muted)" tickLine={false} axisLine={false} fontSize={11} />
-                <YAxis stroke="var(--color-text-muted)" tickLine={false} axisLine={false} fontSize={11} width={56} tickFormatter={(v) => fmtUsd(Number(v), { compact: true })} />
+                <XAxis dataKey="label" stroke="var(--color-text-muted)" tick={{ fill: "var(--color-text)" }} tickLine={false} axisLine={false} fontSize={11} />
+                <YAxis stroke="var(--color-text-muted)" tick={{ fill: "var(--color-text)" }} tickLine={false} axisLine={false} fontSize={11} width={56} tickFormatter={(v) => fmtUsd(Number(v), { compact: true })} />
                 <ReferenceLine y={0} stroke="var(--color-border-strong)" />
                 <Tooltip
                   cursor={{ fill: "rgba(255,255,255,0.05)" }}
-                  contentStyle={{ background: "var(--color-surface-2)", border: "1px solid var(--color-border-strong)", borderRadius: 8, fontSize: 12 }}
+                  contentStyle={{ background: "var(--color-press)", border: "1px solid var(--color-line-strong)", borderRadius: 8, fontSize: 12, color: "var(--color-text)" }}
+                  labelStyle={{ color: "var(--color-text)" }}
+                  itemStyle={{ color: "var(--color-text)" }}
                   labelFormatter={(label) => `${label} 24h`}
                   formatter={(v, _name, item) => {
                     const lbl = String((item as { payload?: { label?: string } })?.payload?.label ?? "Volume");

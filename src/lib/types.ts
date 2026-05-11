@@ -21,10 +21,17 @@ export interface TokenStats {
   playerId: string;
   priceUsd: number;
   change1h: number;
+  // 6h % change. Populated from our own snapshot indexer (no upstream
+  // field maps to this window). Falls back to 0 during the indexer's
+  // first 6 hours after deploy.
+  change6h: number;
   change24h: number;
   change7d: number;
   marketCap: number;
   volume24h: number;
+  // 7d rolling volume, sourced directly from the upstream `volume_7d_usd`
+  // metric — free on every token row, no extra fetch.
+  volume7d: number;
   trades24h: number;
   holders: number;
   circulatingSupply: number;
@@ -147,6 +154,25 @@ export interface WalletHolding {
   balanceValueUsd: number;
   startHoldingAt: number;
   lastActiveAt: number;
+}
+
+export interface WalletTradeRow {
+  txId: string;
+  timestamp: number;          // unix ms
+  side: "buy" | "sell";
+  isNfl: boolean;
+  // Display info — always present, sourced from the upstream's base_token.
+  symbol: string;
+  name: string;
+  imageUrl?: string;
+  // NFL-only enrichment from our roster lookup. Empty for Soccer rows.
+  playerId?: string;
+  position?: string;
+  team?: string;
+  // Amounts
+  baseAmount: number;         // shares moved
+  priceUsd: number;           // USD per share at trade time
+  amountUsd: number;          // USD value of the trade
 }
 
 export interface WalletProfile {

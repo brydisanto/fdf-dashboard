@@ -43,11 +43,14 @@ export function CompositionPie({
           </Pie>
           <Tooltip
             contentStyle={{
-              background: "var(--color-surface-2)",
-              border: "1px solid var(--color-border-strong)",
+              background: "var(--color-press)",
+              border: "1px solid var(--color-line-strong)",
               borderRadius: 8,
               fontSize: 12,
+              color: "var(--color-text)",
             }}
+            labelStyle={{ color: "var(--color-text)" }}
+            itemStyle={{ color: "var(--color-text)" }}
             formatter={(v: unknown, _name: unknown, item: unknown) => {
               const lbl =
                 typeof (item as { name?: string })?.name === "string"

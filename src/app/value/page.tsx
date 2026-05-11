@@ -1,38 +1,46 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Info } from "lucide-react";
 import { getPlayers } from "@/lib/data";
 import {
   getFantasyProsRankings,
   indexFpByName,
   normalizeName,
 } from "@/lib/data/fantasypros";
-import { Card, CardHeader, Pill } from "@/components/ui";
-import { ValueTable, type ValueRow } from "@/components/ValueTable";
-import { fmtNum, fmtPrice } from "@/lib/format";
+import { getUnderdogRankings, indexUdByName } from "@/lib/data/underdog";
+import { getEspnRankings, indexEspnByName } from "@/lib/data/espn";
+import { Pill } from "@/components/ui";
+import { ValuePageBody } from "@/components/ValuePageBody";
+import { type ValueRow } from "@/components/ValueTable";
+import { fmtNum } from "@/lib/format";
 import type { Position } from "@/lib/types";
 
 export const metadata = {
-  title: "Value Score · Gridiron",
-  description: "Compare market price against FantasyPros consensus PPR ranks to surface NFL player tokens that may be over- or undervalued.",
+  title: "Value · FDF Box Score",
+  description:
+    "Sport.fun market rank vs an industry-consensus rank averaged across FantasyPros, Underdog Sports, and ESPN — surfaces NFL player tokens the market may be over- or undervaluing.",
 };
 
 export const revalidate = 600;
 
 const POS: Position[] = ["QB", "RB", "WR", "TE"];
 
-// "Fair" band: actual price is within ±this percent of expected price.
-const FAIR_BAND_PCT = 10;
+// Δ band tolerated as "fair". |Δ| ≤ this → no over/undervalued
+// verdict. 1 spot of disparity is noise; 2+ starts to matter.
+const FAIR_BAND = 1;
 
 export default async function ValuePage() {
   const [players, fp] = await Promise.all([getPlayers(), getFantasyProsRankings()]);
   const fpByName = indexFpByName(fp);
+  // Underdog + ESPN are sourced from static snapshot files (no
+  // server-side fetch — Underdog is Cloudflare-blocked, ESPN is
+  // JS-rendered). Refreshed periodically by re-running the Chrome
+  // MCP scrape and overwriting underdog-rankings.json /
+  // espn-rankings.json.
+  const udByName = indexUdByName(getUnderdogRankings());
+  const espnByName = indexEspnByName(getEspnRankings());
 
-  // ---- Position-level setup ----------------------------------------
-  // For each position we need:
-  //  - market positional rank (by market cap)
-  //  - the FP "#1 at position" — the player at this position with FP
-  //    pos rank = 1 (or, if missing in our roster, the lowest pos rank
-  //    we do have). Anchors the expected-price computation.
+  // Group roster by position; market positional rank within each,
+  // sorted by raw share price (highest price = #1).
   const byPos = new Map<Position, typeof players>();
   for (const p of players) {
     if (!POS.includes(p.position as Position)) continue;
@@ -42,139 +50,147 @@ export default async function ValuePage() {
   }
   const marketPosRank = new Map<string, { rank: number; size: number }>();
   for (const [, list] of byPos) {
-    list.sort((a, b) => b.marketCap - a.marketCap);
+    list.sort((a, b) => b.priceUsd - a.priceUsd);
     list.forEach((p, i) => marketPosRank.set(p.id, { rank: i + 1, size: list.length }));
   }
 
-  // For each position: find the FP-#1 player on our roster (lowest
-  // posRankNum) and capture their FP overall rank + market price as the
-  // anchor for expected-price math.
-  type Anchor = { id: string; fpOverall: number; marketPrice: number };
-  const fpAnchorByPos = new Map<Position, Anchor>();
-  for (const [position, list] of byPos) {
-    let best: { hit: ReturnType<typeof fpByName.get>; player: (typeof list)[number] } | null = null;
-    for (const p of list) {
-      const hit = fpByName.get(normalizeName(`${p.firstName} ${p.lastName}`));
-      if (!hit?.posRankNum || !hit.rankEcr) continue;
-      if (!best || hit.posRankNum < best.hit!.posRankNum!) best = { hit, player: p };
-    }
-    if (best && best.hit) {
-      fpAnchorByPos.set(position, {
-        id: best.player.id,
-        fpOverall: best.hit.rankEcr,
-        marketPrice: best.player.priceUsd,
-      });
-    }
-  }
-
-  // ---- Build rows --------------------------------------------------
+  // Build rows. Industry-average rank model:
+  //   industryAvgRank = mean(fpPosRank, udPosRank) when both present
+  //                   = whichever single one is present
+  //                   = null if neither
+  //   posRankDelta    = industryAvgRank − marketPosRank
+  // Negative Δ → industry ranks them higher than market → market may
+  // be UNDERVALUING them. Positive → market ranks them higher than
+  // industry → market may be OVERVALUING them.
   const rows: ValueRow[] = players
     .filter((p) => POS.includes(p.position as Position))
     .map((p) => {
-      const fpHit = fpByName.get(normalizeName(`${p.firstName} ${p.lastName}`));
       const market = marketPosRank.get(p.id) ?? { rank: 0, size: 0 };
-      const fpPos = fpHit?.posRankNum ?? null;
-      const fpOverall = fpHit?.rankEcr ?? null;
-      const anchor = fpAnchorByPos.get(p.position as Position) ?? null;
+      const nameKey = normalizeName(`${p.firstName} ${p.lastName}`);
+      const fpHit = fpByName.get(nameKey);
+      const udHit = udByName.get(nameKey);
+      const espnHit = espnByName.get(nameKey);
+      const fpPosRank = fpHit?.posRankNum && fpHit.posRankNum > 0 ? fpHit.posRankNum : null;
+      const udPosRank = udHit?.posRank && udHit.posRank > 0 ? udHit.posRank : null;
+      const espnAvgRank = espnHit?.avgRank && espnHit.avgRank > 0 ? espnHit.avgRank : null;
 
-      // FP overall rank gap from the position's FP-#1, expressed as a
-      // percentage of the anchor's overall rank. Positive % means the
-      // player is ranked further down the overall board than the
-      // position-#1, so we'd expect them priced lower.
-      let fpOverallGapPct: number | null = null;
-      let expectedPriceUsd: number | null = null;
-      let priceVsExpectedUsd: number | null = null;
-      let priceVsExpectedPct: number | null = null;
-      if (anchor && fpOverall != null) {
-        const rawGap = (fpOverall - anchor.fpOverall) / anchor.fpOverall;
-        fpOverallGapPct = +(rawGap * 100).toFixed(2);
-        // Expected price: scale the anchor's market price by (1 − gap%).
-        // For the anchor itself this is just its own price; for players
-        // ranked below #1, expected price drops linearly with the rank
-        // gap. Floor at 0 so we never report negative expected price.
-        expectedPriceUsd = Math.max(0, anchor.marketPrice * (1 - rawGap));
-        priceVsExpectedUsd = +(p.priceUsd - expectedPriceUsd).toFixed(6);
-        if (expectedPriceUsd > 0) {
-          priceVsExpectedPct = +((priceVsExpectedUsd / expectedPriceUsd) * 100).toFixed(2);
-        }
-      }
+      const industryRanks = [fpPosRank, udPosRank, espnAvgRank].filter(
+        (r): r is number => r != null,
+      );
+      const industryAvgRank = industryRanks.length
+        ? industryRanks.reduce((a, b) => a + b, 0) / industryRanks.length
+        : null;
 
-      // Verdict driven by % delta from expected (price magnitude), not
-      // just rank disparity. Negative delta = market priced below
-      // expected = undervalued.
+      const posRankDelta =
+        industryAvgRank != null && market.rank > 0
+          ? +(industryAvgRank - market.rank).toFixed(1)
+          : null;
+
       let verdict: ValueRow["verdict"] = "unranked";
-      if (priceVsExpectedPct != null) {
-        if (Math.abs(priceVsExpectedPct) <= FAIR_BAND_PCT) verdict = "fair";
-        else if (priceVsExpectedPct < 0) verdict = "undervalued";
+      if (posRankDelta != null) {
+        if (Math.abs(posRankDelta) <= FAIR_BAND) verdict = "fair";
+        else if (posRankDelta < 0) verdict = "undervalued";
         else verdict = "overvalued";
       }
 
-      // Keep `rankDelta` populated for backwards-compat / sorting in
-      // the table — it's still useful as a secondary signal.
-      const rankDelta =
-        fpPos != null && market.rank > 0 ? market.rank - fpPos : null;
-
       return {
         ...p,
-        fpConsensusRank: fpOverall,
-        fpPosRankNum: fpPos,
         marketPosRank: market.rank,
         posPlayers: market.size,
-        rankDelta,
-        fpOverallGapPct,
-        expectedPriceUsd,
-        priceVsExpectedUsd,
-        priceVsExpectedPct,
+        fpPosRank,
+        udPosRank,
+        espnAvgRank,
+        industryAvgRank,
+        posRankDelta,
         verdict,
       };
     });
 
-  const matched = rows.filter((r) => r.priceVsExpectedPct != null).length;
+  const matched = rows.filter((r) => r.posRankDelta != null).length;
   const undervalued = rows.filter((r) => r.verdict === "undervalued");
   const overvalued = rows.filter((r) => r.verdict === "overvalued");
 
-  // Sort extremes by % gap from expected price (the magnitude metric
-  // the user asked for).
+  // Extremes by absolute rank disparity (largest gap first).
   const topUndervalued = undervalued
     .slice()
-    .sort((a, b) => (a.priceVsExpectedPct ?? 0) - (b.priceVsExpectedPct ?? 0))
-    .slice(0, 3);
+    .sort((a, b) => (a.posRankDelta ?? 0) - (b.posRankDelta ?? 0))
+    .slice(0, 5);
   const topOvervalued = overvalued
     .slice()
-    .sort((a, b) => (b.priceVsExpectedPct ?? 0) - (a.priceVsExpectedPct ?? 0))
-    .slice(0, 3);
+    .sort((a, b) => (b.posRankDelta ?? 0) - (a.posRankDelta ?? 0))
+    .slice(0, 5);
 
   return (
-    <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 sm:py-8">
+    <div className="mx-auto max-w-[var(--max-w)] px-5 sm:px-8 py-6 sm:py-8">
       <Link
         href="/"
-        className="inline-flex items-center gap-1.5 text-xs uppercase tracking-wider text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+        className="inline-flex items-center gap-1.5 mono-eyebrow hover:text-[var(--color-text)]"
+        style={{ fontSize: "10px" }}
       >
         <ArrowLeft className="h-3 w-3" />
         Back to market
       </Link>
 
-      <div className="mt-3 relative overflow-hidden rounded-2xl border border-[var(--color-border)] bg-gradient-to-br from-[var(--color-surface)] to-[var(--color-surface-2)]">
-        <div className="absolute inset-0 field-grid opacity-50" />
-        <div className="absolute -top-20 -right-20 h-56 w-56 rounded-full bg-[var(--color-brand)]/15 blur-3xl" />
-        <div className="relative px-5 py-6 sm:px-8 sm:py-7">
+      {/* Hero — decoration layer is clipped (so the radial glow stays
+          inside the panel) but the content layer is overflow-visible
+          so the InfoTooltip popover can extend past the hero bounds
+          when its content is taller than the available space below. */}
+      <div
+        className="mt-3 relative rounded-[var(--r-14)] border border-[var(--color-line)]"
+        style={{ background: "linear-gradient(135deg, var(--color-bench) 0%, var(--color-press) 100%)" }}
+      >
+        <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[var(--r-14)]">
+          <div
+            className="absolute inset-0 opacity-60"
+            style={{
+              backgroundImage:
+                "linear-gradient(to right, color-mix(in oklab, var(--color-text) 4%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in oklab, var(--color-text) 4%, transparent) 1px, transparent 1px)",
+              backgroundSize: "48px 48px",
+            }}
+          />
+          <div
+            aria-hidden
+            className="absolute"
+            style={{
+              right: -100,
+              top: -100,
+              width: 480,
+              height: 480,
+              background: "radial-gradient(circle, var(--accent-tint), transparent 70%)",
+            }}
+          />
+        </div>
+        <div className="relative flex flex-col gap-6" style={{ padding: "32px 32px 28px" }}>
           <div className="flex flex-wrap items-center gap-2">
-            <Pill tone="brand">Expected Price</Pill>
-            <Pill tone="muted">PPR · FantasyPros consensus</Pill>
+            <Pill tone="brand">Rank Disparity</Pill>
+            <Pill tone="muted">PPR · 3-source industry consensus</Pill>
           </div>
-          <h1 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">
+          <h1
+            className="m-0 text-[var(--color-text)]"
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 900,
+              fontSize: "clamp(30px, 3.5vw, 48px)",
+              lineHeight: 1,
+              letterSpacing: "-0.005em",
+              textTransform: "uppercase",
+            }}
+          >
             Where do market and consensus disagree?
           </h1>
-          <p className="mt-1 max-w-3xl text-sm text-[var(--color-text-muted)]">
-            For each position we anchor on the FP-#1 player&apos;s market price,
-            then scale it down by every other player&apos;s <strong>% FP overall rank gap</strong>{" "}
-            from that anchor to derive an <strong>expected price</strong>. The{" "}
-            <strong>Δ vs Expected</strong> column is the dollar gap between actual market price and that
-            expected price — negative means the market is pricing them below where consensus says they
-            belong (undervalued), positive means above (overvalued).
+          <p
+            className="m-0 max-w-[100ch] text-[var(--color-text-muted)]"
+            style={{ fontSize: "15px", lineHeight: 1.55 }}
+          >
+            Each player&apos;s FDF market positional rank is compared against multiple
+            industry-consensus ranks. The result is a directional indicator that shows which
+            players are potentially{" "}
+            <span className="text-[var(--color-penalty)]">overvalued</span> and{" "}
+            <span className="text-[var(--color-turf)]">undervalued</span>
+            <InfoTooltip />.
           </p>
 
-          <div className="mt-5 grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-3">
             <ExtremeCard
               title="Most Undervalued"
               tone="gain"
@@ -197,15 +213,77 @@ export default async function ValuePage() {
         </div>
       </div>
 
-      <Card className="mt-6">
-        <CardHeader
-          title="Value Score Table"
-          hint="Sort by Δ vs Expected to surface biggest mispricings · click any column to sort"
-          right={<Pill tone="muted">{fmtNum(matched)} matched · {fmtNum(rows.length - matched)} unranked</Pill>}
-        />
-        <ValueTable rows={rows} />
-      </Card>
+      <ValuePageBody rows={rows} total={rows.length} matched={matched} />
     </div>
+  );
+}
+
+// Inline `i` icon that reveals a hover popover explaining the
+// rank-disparity model. Uses a Tailwind `group` parent so the
+// popover toggles via CSS `group-hover` (no JS state needed).
+function InfoTooltip() {
+  return (
+    <span className="group relative ml-1 inline-flex align-middle">
+      <Info
+        className="h-4 w-4 cursor-help text-[var(--color-text-dim)] transition-colors group-hover:text-[var(--accent-soft)]"
+        strokeWidth={1.75}
+        aria-label="More about how this is calculated"
+      />
+      <span
+        role="tooltip"
+        className="invisible absolute left-1/2 top-full z-30 mt-2 -translate-x-1/2 opacity-0 transition-opacity duration-150 group-hover:visible group-hover:opacity-100"
+        style={{ pointerEvents: "none" }}
+      >
+        <span
+          className="block rounded-[var(--r-8)] border border-[var(--color-line-strong)] bg-[var(--color-press)] p-4 text-[var(--color-text-muted)] shadow-[0_12px_40px_rgba(0,0,0,0.6)]"
+          style={{
+            width: 380,
+            fontSize: 12.5,
+            lineHeight: 1.55,
+            textTransform: "none",
+            letterSpacing: "normal",
+            fontFamily: "var(--font-ui)",
+          }}
+        >
+          <span
+            className="mb-2 block text-[var(--color-text)]"
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: "0.18em",
+              textTransform: "uppercase",
+            }}
+          >
+            How it&apos;s built
+          </span>
+          <span className="block">
+            <strong className="block text-[var(--color-text)]" style={{ marginBottom: 2 }}>
+              FDF rank
+            </strong>
+            The player&apos;s Sport.fun market positional rank, sorted by current token price.
+          </span>
+          <span className="mt-3 block">
+            <strong className="block text-[var(--color-text)]" style={{ marginBottom: 2 }}>
+              Industry rank
+            </strong>
+            Average of three PPR sources: FantasyPros consensus ECR, Underdog Sports rankings,
+            and ESPN&apos;s preseason AVG (mean of 8 ESPN expert rankers).
+          </span>
+          <span className="mt-3 block">
+            <strong className="block text-[var(--color-text)]" style={{ marginBottom: 2 }}>
+              Difference
+            </strong>
+            Industry avg − FDF rank. Negative means the industry ranks them higher than the
+            market (potentially undervalued); positive means the market ranks them higher than
+            the industry says they belong (potentially overvalued).
+          </span>
+          <span className="mt-2 block text-[var(--color-text-dim)]">
+            Fair band: |Δ| ≤ {FAIR_BAND} is treated as no-signal.
+          </span>
+        </span>
+      </span>
+    </span>
   );
 }
 
@@ -221,25 +299,52 @@ function ExtremeCard({
   empty: string;
 }) {
   return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/40 p-4">
+    <div className="rounded-[var(--r-8)] border border-[var(--color-line)] bg-[var(--color-press)] p-4">
       <div className="mb-3 flex items-center justify-between">
-        <div className="text-sm font-semibold">{title}</div>
-        <Pill tone={tone}>{tone === "gain" ? "Buy candidates" : "Sell candidates"}</Pill>
+        <div
+          style={{
+            fontFamily: "var(--font-display)",
+            fontWeight: 800,
+            fontSize: "14px",
+            letterSpacing: "0.04em",
+            textTransform: "uppercase",
+          }}
+        >
+          {title}
+        </div>
+        <Pill tone={tone}>{tone === "gain" ? "Good Value" : "Bad Value"}</Pill>
       </div>
       {players.length === 0 ? (
-        <div className="text-xs text-[var(--color-text-dim)]">{empty}</div>
+        <div className="text-[12px] text-[var(--color-text-dim)]">{empty}</div>
       ) : (
         <ul className="space-y-2">
           {players.map((p) => (
             <li key={p.id} className="flex items-baseline justify-between text-sm">
-              <Link href={`/player/${p.id}`} className="min-w-0 truncate hover:text-[var(--color-brand-soft)]">
-                <span className="font-medium">{p.firstName[0]}. {p.lastName}</span>
-                <span className="ml-1.5 text-[10px] uppercase tracking-wider text-[var(--color-text-dim)]">
-                  {p.position} · FP #{p.fpConsensusRank} · {fmtPrice(p.priceUsd)} vs {fmtPrice(p.expectedPriceUsd ?? 0)}
+              <Link href={`/player/${p.id}`} className="min-w-0 truncate hover:text-[var(--accent-soft)]">
+                <span className="font-medium">
+                  {p.firstName[0]}. {p.lastName}
+                </span>
+                <span
+                  className="ml-1.5"
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "10px",
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                    color: "var(--color-text-dim)",
+                  }}
+                >
+                  {p.position} · MKT {p.position}
+                  {p.marketPosRank} · FP {p.position}
+                  {p.fpPosRank}
                 </span>
               </Link>
-              <span className={tone === "gain" ? "tabular text-[var(--color-gain)]" : "tabular text-[var(--color-loss)]"}>
-                {p.priceVsExpectedPct! > 0 ? `+${p.priceVsExpectedPct!.toFixed(1)}` : p.priceVsExpectedPct!.toFixed(1)}%
+              <span
+                className={tone === "gain" ? "text-[var(--color-turf)]" : "text-[var(--color-penalty)]"}
+                style={{ fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums", fontWeight: 700 }}
+              >
+                {p.posRankDelta! > 0 ? "+" : ""}
+                {p.posRankDelta}
               </span>
             </li>
           ))}
@@ -249,20 +354,38 @@ function ExtremeCard({
   );
 }
 
-function SummaryCard({ matched, total, undervalued, overvalued }: {
-  matched: number; total: number; undervalued: number; overvalued: number;
+function SummaryCard({
+  matched,
+  total,
+  undervalued,
+  overvalued,
+}: {
+  matched: number;
+  total: number;
+  undervalued: number;
+  overvalued: number;
 }) {
   return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/40 p-4">
-      <div className="text-sm font-semibold">Coverage</div>
-      <div className="mt-2 grid grid-cols-2 gap-3 text-xs">
-        <Stat label="Matched to FP" value={`${fmtNum(matched)} / ${fmtNum(total)}`} />
+    <div className="rounded-[var(--r-8)] border border-[var(--color-line)] bg-[var(--color-press)] p-4">
+      <div
+        style={{
+          fontFamily: "var(--font-display)",
+          fontWeight: 800,
+          fontSize: "14px",
+          letterSpacing: "0.04em",
+          textTransform: "uppercase",
+        }}
+      >
+        Coverage
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+        <Stat label="Matched" value={`${fmtNum(matched)} / ${fmtNum(total)}`} />
         <Stat label="Undervalued" value={fmtNum(undervalued)} tone="gain" />
         <Stat label="Overvalued" value={fmtNum(overvalued)} tone="loss" />
-        <Stat label={`Fair (±${FAIR_BAND_PCT}%)`} value={fmtNum(total - undervalued - overvalued)} />
+        <Stat label={`Fair (|Δ| ≤ ${FAIR_BAND})`} value={fmtNum(matched - undervalued - overvalued)} />
       </div>
       <div className="mt-3 text-[11px] text-[var(--color-text-dim)]">
-        Fair band: actual price within ±{FAIR_BAND_PCT}% of expected.
+        Within ±{FAIR_BAND} positional rank counts as fair.
       </div>
     </div>
   );
@@ -271,15 +394,30 @@ function SummaryCard({ matched, total, undervalued, overvalued }: {
 function Stat({ label, value, tone }: { label: string; value: string; tone?: "gain" | "loss" }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-dim)]">{label}</div>
       <div
-        className={
-          tone === "gain"
-            ? "tabular text-base font-semibold text-[var(--color-gain)]"
-            : tone === "loss"
-              ? "tabular text-base font-semibold text-[var(--color-loss)]"
-              : "tabular text-base font-semibold"
-        }
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: "10px",
+          letterSpacing: "0.16em",
+          textTransform: "uppercase",
+          color: "var(--color-text-dim)",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: "16px",
+          fontWeight: 700,
+          fontVariantNumeric: "tabular-nums",
+          color:
+            tone === "gain"
+              ? "var(--color-turf)"
+              : tone === "loss"
+                ? "var(--color-penalty)"
+                : "var(--color-text)",
+        }}
       >
         {value}
       </div>

@@ -3,25 +3,24 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
-import { ChevronDown, ChevronUp, Search } from "lucide-react";
-import { Sparkline } from "./Sparkline";
+import { ChevronDown, ChevronUp, Flame, Search } from "lucide-react";
 import { PlayerAvatar } from "./PlayerAvatar";
 import { Delta } from "./ui";
-import { fmtNum, fmtPrice, fmtUsd } from "@/lib/format";
+import { fmtPrice, fmtUsd } from "@/lib/format";
 import { TEAM_NAMES } from "@/lib/data/players";
-import type { PlayerSummary, Position } from "@/lib/types";
+import type { HotPlayerRow } from "@/lib/data/footballfun";
+import type { Position } from "@/lib/types";
 
 type SortKey =
-  | "rank" | "name" | "priceUsd" | "change1h" | "change6h" | "change24h" | "change7d"
-  | "marketCap" | "volume24h" | "holders"
-  | "activeSupply" | "circulatingSupply";
+  | "rank" | "name" | "priceUsd" | "change24h"
+  | "volume6h" | "volume24h" | "volume7d" | "heat";
 
 const POSITIONS: (Position | "ALL")[] = ["ALL", "QB", "RB", "WR", "TE"];
 
-export function PlayersTable({ players }: { players: PlayerSummary[] }) {
+export function HotPlayersTable({ players }: { players: HotPlayerRow[] }) {
   const [query, setQuery] = useState("");
   const [pos, setPos] = useState<Position | "ALL">("ALL");
-  const [sortKey, setSortKey] = useState<SortKey>("marketCap");
+  const [sortKey, setSortKey] = useState<SortKey>("volume24h");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const rows = useMemo(() => {
@@ -46,8 +45,8 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
         av = `${a.lastName} ${a.firstName}`;
         bv = `${b.lastName} ${b.firstName}`;
       } else if (sortKey === "rank") {
-        av = a.marketCap;
-        bv = b.marketCap;
+        av = a.volume24h;
+        bv = b.volume24h;
       } else {
         av = a[sortKey];
         bv = b[sortKey];
@@ -60,10 +59,8 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
     return list;
   }, [players, query, pos, sortKey, sortDir]);
 
-  const ranked = useMemo(() => {
-    const byMc = players.slice().sort((a, b) => b.marketCap - a.marketCap);
-    return new Map(byMc.map((p, i) => [p.id, i + 1]));
-  }, [players]);
+  // Rank by current sort column so the # cell reflects the visible order.
+  const ranked = useMemo(() => new Map(rows.map((p, i) => [p.id, i + 1])), [rows]);
 
   const onSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -72,9 +69,6 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
 
   return (
     <div>
-      {/* Toolbar — sits in a 16/20 padded row above the table; lives
-          inside the press card so the search field reads like an
-          input, not a separate card. */}
       <div
         className="flex flex-wrap items-center gap-3 border-b border-[var(--color-line)] px-5 py-4"
         style={{ background: "color-mix(in oklab, var(--color-press) 60%, transparent)" }}
@@ -101,81 +95,71 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1180px] text-[13px]">
+        <table className="w-full min-w-[960px] text-[13px]">
           <thead style={{ background: "color-mix(in oklab, var(--color-press) 50%, transparent)" }}>
             <tr className="border-b border-[var(--color-line)]">
-              <Th onClick={() => onSort("rank")}    active={sortKey === "rank"}    dir={sortDir} align="left" className="w-12 pl-5">#</Th>
-              <Th onClick={() => onSort("name")}    active={sortKey === "name"}    dir={sortDir} align="left">Player</Th>
+              <Th onClick={() => onSort("rank")} active={sortKey === "rank"} dir={sortDir} align="left" className="w-12 pl-5">#</Th>
+              <Th onClick={() => onSort("name")} active={sortKey === "name"} dir={sortDir} align="left">Player</Th>
               <Th onClick={() => onSort("priceUsd")} active={sortKey === "priceUsd"} dir={sortDir}>Price</Th>
-              <Th onClick={() => onSort("change1h")} active={sortKey === "change1h"} dir={sortDir}>1h</Th>
-              <Th onClick={() => onSort("change6h")} active={sortKey === "change6h"} dir={sortDir}>6h</Th>
-              <Th onClick={() => onSort("change24h")} active={sortKey === "change24h"} dir={sortDir}>24h</Th>
-              <Th onClick={() => onSort("change7d")} active={sortKey === "change7d"} dir={sortDir}>7d</Th>
-              <Th onClick={() => onSort("marketCap")} active={sortKey === "marketCap"} dir={sortDir}>Market Cap</Th>
+              <Th onClick={() => onSort("change24h")} active={sortKey === "change24h"} dir={sortDir}>24h %</Th>
+              <Th onClick={() => onSort("volume6h")} active={sortKey === "volume6h"} dir={sortDir}>6h Vol</Th>
               <Th onClick={() => onSort("volume24h")} active={sortKey === "volume24h"} dir={sortDir}>24h Vol</Th>
-              <Th onClick={() => onSort("holders")} active={sortKey === "holders"} dir={sortDir}>Holders</Th>
-              <Th onClick={() => onSort("activeSupply")} active={sortKey === "activeSupply"} dir={sortDir}>Active Shares</Th>
-              <Th onClick={() => onSort("circulatingSupply")} active={sortKey === "circulatingSupply"} dir={sortDir}>Circulating</Th>
-              <Th className="pr-5">7d Trend</Th>
+              <Th onClick={() => onSort("volume7d")} active={sortKey === "volume7d"} dir={sortDir}>7d Vol</Th>
+              <Th onClick={() => onSort("heat")} active={sortKey === "heat"} dir={sortDir} className="pr-5">Heat</Th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((p) => {
-              return (
-                <tr
-                  key={p.id}
-                  className="group transition-colors duration-[180ms] ease-out hover:bg-[color-mix(in_oklab,var(--color-press)_50%,transparent)]"
-                  style={{
-                    borderBottom: "1px solid var(--color-line)",
-                  }}
+            {rows.map((p) => (
+              <tr
+                key={p.id}
+                className="group transition-colors duration-[180ms] ease-out hover:bg-[color-mix(in_oklab,var(--color-press)_50%,transparent)]"
+                style={{ borderBottom: "1px solid var(--color-line)" }}
+              >
+                <td
+                  className="pl-5 pr-2"
+                  style={{ padding: "var(--row-pad-y) 8px var(--row-pad-y) 20px", fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--color-text-dim)", fontSize: "11px", textAlign: "left" }}
                 >
-                  <td
-                    className="pl-5 pr-2"
-                    style={{ padding: "var(--row-pad-y) 8px var(--row-pad-y) 20px", fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--color-text-dim)", fontSize: "11px", textAlign: "left" }}
-                  >
-                    {ranked.get(p.id)}
-                  </td>
-                  <td className="px-3" style={{ padding: "var(--row-pad-y) 12px", textAlign: "left" }}>
-                    <Link href={`/player/${p.id}`} className="flex items-center gap-2.5">
-                      <PlayerAvatar player={p} size="sm" />
-                      <div className="min-w-0">
-                        <div className="truncate font-semibold text-[14px] group-hover:text-[var(--accent-soft)]">
-                          {p.firstName} {p.lastName}
-                        </div>
-                        <div
-                          className="mt-0.5 truncate"
-                          style={{
-                            fontFamily: "var(--font-mono)",
-                            fontSize: "10.5px",
-                            letterSpacing: "0.08em",
-                            textTransform: "uppercase",
-                            color: "var(--color-text-dim)",
-                          }}
-                        >
-                          {p.position} · {TEAM_NAMES[p.team] ?? p.team}
-                        </div>
+                  {ranked.get(p.id)}
+                </td>
+                <td className="px-3" style={{ padding: "var(--row-pad-y) 12px", textAlign: "left" }}>
+                  <Link href={`/player/${p.id}`} className="flex items-center gap-2.5">
+                    <PlayerAvatar player={p} size="sm" />
+                    <div className="min-w-0">
+                      <div className="truncate font-semibold text-[14px] group-hover:text-[var(--accent-soft)]">
+                        {p.firstName} {p.lastName}
                       </div>
-                    </Link>
-                  </td>
-                  <NumCell>{fmtPrice(p.priceUsd)}</NumCell>
-                  <Cell><div className="flex justify-center"><Delta value={p.change1h} /></div></Cell>
-                  <Cell><div className="flex justify-center"><Delta value={p.change6h} /></div></Cell>
-                  <Cell><div className="flex justify-center"><Delta value={p.change24h} /></div></Cell>
-                  <Cell><div className="flex justify-center"><Delta value={p.change7d} /></div></Cell>
-                  <NumCell>{fmtUsd(p.marketCap, { compact: true })}</NumCell>
-                  <NumCell>{fmtUsd(p.volume24h, { compact: true })}</NumCell>
-                  <NumCell>{fmtNum(p.holders, { compact: true })}</NumCell>
-                  <NumCell>{fmtNum(p.activeSupply, { compact: true, digits: 1 })}</NumCell>
-                  <NumCell>{fmtNum(p.circulatingSupply, { compact: true, digits: 1 })}</NumCell>
-                  <Cell className="pr-5">
-                    <Sparkline data={p.sparkline7d} positive={p.change7d >= 0} className="ml-auto" />
-                  </Cell>
-                </tr>
-              );
-            })}
+                      <div
+                        className="mt-0.5 truncate"
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: "10.5px",
+                          letterSpacing: "0.08em",
+                          textTransform: "uppercase",
+                          color: "var(--color-text-dim)",
+                        }}
+                      >
+                        {p.position} · {TEAM_NAMES[p.team] ?? p.team}
+                      </div>
+                    </div>
+                  </Link>
+                </td>
+                <NumCell>{fmtPrice(p.priceUsd)}</NumCell>
+                <td className="px-3" style={{ padding: "var(--row-pad-y) 12px" }}>
+                  <div className="flex justify-center"><Delta value={p.change24h} /></div>
+                </td>
+                <NumCell>{p.volume6h > 0 ? fmtUsd(p.volume6h, { compact: true }) : <span className="text-[var(--color-text-dim)]">—</span>}</NumCell>
+                <NumCell>{p.volume24h > 0 ? fmtUsd(p.volume24h, { compact: true }) : <span className="text-[var(--color-text-dim)]">—</span>}</NumCell>
+                <NumCell>{p.volume7d > 0 ? fmtUsd(p.volume7d, { compact: true }) : <span className="text-[var(--color-text-dim)]">—</span>}</NumCell>
+                <td className="pr-5" style={{ padding: "var(--row-pad-y) 12px" }}>
+                  <div className="flex justify-center">
+                    <HeatPill heat={p.heat} />
+                  </div>
+                </td>
+              </tr>
+            ))}
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={12} className="px-5 py-12 text-center text-sm text-[var(--color-text-muted)]">
+                <td colSpan={8} className="px-5 py-12 text-center text-sm text-[var(--color-text-muted)]">
                   No players match your filters.
                 </td>
               </tr>
@@ -194,17 +178,60 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
           color: "var(--color-text-dim)",
         }}
       >
-        Click any row to drill into that player.
+        Heat = (24h vol × 7) ÷ 7d vol · &gt;1× means today is hotter than the weekly average
       </div>
     </div>
   );
 }
 
-function Cell({ children, className }: { children: React.ReactNode; className?: string }) {
+function HeatPill({ heat }: { heat: number }) {
+  // Heat = ratio of 6h volume pace to 24h average. Three tiers:
+  //   ≥2.0 → on fire (last 6h is 2×+ the daily average)
+  //   ≥1.2 → warming
+  //   else → cool
+  const tier =
+    heat >= 2 ? "fire" :
+    heat >= 1.2 ? "warm" :
+    "cool";
+
+  const colors = {
+    fire: {
+      bg: "color-mix(in oklab, var(--color-penalty) 18%, transparent)",
+      border: "color-mix(in oklab, var(--color-penalty) 50%, transparent)",
+      text: "var(--color-penalty)",
+    },
+    warm: {
+      bg: "color-mix(in oklab, var(--accent) 14%, transparent)",
+      border: "color-mix(in oklab, var(--accent) 45%, transparent)",
+      text: "var(--accent-soft)",
+    },
+    cool: {
+      bg: "transparent",
+      border: "var(--color-line)",
+      text: "var(--color-text-dim)",
+    },
+  }[tier];
+
+  const label = heat > 0 ? heat.toFixed(1) + "×" : "—";
+
   return (
-    <td className={clsx("px-3", className)} style={{ padding: "var(--row-pad-y) 12px" }}>
-      {children}
-    </td>
+    <span
+      className="inline-flex items-center gap-1 rounded-[var(--r-pill)] border px-2"
+      style={{
+        height: 22,
+        background: colors.bg,
+        borderColor: colors.border,
+        color: colors.text,
+        fontFamily: "var(--font-mono)",
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: "0.06em",
+        fontVariantNumeric: "tabular-nums",
+      }}
+    >
+      {tier === "fire" ? <Flame className="h-3 w-3" strokeWidth={2} /> : null}
+      {label}
+    </span>
   );
 }
 

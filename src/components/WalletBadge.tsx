@@ -2,55 +2,74 @@ import Link from "next/link";
 import clsx from "clsx";
 import { Fish, Sparkles } from "lucide-react";
 import { fmtUsd, shortAddr } from "@/lib/format";
+import { getWalletLabel } from "@/lib/data/wallet-labels";
 import type { WalletTier } from "@/lib/types";
 
-// Each tier has its own icon size + color so the wallet's weight is
-// readable at a glance. Single source of truth — both the trade-feed
-// badge and the wallet page hero pull from this map so the visual
-// language stays consistent across the app.
+// Single source of truth for tier visuals — the wallet page hero
+// pulls TIER_META.color too so the icon, label, and badge all stay
+// in sync. iconPx grows with tier so a whale's badge reads visually
+// heavier than a shrimp's.
 export const TIER_META: Record<
   WalletTier,
-  { label: string; size: number; color: string; ringClass?: string; pillBg: string; pillBorder: string; pillText: string }
+  {
+    label: string;
+    iconPx: number;       // Fish icon size in the inline badge
+    color: string;        // tier color, applied to icon stroke + ring
+    borderClass: string;  // badge border tint
+    valueClass: string;   // badge USD value color
+    pillBg: string;
+    pillBorder: string;
+    pillText: string;
+  }
 > = {
   whale: {
     label: "Whale",
-    size: 16,
-    color: "#7aa6ff",
-    ringClass: "ring-1 ring-[#7aa6ff]/40",
-    pillBg: "bg-[#7aa6ff]/15",
-    pillBorder: "border-[#7aa6ff]/40",
-    pillText: "text-[#a8c2ff]",
+    iconPx: 16,
+    color: "var(--color-broadcast)",
+    borderClass: "border-[color-mix(in_oklab,var(--color-broadcast)_35%,transparent)]",
+    valueClass: "text-[var(--color-broadcast)]",
+    pillBg: "bg-[color-mix(in_oklab,var(--color-broadcast)_15%,transparent)]",
+    pillBorder: "border-[color-mix(in_oklab,var(--color-broadcast)_40%,transparent)]",
+    pillText: "text-[var(--color-broadcast)]",
   },
   shark: {
     label: "Shark",
-    size: 14,
-    color: "#a3b3ff",
-    pillBg: "bg-[#a3b3ff]/15",
-    pillBorder: "border-[#a3b3ff]/40",
-    pillText: "text-[#bcc6ff]",
+    iconPx: 14,
+    color: "var(--accent)",
+    borderClass: "border-[color-mix(in_oklab,var(--accent)_35%,transparent)]",
+    valueClass: "text-[var(--accent-soft)]",
+    pillBg: "bg-[var(--accent-tint)]",
+    pillBorder: "border-[var(--accent-line)]",
+    pillText: "text-[var(--accent-soft)]",
   },
   dolphin: {
     label: "Dolphin",
-    size: 12,
-    color: "var(--color-brand-soft)",
-    pillBg: "bg-[var(--color-brand)]/15",
-    pillBorder: "border-[var(--color-brand)]/40",
-    pillText: "text-[var(--color-brand-soft)]",
+    iconPx: 12,
+    color: "var(--accent-soft)",
+    borderClass: "border-[var(--color-line)]",
+    valueClass: "text-[var(--accent-soft)]",
+    pillBg: "bg-[var(--accent-tint)]",
+    pillBorder: "border-[var(--accent-line)]",
+    pillText: "text-[var(--accent-soft)]",
   },
   fish: {
     label: "Fish",
-    size: 11,
+    iconPx: 11,
     color: "var(--color-text-muted)",
-    pillBg: "bg-[var(--color-surface-2)]",
-    pillBorder: "border-[var(--color-border)]",
+    borderClass: "border-[var(--color-line)]",
+    valueClass: "text-[var(--accent-soft)]",
+    pillBg: "bg-[var(--color-press)]",
+    pillBorder: "border-[var(--color-line)]",
     pillText: "text-[var(--color-text-muted)]",
   },
   shrimp: {
     label: "Shrimp",
-    size: 9,
+    iconPx: 9,
     color: "var(--color-text-dim)",
-    pillBg: "bg-[var(--color-surface-2)]/60",
-    pillBorder: "border-[var(--color-border)]",
+    borderClass: "border-[var(--color-line)]",
+    valueClass: "text-[var(--accent-soft)]",
+    pillBg: "bg-[var(--color-press)]/60",
+    pillBorder: "border-[var(--color-line)]",
     pillText: "text-[var(--color-text-dim)]",
   },
 };
@@ -67,56 +86,80 @@ export function WalletBadge({
   tier: WalletTier;
   totalValueUsd: number;
   // NFL-only $ value — what the trade-feed surfaces. Falls back to
-  // total when not provided (e.g. a caller hasn't been migrated yet).
+  // total when not provided.
   nflValueUsd?: number;
   isNew: boolean;
   compact?: boolean;
 }) {
   const meta = TIER_META[tier];
-  const displayedUsd = nflValueUsd ?? totalValueUsd;
+  const label = getWalletLabel(address);
+  // NFL-only — never fall back to total. A wallet currently
+  // holding 0 NFL displays $0 here even if it has Soccer / $FUN
+  // balances; the badge is specifically the NFL portfolio value.
+  const displayedUsd = nflValueUsd ?? 0;
+  // Sub-$1k values round to whole dollars (no cents). $1k+ uses
+  // the compact form ($1.26K, $11.26K, etc.).
+  const displayedUsdLabel =
+    displayedUsd >= 1000
+      ? fmtUsd(displayedUsd, { compact: true })
+      : fmtUsd(displayedUsd, { digits: 0 });
+  // NEW trumps tier visual.
+  const isNewVisual = isNew;
   return (
     <Link
       href={`/wallet/${address}`}
-      className={clsx(
-        "group inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-1.5 py-0.5 text-xs hover:border-[var(--color-brand)]/40 hover:text-[var(--color-text)]",
-        meta.ringClass,
-      )}
       title={`${meta.label} · NFL ${fmtUsd(displayedUsd, { compact: true })} · Total ${fmtUsd(totalValueUsd, { compact: true })}`}
+      className={clsx(
+        "inline-flex items-center gap-1.5 rounded-full border bg-[var(--color-press)] hover:bg-[var(--color-bench)] transition-colors",
+        isNewVisual
+          ? "border-[color-mix(in_oklab,var(--color-flag)_35%,transparent)] bg-[color-mix(in_oklab,var(--color-flag)_8%,transparent)]"
+          : meta.borderClass,
+      )}
+      style={{ padding: "4px 10px 4px 6px", fontSize: "11.5px" }}
     >
-      <Fish
-        aria-hidden
-        width={meta.size}
-        height={meta.size}
-        style={{ color: meta.color }}
-        className="shrink-0"
-      />
-      <span
-        className={clsx(
-          "rounded px-1 text-[9px] font-bold uppercase tracking-[0.12em] leading-none py-0.5 border",
-          meta.pillBg,
-          meta.pillBorder,
-          meta.pillText,
+      <span aria-hidden className="inline-flex shrink-0 items-center justify-center">
+        {isNewVisual ? (
+          <Sparkles
+            width={12}
+            height={12}
+            style={{ color: "var(--color-flag)" }}
+          />
+        ) : (
+          <Fish
+            width={meta.iconPx}
+            height={meta.iconPx}
+            style={{ color: meta.color }}
+          />
         )}
-      >
-        {meta.label}
       </span>
       {!compact ? (
-        <span className="font-mono text-[11px] text-[var(--color-text-muted)] group-hover:text-[var(--color-text)]">
-          {shortAddr(address)}
-        </span>
-      ) : null}
-      <span className="tabular text-[11px] text-[var(--color-text-muted)] group-hover:text-[var(--color-text)]">
-        {fmtUsd(displayedUsd, { compact: true })}
-      </span>
-      {isNew ? (
         <span
-          aria-label="New wallet (first holding within 7 days)"
-          title="New wallet"
-          className="inline-flex items-center text-[var(--color-gain)]"
+          style={{
+            // Labelled wallets render their friendly name in the UI
+            // font (and pull a touch brighter) so they read as
+            // "this is a known entity" instead of "anonymous addr".
+            fontFamily: label ? "var(--font-ui)" : "var(--font-mono)",
+            fontSize: "11px",
+            fontWeight: label ? 600 : undefined,
+            color: label ? "var(--color-text)" : "var(--color-text-muted)",
+          }}
         >
-          <Sparkles className="h-3 w-3" />
+          {label ? label.name : shortAddr(address)}
         </span>
       ) : null}
+      <span className="h-3 w-px bg-[var(--color-line)]" />
+      <span
+        className={isNewVisual ? "text-[var(--color-flag)]" : meta.valueClass}
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: "10px",
+          fontWeight: 700,
+          letterSpacing: "0.06em",
+          paddingLeft: "2px",
+        }}
+      >
+        {isNewVisual ? "NEW" : displayedUsdLabel}
+      </span>
     </Link>
   );
 }

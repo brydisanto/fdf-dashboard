@@ -1,0 +1,31 @@
+/* Feature card — gradient bench → 4%-amber-mixed bench, with a 2px
+   amber-fade hairline inset 24px from the sides. Use sparingly: ONE
+   feature card per page (the market-cap chart card on home). */
+.card-feature {
+  background: linear-gradient(
+    180deg,
+    var(--color-bench) 0%,
+    color-mix(in oklab, var(--color-bench) 85%, var(--accent) 4%) 100%
+  );
+  overflow: hidden;
+}
+.card-feature::before {
+  content: "";
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  top: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), transparent);
+  border-radius: 0 0 2px 2px;
+  pointer-events: none;
+}
+
+/* Press card already has field-grid via the utility class on the
+   Card component itself, but we want to override the default bench
+   background with the press surface. Tailwind's bg-[var(--color-press)]
+   on Card already handles this; this file is a placeholder so
+   ui.tsx can `import` the same stylesheet for both variants. */
+.card-press {
+  /* No additional rules needed — handled inline via field-grid utility. */
+}

@@ -76,8 +76,8 @@ function tokenStatsFor(playerId: string): TokenStats {
 
   return {
     playerId,
-    priceUsd, change1h, change24h, change7d,
-    marketCap, volume24h, trades24h, holders,
+    priceUsd, change1h, change6h: +((gauss(rng) * 2.5).toFixed(2)), change24h, change7d,
+    marketCap, volume24h, volume7d: volume24h * (4 + rng() * 4), trades24h, holders,
     circulatingSupply, poolSupply, activeSupply, maxSupply, tvl,
     ath, athDate, atl, atlDate,
   };
