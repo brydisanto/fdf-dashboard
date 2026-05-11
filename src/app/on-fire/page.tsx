@@ -11,7 +11,7 @@ import type { HotPlayerRow } from "@/lib/data";
 export const metadata = {
   title: "On Fire · FDF Box Score",
   description:
-    "Top NFL player tokens ranked by trading volume across 6h, 24h, 7d, and 30d. Sort by any window to find what's heating up.",
+    "Top NFL player tokens ranked by trading volume across 6h, 24h, and 7d. Sort by any window to find what's heating up.",
 };
 
 // 60s revalidate matches the rest of the dashboard. Underlying OHLC
@@ -27,7 +27,6 @@ export default async function OnFirePage() {
   const total6h = players.reduce((a, p) => a + p.volume6h, 0);
   const total24h = players.reduce((a, p) => a + p.volume24h, 0);
   const total7d = players.reduce((a, p) => a + p.volume7d, 0);
-  const total30d = players.reduce((a, p) => a + p.volume30d, 0);
   const onFireCount = players.filter((p) => p.heat >= 2).length;
 
   // Top mover by 24h volume — anchors the hero so the user lands on
@@ -100,7 +99,7 @@ export default async function OnFirePage() {
               Who&rsquo;s Trading Hot
             </h1>
             <p className="m-0 max-w-[80ch] text-[var(--color-text-muted)]" style={{ fontSize: "15px" }}>
-              Top NFL player shares ranked by trading volume across 6h, 24h, 7d, and 30d windows.
+              Top NFL player shares ranked by trading volume across 6h, 24h, and 7d windows.
             </p>
           </div>
 
@@ -111,19 +110,18 @@ export default async function OnFirePage() {
       {/* Stat strip */}
       <div
         className="stat-strip mt-4 grid"
-        style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}
+        style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}
       >
         <StatCell label="6h Volume" value={fmtUsd(total6h, { compact: true })} sub="Rolling, NFL-wide" />
         <StatCell label="24h Volume" value={fmtUsd(total24h, { compact: true })} sub="Rolling, NFL-wide" />
-        <StatCell label="7d Volume" value={fmtUsd(total7d, { compact: true })} sub="Rolling, NFL-wide" />
-        <StatCell label="30d Volume" value={fmtUsd(total30d, { compact: true })} sub={`${fmtNum(players.length)} players`} />
+        <StatCell label="7d Volume" value={fmtUsd(total7d, { compact: true })} sub={`${fmtNum(players.length)} players`} />
       </div>
 
       {/* Leaderboard */}
       <div className="mt-4">
         <SectionHead
           title="Volume Leaderboard"
-          hint="Sort by any window · 6h/24h are real-time, 7d & 30d are rolling sums"
+          hint="Sort by any window · 6h is a rolling sum, 24h and 7d come from upstream metrics"
           right={<Pill tone="muted">{fmtNum(players.length)} players</Pill>}
         />
         <Card variant="press" padded={false}>

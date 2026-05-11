@@ -13,7 +13,7 @@ import type { Position } from "@/lib/types";
 
 type SortKey =
   | "rank" | "name" | "priceUsd" | "change24h"
-  | "volume6h" | "volume24h" | "volume7d" | "volume30d" | "heat";
+  | "volume6h" | "volume24h" | "volume7d" | "heat";
 
 const POSITIONS: (Position | "ALL")[] = ["ALL", "QB", "RB", "WR", "TE"];
 
@@ -95,7 +95,7 @@ export function HotPlayersTable({ players }: { players: HotPlayerRow[] }) {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1080px] text-[13px]">
+        <table className="w-full min-w-[960px] text-[13px]">
           <thead style={{ background: "color-mix(in oklab, var(--color-press) 50%, transparent)" }}>
             <tr className="border-b border-[var(--color-line)]">
               <Th onClick={() => onSort("rank")} active={sortKey === "rank"} dir={sortDir} className="w-12 pl-5">#</Th>
@@ -105,7 +105,6 @@ export function HotPlayersTable({ players }: { players: HotPlayerRow[] }) {
               <Th onClick={() => onSort("volume6h")} active={sortKey === "volume6h"} dir={sortDir} align="right">6h Vol</Th>
               <Th onClick={() => onSort("volume24h")} active={sortKey === "volume24h"} dir={sortDir} align="right">24h Vol</Th>
               <Th onClick={() => onSort("volume7d")} active={sortKey === "volume7d"} dir={sortDir} align="right">7d Vol</Th>
-              <Th onClick={() => onSort("volume30d")} active={sortKey === "volume30d"} dir={sortDir} align="right">30d Vol</Th>
               <Th onClick={() => onSort("heat")} active={sortKey === "heat"} dir={sortDir} align="right" className="pr-5">Heat</Th>
             </tr>
           </thead>
@@ -151,7 +150,6 @@ export function HotPlayersTable({ players }: { players: HotPlayerRow[] }) {
                 <NumCell>{fmtUsd(p.volume6h, { compact: true })}</NumCell>
                 <NumCell>{fmtUsd(p.volume24h, { compact: true })}</NumCell>
                 <NumCell>{fmtUsd(p.volume7d, { compact: true })}</NumCell>
-                <NumCell>{fmtUsd(p.volume30d, { compact: true })}</NumCell>
                 <td className="pr-5" style={{ padding: "var(--row-pad-y) 12px" }}>
                   <div className="ml-auto flex justify-end">
                     <HeatPill heat={p.heat} />
@@ -161,7 +159,7 @@ export function HotPlayersTable({ players }: { players: HotPlayerRow[] }) {
             ))}
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-5 py-12 text-center text-sm text-[var(--color-text-muted)]">
+                <td colSpan={8} className="px-5 py-12 text-center text-sm text-[var(--color-text-muted)]">
                   No players match your filters.
                 </td>
               </tr>
