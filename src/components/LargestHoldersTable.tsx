@@ -90,7 +90,7 @@ export function LargestHoldersTable({
                     </Link>
                   )}
                 </Cell>
-                <NumCell>{fmtNum(h.balance, { compact: true, digits: 2 })}</NumCell>
+                <NumCell>{fmtNum(h.balance, { compact: true })}</NumCell>
                 <NumCell className="font-semibold">{fmtUsd(valueUsd, { compact: true })}</NumCell>
                 <NumCell>
                   <div className="flex items-center justify-end gap-2">

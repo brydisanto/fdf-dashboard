@@ -138,7 +138,7 @@ export function RecentTrades({
                     </Cell>
                   ) : null}
                   <NumCell>{fmtPrice(t.priceUsd)}</NumCell>
-                  <NumCell>{fmtNum(t.amount, { digits: 2 })}</NumCell>
+                  <NumCell>{fmtNum(t.amount)}</NumCell>
                   <NumCell className="font-semibold">{fmtUsd(t.totalUsd, { compact: true })}</NumCell>
                   <CenterCell>
                     {snap && snap.totalValueUsd > 0 ? (

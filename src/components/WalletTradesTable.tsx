@@ -52,7 +52,7 @@ export function WalletTradesTable({ rows }: { rows: WalletTradeRow[] }) {
               <td className="px-3" style={{ padding: "var(--row-pad-y) 12px" }}>
                 <AssetCell row={r} />
               </td>
-              <NumCell>{fmtNum(r.baseAmount, { digits: 2 })}</NumCell>
+              <NumCell>{fmtNum(r.baseAmount)}</NumCell>
               <NumCell>{r.priceUsd > 0 ? fmtPrice(r.priceUsd) : "—"}</NumCell>
               <NumCell>{r.amountUsd > 0 ? fmtUsd(r.amountUsd, { compact: true }) : "—"}</NumCell>
               <td className="pr-5" style={{ padding: "var(--row-pad-y) 12px" }}>

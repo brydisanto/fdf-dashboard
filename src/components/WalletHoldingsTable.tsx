@@ -93,7 +93,7 @@ export function WalletHoldingsTable({
                       </div>
                     )}
                   </td>
-                  <td className="px-3 py-2.5 tabular">{fmtNum(h.balance, { digits: 2 })}</td>
+                  <td className="px-3 py-2.5 tabular">{fmtNum(h.balance)}</td>
                   <td className="px-3 py-2.5 tabular">{fmtPrice(h.priceUsd)}</td>
                   <td className="px-3 py-2.5 tabular font-medium">{fmtUsd(h.balanceValueUsd, { compact: true })}</td>
                   <td className="px-3 py-2.5 text-xs text-[var(--color-text-muted)]">
