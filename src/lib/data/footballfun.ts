@@ -625,34 +625,18 @@ export async function getNflFlowRollup(): Promise<FlowRollup> {
 // Combined fetch — call this when the page needs both the trade feed
 // and the flow rollup, so the underlying API calls are deduped.
 //
-// Swap legs need both halves to be in the visible feed; if a swap-in
-// is captured but its matching swap-out (in the *other* pool) wasn't
-// in our per-pool sample, the user sees a half-swap with no
-// counterpart. We pair by tx_id and drop orphan swap legs from the
-// visible feed (the rollup keeps both for accurate volume counts).
+// We used to pair swap legs by tx_id and drop orphans, but the upstream
+// only returns the "received" leg of a player↔player swap in the token's
+// /trades endpoint — the corresponding swap-out leg never appears in the
+// other pool's feed. The pairing filter therefore stripped every swap,
+// which is why visibly-recent Telegram-announced swaps were missing from
+// the live feed. We now keep single-leg swaps as-is.
 export async function getNflTradeFeedAndFlow(perPool = 100, feedLimit = 50): Promise<{
   trades: Trade[];
   flow: FlowRollup;
 }> {
   const { trades, flow } = await getNflTradesAndFlow(perPool);
-
-  // Bucket swap legs by tx_id, then drop any leg whose counterpart
-  // didn't make the per-pool sample. Buys/sells pass through as-is.
-  const swapPairs = new Map<string, { in: number; out: number }>();
-  for (const t of trades) {
-    if (t.flow !== "swap-in" && t.flow !== "swap-out") continue;
-    const cur = swapPairs.get(t.txHash) ?? { in: 0, out: 0 };
-    if (t.flow === "swap-in") cur.in++;
-    else cur.out++;
-    swapPairs.set(t.txHash, cur);
-  }
-  const pairedTrades = trades.filter((t) => {
-    if (t.flow !== "swap-in" && t.flow !== "swap-out") return true;
-    const p = swapPairs.get(t.txHash);
-    return p != null && p.in > 0 && p.out > 0;
-  });
-
-  return { trades: pairedTrades.slice(0, feedLimit), flow };
+  return { trades: trades.slice(0, feedLimit), flow };
 }
 
 // Distinct user wallets holding ≥1 NFL share. Reads from the indexer
