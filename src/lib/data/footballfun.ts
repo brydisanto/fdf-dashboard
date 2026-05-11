@@ -332,11 +332,42 @@ async function fetchAllTokens(): Promise<TeneroTokenRow[]> {
 }
 
 async function fetchNflTokenMap(): Promise<Map<string, TeneroTokenRow>> {
-  const all = await fetchAllTokens();
-  const wanted = new Set(ROSTER.map((p) => p.tokenAddress));
+  // The upstream's `/tokens` paginated listing is unreliable — the
+  // cursor follow-up calls have started returning 500s and the limit
+  // caps at 100, so we can only see the first slice of NFL players
+  // (which ranks Soccer + USDC alongside NFL tokens). Fetch each NFL
+  // token individually instead — we know all 72 addresses from the
+  // ROSTER, and per-token /tokens/{address} reads are reliable and
+  // cached at the same 15s revalidate. Falls back to whatever the
+  // paginated listing returns for tokens whose individual fetch fails.
+  const fns = ROSTER.map((player) => async (): Promise<[string, TeneroTokenRow | null]> => {
+    try {
+      const data = await tget<TeneroTokenRow>(
+        `/tokens/${encodeURIComponent(player.tokenAddress)}`,
+        REVALIDATE.list,
+      );
+      return [player.tokenAddress, data];
+    } catch {
+      return [player.tokenAddress, null];
+    }
+  });
+  const results = await chunked(fns, 8);
   const map = new Map<string, TeneroTokenRow>();
-  for (const row of all) {
-    if (wanted.has(row.address)) map.set(row.address, row);
+  for (const [addr, row] of results) {
+    if (row) map.set(addr, row);
+  }
+
+  // Backstop: if the per-token path produced almost nothing (some
+  // upstream-wide outage), salvage whatever the paginated listing
+  // returns so the page doesn't render as all-zeros.
+  if (map.size < ROSTER.length / 2) {
+    const all = await fetchAllTokens();
+    const wanted = new Set(ROSTER.map((p) => p.tokenAddress));
+    for (const row of all) {
+      if (wanted.has(row.address) && !map.has(row.address)) {
+        map.set(row.address, row);
+      }
+    }
   }
   return map;
 }
