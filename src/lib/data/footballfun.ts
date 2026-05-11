@@ -839,15 +839,27 @@ async function fetchOhlcDeltas(
     return { change1h: null, change24h: null, change7d: null };
   }
   const nowSec = Math.floor(Date.now() / 1000);
+  // Fresh activity that hasn't propagated into the OHLC yet shows up as
+  // a divergence between `currentSpot` (upstream's live current_price)
+  // and the latest OHLC bar's close. When that gap exists, the latest
+  // bar's close is our best estimate of the pre-activity spot, which we
+  // can use as a fallback anchor when no in-band bar is available.
+  const mostRecentBar = bars[0];
+  const mostRecentClose = mostRecentBar ? Number(mostRecentBar.close ?? 0) : 0;
+  const hasFreshActivity =
+    mostRecentClose > 0 && Math.abs(currentSpot - mostRecentClose) / mostRecentClose > 1e-6;
   // Bars are newest-first. Find the most recent bar whose timestamp sits
   // in the [now - windowSec*1.5, now - windowSec] band — i.e. roughly
   // at the anchor point we care about, with some slack for sparse data.
   // The 1.5x cap matters: without it, a token whose only "older" bar
   // is 40 days back would anchor the 24h delta against that ancient
   // close, producing a misleading multi-percent move that has nothing
-  // to do with the last 24 hours. If no bar falls in the band, return
-  // null so the caller keeps the upstream value (or whatever default
-  // applies).
+  // to do with the last 24 hours.
+  //
+  // If no bar falls in the band BUT there's fresh-activity divergence,
+  // fall back to the most-recent bar's close: that's the pre-activity
+  // spot, and the move since represents the unreflected fresh activity
+  // we care about surfacing in short windows.
   const findAnchor = (windowSec: number): number | null => {
     const cutoff = nowSec - windowSec;
     const maxAge = nowSec - Math.floor(windowSec * 1.5);
@@ -858,7 +870,7 @@ async function fetchOhlcDeltas(
         return close > 0 ? close : null;
       }
     }
-    return null;
+    return hasFreshActivity ? mostRecentClose : null;
   };
   const compute = (anchor: number | null): number | null => {
     if (anchor == null || anchor <= 0) return null;
