@@ -377,12 +377,30 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
   // window read 0% even after a real curve move. Replace those values
   // with OHLC-derived deltas so the % columns actually reflect what
   // the bonding curve has done.
+  //
+  // Skip the OHLC fetch when (a) the token has no recent activity (no
+  // bars to anchor against anyway) OR (b) upstream's snapshot looks
+  // reliable for the relevant window (a real price_1d_ago different
+  // from current_price means the upstream gave us a real snapshot —
+  // overriding with a coarser OHLC anchor would lose precision). Cuts
+  // the cold-render OHLC fetch count roughly in half on offseason days.
   const fns = summaries.map((summary) => async () => {
     const roster = ROSTER_BY_ID.get(summary.id);
     if (!roster) return;
     const row = map.get(roster.tokenAddress);
-    const spot = Number(row?.price?.current_price ?? 0);
+    if (!row) return;
+    const spot = Number(row.price?.current_price ?? 0);
     if (spot <= 0) return;
+    // Inactive token — upstream's 0% is the right answer, no OHLC needed.
+    if (summary.volume24h <= 0 && summary.volume7d <= 0) return;
+    // Upstream snapshot reliable for all windows — keep its values.
+    if (
+      isPriceSnapshotReliable(row.price?.price_1h_ago, spot) &&
+      isPriceSnapshotReliable(row.price?.price_1d_ago, spot) &&
+      isPriceSnapshotReliable(row.price?.price_7d_ago, spot)
+    ) {
+      return;
+    }
     const deltas = await fetchOhlcDeltas(roster.tokenAddress, spot);
     if (deltas.change1h != null) summary.change1h = deltas.change1h;
     if (deltas.change24h != null) summary.change24h = deltas.change24h;
@@ -415,6 +433,17 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
   return summaries;
 }
 
+// The upstream's price_*_ago fields fall back to `current_price` when
+// no real historical snapshot exists. A non-trivial difference from
+// current means the upstream actually has a real snapshot for that
+// window — we should trust it rather than override with OHLC.
+function isPriceSnapshotReliable(snapshot: number | undefined, currentPrice: number): boolean {
+  if (snapshot == null || !Number.isFinite(snapshot) || snapshot <= 0 || currentPrice <= 0) {
+    return false;
+  }
+  return Math.abs(currentPrice - snapshot) / currentPrice > 1e-6;
+}
+
 // Wallets whose holdings shouldn't count toward "Active Shares" — these
 // are platform-side custodians, not regular trader wallets:
 //   - FDF Marketplace: the secondary-market escrow contract
@@ -439,9 +468,18 @@ export async function getPlayer(id: string): Promise<PlayerSummary | null> {
     const summary = buildPlayerSummary(player, data);
     summary.sparkline7d = tinySparkline(data);
     // Same OHLC override as getPlayers() — upstream's price_*_ago is
-    // unreliable for low-activity tokens.
+    // unreliable for low-activity tokens. Skip when the token is inactive
+    // or upstream snapshots already look reliable.
     const spot = Number(data?.price?.current_price ?? 0);
-    if (spot > 0) {
+    const shouldFetchOhlc =
+      spot > 0 &&
+      (summary.volume24h > 0 || summary.volume7d > 0) &&
+      !(
+        isPriceSnapshotReliable(data?.price?.price_1h_ago, spot) &&
+        isPriceSnapshotReliable(data?.price?.price_1d_ago, spot) &&
+        isPriceSnapshotReliable(data?.price?.price_7d_ago, spot)
+      );
+    if (shouldFetchOhlc) {
       const deltas = await fetchOhlcDeltas(player.tokenAddress, spot);
       if (deltas.change1h != null) summary.change1h = deltas.change1h;
       if (deltas.change24h != null) summary.change24h = deltas.change24h;
@@ -860,9 +898,19 @@ async function fetchOhlcDeltas(
   // fall back to the most-recent bar's close: that's the pre-activity
   // spot, and the move since represents the unreflected fresh activity
   // we care about surfacing in short windows.
+  // Absolute lookback cap per window — bars OLDER than this don't count
+  // as a reasonable anchor for that window. Calibrated empirically: the
+  // 1.5x relative cap was too tight (e.g. for a 24h window, a 70-hour-old
+  // bar is still a fair anchor for "how much has the price moved roughly
+  // since yesterday", but a 40-day-old one isn't).
+  const ANCHOR_MAX_AGE: Record<number, number> = {
+    3600: 24 * 3600,        // 1h window → allow anchor up to 24h old
+    86400: 7 * 86400,       // 24h window → allow anchor up to 7d old
+    604800: 30 * 86400,     // 7d window → allow anchor up to 30d old
+  };
   const findAnchor = (windowSec: number): number | null => {
     const cutoff = nowSec - windowSec;
-    const maxAge = nowSec - Math.floor(windowSec * 1.5);
+    const maxAge = nowSec - (ANCHOR_MAX_AGE[windowSec] ?? windowSec * 7);
     for (const b of bars) {
       const t = Number(b.time ?? 0);
       if (t <= cutoff && t >= maxAge) {
