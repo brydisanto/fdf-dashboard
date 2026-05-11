@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { ArrowLeft, ChevronRight, ExternalLink, Fish, Sparkles } from "lucide-react";
-import { getWalletPortfolio, getWalletFlow, getWalletFunPosition } from "@/lib/data";
+import { getWalletPortfolio, getWalletFlow, getWalletFunPosition, getWalletTrades } from "@/lib/data";
 import { ROSTER_BY_TOKEN } from "@/lib/data/roster";
 import { Card, CardHeader, Pill } from "@/components/ui";
 import { tierLabel, TIER_META } from "@/components/WalletBadge";
 import { CompositionPie, type CompositionSlice } from "@/components/CompositionPie";
 import { WalletFlowChart } from "@/components/WalletFlowChart";
 import { WalletHoldingsTable } from "@/components/WalletHoldingsTable";
+import { WalletTradesTable } from "@/components/WalletTradesTable";
 import { getWalletLabel } from "@/lib/data/wallet-labels";
 import { fmtNum, fmtTimeAgo, fmtUsd, shortAddr } from "@/lib/format";
 
@@ -23,10 +24,11 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
   // 404 depending on which case the user pasted in. Internal
   // caches and the trade-feed map already key off lowercase.
   const address = rawAddress.toLowerCase();
-  const [profile, flow, fun] = await Promise.all([
+  const [profile, flow, fun, trades] = await Promise.all([
     getWalletPortfolio(address),
     getWalletFlow(address, 7),
     getWalletFunPosition(address),
+    getWalletTrades(address, 30),
   ]);
   const nflHoldings = profile.holdings.filter((h) => ROSTER_BY_TOKEN.has(h.tokenAddress));
   const soccerHoldings = profile.holdings.filter((h) => !ROSTER_BY_TOKEN.has(h.tokenAddress));
@@ -388,6 +390,22 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
           <FootStat label="Soccer sold" value={fmtUsd(flow.otherOutUsd, { compact: true })} />
         </div>
       </Card>
+
+      {/* Recent trades — last 30 on-chain events for this wallet */}
+      <div className="mt-4">
+        <SectionHead
+          title="Recent Trades"
+          hint={`Last ${trades.length} on-chain trade${trades.length === 1 ? "" : "s"} on Sport.fun · NFL and Soccer combined`}
+          right={
+            <Pill tone="muted">
+              {trades.filter((t) => t.isNfl).length} NFL · {trades.filter((t) => !t.isNfl).length} Soccer
+            </Pill>
+          }
+        />
+        <Card variant="press" padded={false}>
+          <WalletTradesTable rows={trades} />
+        </Card>
+      </div>
 
       {/* NFL holdings — press card */}
       <div className="mt-4">

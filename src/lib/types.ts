@@ -152,6 +152,25 @@ export interface WalletHolding {
   lastActiveAt: number;
 }
 
+export interface WalletTradeRow {
+  txId: string;
+  timestamp: number;          // unix ms
+  side: "buy" | "sell";
+  isNfl: boolean;
+  // Display info — always present, sourced from the upstream's base_token.
+  symbol: string;
+  name: string;
+  imageUrl?: string;
+  // NFL-only enrichment from our roster lookup. Empty for Soccer rows.
+  playerId?: string;
+  position?: string;
+  team?: string;
+  // Amounts
+  baseAmount: number;         // shares moved
+  priceUsd: number;           // USD per share at trade time
+  amountUsd: number;          // USD value of the trade
+}
+
 export interface WalletProfile {
   address: string;
   totalValueUsd: number;

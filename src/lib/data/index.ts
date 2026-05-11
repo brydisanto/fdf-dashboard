@@ -25,6 +25,7 @@ export {
   getUniqueNflHolderCount,
   getHolderHistory,
   getWalletFlow,
+  getWalletTrades,
   getWalletFunPosition,
   POOL_FEE_RATE,
 } from "./footballfun";

@@ -12,6 +12,7 @@ import type {
   WalletHolding,
   WalletProfile,
   WalletTier,
+  WalletTradeRow,
   WindowKey,
   WindowStats,
 } from "../types";
@@ -1404,8 +1405,67 @@ interface TeneroWalletTradeRow {
   recipient: string;
   base_token_address: string;
   quote_token_address: string;
+  base_token_amount?: string | number;
   amount_usd: number;
+  price_usd?: number;
   block_time: number;
+  base_token?: {
+    address: string;
+    symbol: string;
+    name: string;
+    image_url?: string;
+  };
+}
+
+/**
+ * Recent trade feed for a single wallet. One upstream call (no
+ * pagination — just the most-recent `limit` rows), enriched with
+ * roster lookups so NFL rows can link to the player page.
+ */
+export async function getWalletTrades(
+  address: string,
+  limit = 30,
+): Promise<WalletTradeRow[]> {
+  // Same case-sensitivity quirk — the /wallets/.../trades endpoint
+  // returns 0 rows for lowercase addresses.
+  let queryAddress = address;
+  try {
+    queryAddress = getAddress(address);
+  } catch {
+    queryAddress = address;
+  }
+
+  let rows: TeneroWalletTradeRow[] = [];
+  try {
+    const data = await tget<{ rows: TeneroWalletTradeRow[]; next: string | null }>(
+      `/wallets/${encodeURIComponent(queryAddress)}/trades?limit=${limit}`,
+      REVALIDATE.wallet,
+    );
+    rows = data?.rows ?? [];
+  } catch {
+    return [];
+  }
+
+  return rows.map((r) => {
+    const isNfl = isNflTokenAddress(r.base_token_address);
+    const rosterPlayer = isNfl ? ROSTER_BY_TOKEN.get(r.base_token_address) : undefined;
+    const side: "buy" | "sell" = r.event_type === "sell" ? "sell" : "buy";
+    return {
+      txId: r.tx_id,
+      timestamp: Number(r.block_time ?? 0),
+      side,
+      isNfl,
+      symbol: r.base_token?.symbol ?? "",
+      name: r.base_token?.name ?? rosterPlayer?.displayName ?? "",
+      imageUrl: r.base_token?.image_url,
+      playerId: rosterPlayer?.id,
+      position: rosterPlayer?.position,
+      team: rosterPlayer?.team,
+      baseAmount: Number(r.base_token_amount ?? 0),
+      priceUsd: Number(r.price_usd ?? 0),
+      amountUsd: Number(r.amount_usd ?? 0),
+    };
+  });
 }
 
 export async function getWalletFlow(address: string, windowDays = 7): Promise<WalletFlowSummary> {
