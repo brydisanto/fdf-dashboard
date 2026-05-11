@@ -21,12 +21,10 @@ const PRESETS = [
 
 type FlowFilter = TradeFlow | "all" | "swap";
 const FLOW_FILTERS: { label: string; key: FlowFilter }[] = [
-  { label: "All",      key: "all" },
-  { label: "Buy",      key: "buy" },
-  { label: "Sell",     key: "sell" },
-  { label: "Swap In",  key: "swap-in" },
-  { label: "Swap Out", key: "swap-out" },
-  { label: "Swaps",    key: "swap" },
+  { label: "All",   key: "all" },
+  { label: "Buy",   key: "buy" },
+  { label: "Sell",  key: "sell" },
+  { label: "Swap",  key: "swap" },
 ];
 
 export function RecentTrades({
@@ -200,8 +198,8 @@ function FlowBadge({ flow }: { flow: TradeFlow }) {
   const map: Record<TradeFlow, { glyph: string; label: string; cls: string; title: string }> = {
     "buy":      { glyph: "↘", label: "BUY",      cls: "border-[color-mix(in_oklab,var(--color-turf)_40%,transparent)] bg-[color-mix(in_oklab,var(--color-turf)_12%,transparent)] text-[var(--color-turf)]",          title: "Buy · Gold/USDC → player share (3% fee)" },
     "sell":     { glyph: "↗", label: "SELL",     cls: "border-[color-mix(in_oklab,var(--color-penalty)_40%,transparent)] bg-[color-mix(in_oklab,var(--color-penalty)_12%,transparent)] text-[var(--color-penalty)]", title: "Sell · player share → Gold/USDC (3% fee)" },
-    "swap-in":  { glyph: "↻", label: "SWAP IN",  cls: "border-[var(--accent-line)] bg-[var(--accent-tint)] text-[var(--accent-soft)]",                                                                              title: "Swap In · received this player in a player ↔ player swap (5% fee)" },
-    "swap-out": { glyph: "↺", label: "SWAP OUT", cls: "border-[color-mix(in_oklab,var(--color-broadcast)_40%,transparent)] bg-[color-mix(in_oklab,var(--color-broadcast)_10%,transparent)] text-[var(--color-broadcast)]", title: "Swap Out · gave up this player in a player ↔ player swap (5% fee)" },
+    "swap-in":  { glyph: "↻", label: "SWAP",     cls: "border-[var(--accent-line)] bg-[var(--accent-tint)] text-[var(--accent-soft)]",                                                                              title: "Swap · player ↔ player swap (5% fee). Upstream exposes only the received leg of each swap, so we render it as a single SWAP row." },
+    "swap-out": { glyph: "↺", label: "SWAP",     cls: "border-[var(--accent-line)] bg-[var(--accent-tint)] text-[var(--accent-soft)]",                                                                              title: "Swap · player ↔ player swap (5% fee). Upstream exposes only the received leg of each swap, so we render it as a single SWAP row." },
   };
   const m = map[flow];
   return (
