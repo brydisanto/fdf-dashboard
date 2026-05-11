@@ -19,6 +19,7 @@ import type {
 import { ROSTER, ROSTER_BY_ID, ROSTER_BY_TOKEN, FOOTBALLFUN_CONTRACT, type NflPlayer } from "./roster";
 import { POOL_FEE_RATE, FEE_RATE_BUY, FEE_RATE_SELL, FEE_RATE_SWAP } from "../constants";
 import { readManyFunBalances, readManyWalletsNflBalances, readWalletNflBalances, readFunBalance } from "./onchain-client";
+import { priceAt, readPriceHistory } from "./price-indexer";
 
 export { POOL_FEE_RATE, FEE_RATE_BUY, FEE_RATE_SELL, FEE_RATE_SWAP };
 
@@ -378,29 +379,55 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
     return summary;
   });
 
-  // The upstream's `price_*_ago` snapshot fields are unreliable for
-  // low-activity tokens — they silently fall back to `current_price`
-  // when no proper historical snapshot exists, which makes every short
-  // window read 0% even after a real curve move. Replace those values
-  // with OHLC-derived deltas so the % columns actually reflect what
-  // the bonding curve has done.
+  // Override the upstream's unreliable price_*_ago deltas with values
+  // computed from our own 15-minute price-history snapshot (written by
+  // .github/workflows/index-prices.yml, read from the data branch via
+  // raw.githubusercontent.com). This is a single file fetch per render
+  // instead of 72 OHLC fetches, and it gives precise historical spot
+  // prices regardless of trade density.
   //
-  // Skip the OHLC fetch when (a) the token has no recent activity (no
-  // bars to anchor against anyway) OR (b) upstream's snapshot looks
-  // reliable for the relevant window (a real price_1d_ago different
-  // from current_price means the upstream gave us a real snapshot —
-  // overriding with a coarser OHLC anchor would lose precision). Cuts
-  // the cold-render OHLC fetch count roughly in half on offseason days.
-  const fns = summaries.map((summary) => async () => {
+  // The OHLC override stays as a fallback for the cold-start period
+  // before the snapshot history fills in (first 7 days after deploy)
+  // and for tokens not yet in the snapshot's tokenIds list.
+  const history = await readPriceHistory();
+  const nowMs = Date.now();
+  const enrichers = summaries.map((summary) => async () => {
     const roster = ROSTER_BY_ID.get(summary.id);
     if (!roster) return;
     const row = map.get(roster.tokenAddress);
     if (!row) return;
     const spot = Number(row.price?.current_price ?? 0);
     if (spot <= 0) return;
-    // Inactive token — upstream's 0% is the right answer, no OHLC needed.
+
+    // Primary path: snapshot-derived deltas. The display price is the
+    // sell-side adjusted spot (× 0.97), but for % comparisons we use
+    // raw spot vs raw historical spot on both sides — the fee cancels.
+    let got1h = false;
+    let got24h = false;
+    let got7d = false;
+    if (history) {
+      const at1h = priceAt(history, roster.tokenIdSuffix, nowMs - 3600_000);
+      const at24h = priceAt(history, roster.tokenIdSuffix, nowMs - 86_400_000);
+      const at7d = priceAt(history, roster.tokenIdSuffix, nowMs - 7 * 86_400_000);
+      if (at1h != null) {
+        summary.change1h = +(((spot - at1h) / at1h) * 100).toFixed(2);
+        got1h = true;
+      }
+      if (at24h != null) {
+        summary.change24h = +(((spot - at24h) / at24h) * 100).toFixed(2);
+        got24h = true;
+      }
+      if (at7d != null) {
+        summary.change7d = +(((spot - at7d) / at7d) * 100).toFixed(2);
+        got7d = true;
+      }
+    }
+    if (got1h && got24h && got7d) return;
+
+    // Fallback (cold-start period before the snapshot fills in): keep
+    // the OHLC override for fresh-activity divergence cases. Skip when
+    // the token is inactive or the upstream snapshots are reliable.
     if (summary.volume24h <= 0 && summary.volume7d <= 0) return;
-    // Upstream snapshot reliable for all windows — keep its values.
     if (
       isPriceSnapshotReliable(row.price?.price_1h_ago, spot) &&
       isPriceSnapshotReliable(row.price?.price_1d_ago, spot) &&
@@ -409,11 +436,11 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
       return;
     }
     const deltas = await fetchOhlcDeltas(roster.tokenAddress, spot);
-    if (deltas.change1h != null) summary.change1h = deltas.change1h;
-    if (deltas.change24h != null) summary.change24h = deltas.change24h;
-    if (deltas.change7d != null) summary.change7d = deltas.change7d;
+    if (!got1h && deltas.change1h != null) summary.change1h = deltas.change1h;
+    if (!got24h && deltas.change24h != null) summary.change24h = deltas.change24h;
+    if (!got7d && deltas.change7d != null) summary.change7d = deltas.change7d;
   });
-  await chunked(fns, 8);
+  await chunked(enrichers, 8);
 
   // Active Shares = total supply minus what's parked in platform-side
   // wallets (the FDF Marketplace + the Sport.fun swap router contract).
@@ -508,23 +535,47 @@ export async function getPlayer(id: string): Promise<PlayerSummary | null> {
     );
     const summary = buildPlayerSummary(player, data);
     summary.sparkline7d = tinySparkline(data);
-    // Same OHLC override as getPlayers() — upstream's price_*_ago is
-    // unreliable for low-activity tokens. Skip when the token is inactive
-    // or upstream snapshots already look reliable.
+    // Same enrichment pipeline as getPlayers() — snapshot-derived deltas
+    // first, OHLC fallback when the snapshot history doesn't reach.
     const spot = Number(data?.price?.current_price ?? 0);
-    const shouldFetchOhlc =
+    let got1h = false;
+    let got24h = false;
+    let got7d = false;
+    if (spot > 0) {
+      const history = await readPriceHistory();
+      if (history) {
+        const nowMs = Date.now();
+        const at1h = priceAt(history, player.tokenIdSuffix, nowMs - 3600_000);
+        const at24h = priceAt(history, player.tokenIdSuffix, nowMs - 86_400_000);
+        const at7d = priceAt(history, player.tokenIdSuffix, nowMs - 7 * 86_400_000);
+        if (at1h != null) {
+          summary.change1h = +(((spot - at1h) / at1h) * 100).toFixed(2);
+          got1h = true;
+        }
+        if (at24h != null) {
+          summary.change24h = +(((spot - at24h) / at24h) * 100).toFixed(2);
+          got24h = true;
+        }
+        if (at7d != null) {
+          summary.change7d = +(((spot - at7d) / at7d) * 100).toFixed(2);
+          got7d = true;
+        }
+      }
+    }
+    const needsOhlcFallback =
       spot > 0 &&
+      !(got1h && got24h && got7d) &&
       (summary.volume24h > 0 || summary.volume7d > 0) &&
       !(
         isPriceSnapshotReliable(data?.price?.price_1h_ago, spot) &&
         isPriceSnapshotReliable(data?.price?.price_1d_ago, spot) &&
         isPriceSnapshotReliable(data?.price?.price_7d_ago, spot)
       );
-    if (shouldFetchOhlc) {
+    if (needsOhlcFallback) {
       const deltas = await fetchOhlcDeltas(player.tokenAddress, spot);
-      if (deltas.change1h != null) summary.change1h = deltas.change1h;
-      if (deltas.change24h != null) summary.change24h = deltas.change24h;
-      if (deltas.change7d != null) summary.change7d = deltas.change7d;
+      if (!got1h && deltas.change1h != null) summary.change1h = deltas.change1h;
+      if (!got24h && deltas.change24h != null) summary.change24h = deltas.change24h;
+      if (!got7d && deltas.change7d != null) summary.change7d = deltas.change7d;
     }
     // Apply the same Active Shares definition as getPlayers — total
     // supply minus what the platform-side wallets hold.
