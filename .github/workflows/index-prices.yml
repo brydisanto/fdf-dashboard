@@ -1,0 +1,101 @@
+name: Index NFL Prices
+
+# Every 15 minutes + manual trigger. Persists snapshots to the `data`
+# branch so the deployed app can fetch them via raw.githubusercontent.com
+# and compute accurate 1h/24h/7d % changes independent of the upstream's
+# unreliable price_*_ago fields.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: index-prices
+  cancel-in-progress: false
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Try to check out the existing `data` branch first (so we get the
+      # accumulated history). If it doesn't exist or is empty, we'll
+      # bootstrap from main below.
+      - uses: actions/checkout@v4
+        with:
+          ref: data
+          fetch-depth: 0
+        continue-on-error: true
+
+      - name: Configure git identity
+        shell: bash
+        run: |
+          git config --global user.name "Gridiron Indexer"
+          git config --global user.email "indexer@users.noreply.github.com"
+
+      - name: Bootstrap data branch if missing, then overlay main scripts
+        shell: bash
+        run: |
+          set -e
+          if [ ! -f "scripts/index-prices.mjs" ]; then
+            echo "data branch missing the script — bootstrapping"
+            git init -b data
+            git remote remove origin 2>/dev/null || true
+            git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+            git fetch origin main
+            # Try to fetch existing data branch — may not exist on the
+            # very first run.
+            git fetch origin data 2>/dev/null || true
+            if git show-ref --verify --quiet refs/remotes/origin/data; then
+              # Existing data branch — start from there so we preserve
+              # the accumulated snapshot history (and any sibling
+              # indexers' data files), then overlay main's latest
+              # scripts/workflows on top so we run current logic.
+              git reset --hard origin/data
+              git checkout origin/main -- scripts/ .github/workflows/ 2>/dev/null || true
+              git add -A
+              if ! git diff --staged --quiet; then
+                git commit -m "Sync scripts from main"
+              fi
+            else
+              # No existing data branch — start clean from main.
+              git reset --hard origin/main
+            fi
+          fi
+
+      - name: Sync latest scripts from main into the data branch
+        shell: bash
+        run: |
+          git fetch origin main
+          # Merge main's scripts/workflow updates without disturbing
+          # data/ — `theirs` strategy means main wins on conflicts.
+          git merge origin/main --no-edit -X theirs --allow-unrelated-histories || true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run indexer
+        run: node scripts/index-prices.mjs --write
+
+      - name: Commit snapshot to data branch
+        shell: bash
+        run: |
+          set -e
+          git config user.name "Gridiron Indexer"
+          git config user.email "indexer@users.noreply.github.com"
+          git add data/price-history.json
+          if git diff --staged --quiet; then
+            echo "No change in snapshot."
+            exit 0
+          fi
+          git commit -m "Price snapshot $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          # Use the workflow token; the bootstrap step already wired the
+          # remote URL with it.
+          git push origin HEAD:data
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
