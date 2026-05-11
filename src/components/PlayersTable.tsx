@@ -163,9 +163,9 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
                   <NumCell>{fmtUsd(p.marketCap, { compact: true })}</NumCell>
                   <NumCell>{fmtUsd(p.volume24h, { compact: true })}</NumCell>
                   <NumCell>{fmtNum(p.holders, { compact: true })}</NumCell>
-                  <NumCell>{fmtNum(p.activeSupply, { compact: true })}</NumCell>
+                  <NumCell>{fmtNum(p.activeSupply, { compact: true, digits: 1 })}</NumCell>
                   <NumCell>
-                    {fmtNum(p.circulatingSupply, { compact: true })}
+                    {fmtNum(p.circulatingSupply, { compact: true, digits: 1 })}
                     <span className="ml-1 text-[10px] text-[var(--color-text-dim)]">
                       ({Math.round((p.circulatingSupply / Math.max(1, p.maxSupply)) * 100)}%)
                     </span>
