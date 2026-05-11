@@ -14,7 +14,7 @@ import type { PlayerSummary, Position } from "@/lib/types";
 type SortKey =
   | "rank" | "name" | "priceUsd" | "change1h" | "change24h" | "change7d"
   | "marketCap" | "volume24h" | "holders"
-  | "activeSupply" | "circulatingSupply" | "poolSupply";
+  | "activeSupply" | "circulatingSupply";
 
 const POSITIONS: (Position | "ALL")[] = ["ALL", "QB", "RB", "WR", "TE"];
 
@@ -115,7 +115,6 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
               <Th onClick={() => onSort("holders")} active={sortKey === "holders"} dir={sortDir}>Holders</Th>
               <Th onClick={() => onSort("activeSupply")} active={sortKey === "activeSupply"} dir={sortDir}>Active Shares</Th>
               <Th onClick={() => onSort("circulatingSupply")} active={sortKey === "circulatingSupply"} dir={sortDir}>Circulating</Th>
-              <Th onClick={() => onSort("poolSupply")} active={sortKey === "poolSupply"} dir={sortDir}>Pool Reserve</Th>
               <Th className="pr-5">7d Trend</Th>
             </tr>
           </thead>
@@ -166,7 +165,6 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
                   <NumCell>{fmtNum(p.holders, { compact: true })}</NumCell>
                   <NumCell>{fmtNum(p.activeSupply, { compact: true, digits: 1 })}</NumCell>
                   <NumCell>{fmtNum(p.circulatingSupply, { compact: true, digits: 1 })}</NumCell>
-                  <NumCell>{fmtNum(p.poolSupply, { compact: true, digits: 1 })}</NumCell>
                   <Cell className="pr-5">
                     <Sparkline data={p.sparkline7d} positive={p.change7d >= 0} className="ml-auto" />
                   </Cell>

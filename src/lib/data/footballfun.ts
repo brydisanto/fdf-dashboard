@@ -390,8 +390,42 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
   });
   await chunked(fns, 8);
 
+  // Active Shares = total supply minus what's parked in platform-side
+  // wallets (the FDF Marketplace + the Sport.fun swap router contract).
+  // Reads both wallets' balances on-chain in a single batched call.
+  const priceByToken = new Map<string, number>();
+  for (const s of summaries) {
+    const roster = ROSTER_BY_ID.get(s.id);
+    if (roster) priceByToken.set(roster.tokenAddress, s.priceUsd);
+  }
+  const nonActive = await readManyWalletsNflBalances(NON_ACTIVE_WALLETS, priceByToken);
+  for (const summary of summaries) {
+    const roster = ROSTER_BY_ID.get(summary.id);
+    if (!roster) continue;
+    let excluded = 0;
+    for (const addr of NON_ACTIVE_WALLETS) {
+      const holdings = nonActive.get(addr);
+      if (!holdings) continue;
+      const h = holdings.find((x) => x.tokenAddress === roster.tokenAddress);
+      if (h) excluded += h.balance;
+    }
+    summary.activeSupply = Math.max(0, summary.maxSupply - Math.round(excluded));
+  }
+
   return summaries;
 }
+
+// Wallets whose holdings shouldn't count toward "Active Shares" — these
+// are platform-side custodians, not regular trader wallets:
+//   - FDF Marketplace: the secondary-market escrow contract
+//   - FOOTBALLFUN_CONTRACT: the Sport.fun ERC-1155 itself, which holds
+//     every share that hasn't been minted out of the bonding curve yet
+// All lowercase because readManyWalletsNflBalances keys its result map
+// off the lowercased input addresses.
+const NON_ACTIVE_WALLETS = [
+  "0x4fdce033b9f30019337ddc5cc028dc023580585e",
+  FOOTBALLFUN_CONTRACT.toLowerCase(),
+];
 
 export async function getPlayer(id: string): Promise<PlayerSummary | null> {
   const player = ROSTER_BY_ID.get(id);
@@ -413,6 +447,18 @@ export async function getPlayer(id: string): Promise<PlayerSummary | null> {
       if (deltas.change24h != null) summary.change24h = deltas.change24h;
       if (deltas.change7d != null) summary.change7d = deltas.change7d;
     }
+    // Apply the same Active Shares definition as getPlayers — total
+    // supply minus what the platform-side wallets hold.
+    const priceByToken = new Map([[player.tokenAddress, summary.priceUsd]]);
+    const nonActive = await readManyWalletsNflBalances(NON_ACTIVE_WALLETS, priceByToken);
+    let excluded = 0;
+    for (const addr of NON_ACTIVE_WALLETS) {
+      const holdings = nonActive.get(addr);
+      if (!holdings) continue;
+      const h = holdings.find((x) => x.tokenAddress === player.tokenAddress);
+      if (h) excluded += h.balance;
+    }
+    summary.activeSupply = Math.max(0, summary.maxSupply - Math.round(excluded));
     return summary;
   } catch {
     // Fall back to the bulk list if the per-token call fails for any reason.
