@@ -147,9 +147,9 @@ export function HotPlayersTable({ players }: { players: HotPlayerRow[] }) {
                 <td className="px-3" style={{ padding: "var(--row-pad-y) 12px" }}>
                   <div className="text-right"><Delta value={p.change24h} /></div>
                 </td>
-                <NumCell>{fmtUsd(p.volume6h, { compact: true })}</NumCell>
-                <NumCell>{fmtUsd(p.volume24h, { compact: true })}</NumCell>
-                <NumCell>{fmtUsd(p.volume7d, { compact: true })}</NumCell>
+                <NumCell>{p.volume6h > 0 ? fmtUsd(p.volume6h, { compact: true }) : <span className="text-[var(--color-text-dim)]">—</span>}</NumCell>
+                <NumCell>{p.volume24h > 0 ? fmtUsd(p.volume24h, { compact: true }) : <span className="text-[var(--color-text-dim)]">—</span>}</NumCell>
+                <NumCell>{p.volume7d > 0 ? fmtUsd(p.volume7d, { compact: true }) : <span className="text-[var(--color-text-dim)]">—</span>}</NumCell>
                 <td className="pr-5" style={{ padding: "var(--row-pad-y) 12px" }}>
                   <div className="ml-auto flex justify-end">
                     <HeatPill heat={p.heat} />
@@ -178,7 +178,7 @@ export function HotPlayersTable({ players }: { players: HotPlayerRow[] }) {
           color: "var(--color-text-dim)",
         }}
       >
-        Heat = (6h vol × 4) ÷ 24h vol · &gt;1 means accelerating
+        Heat = (24h vol × 7) ÷ 7d vol · &gt;1× means today is hotter than the weekly average
       </div>
     </div>
   );
@@ -212,7 +212,7 @@ function HeatPill({ heat }: { heat: number }) {
     },
   }[tier];
 
-  const label = heat > 0 ? heat.toFixed(2) + "×" : "—";
+  const label = heat > 0 ? heat.toFixed(1) + "×" : "—";
 
   return (
     <span

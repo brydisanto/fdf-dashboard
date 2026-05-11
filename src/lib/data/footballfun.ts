@@ -703,9 +703,12 @@ export interface HotPlayerRow extends PlayerSummary {
   // upstream `/tokens` metrics. 6h is computed from hourly OHLC bars
   // because the upstream doesn't expose that exact window.
   volume6h: number;
-  // Acceleration ratio: (6h volume × 4) ÷ 24h volume. >1 means the
-  // last 6h is running hotter than the 24h average → "heating up".
-  // 0 when 24h volume is 0 (cold player, ignore).
+  // Momentum ratio: (24h volume × 7) ÷ 7d volume. >1 means today is
+  // hotter than the player's weekly average → trending up. We use the
+  // 24h/7d windows (rather than 6h/24h) because the upstream's short
+  // windows collapse to $0 across the entire roster during offseason
+  // quiet hours, which would leave heat empty for everyone. 24h/7d
+  // always has data when a player has traded in the past week.
   heat: number;
 }
 
@@ -775,7 +778,9 @@ export async function getNflHotPlayers(): Promise<HotPlayerRow[]> {
   return players.map((p) => {
     const r = byId.get(p.id);
     const volume6h = r?.volume6h ?? 0;
-    const heat = p.volume24h > 0 ? (volume6h * 4) / p.volume24h : 0;
+    // Heat compares today's volume to the player's weekly average so it
+    // stays meaningful even when nothing has traded in the last 6h.
+    const heat = p.volume7d > 0 ? (p.volume24h * 7) / p.volume7d : 0;
     return { ...p, volume6h, heat };
   });
 }

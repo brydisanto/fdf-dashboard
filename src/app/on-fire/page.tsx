@@ -121,7 +121,7 @@ export default async function OnFirePage() {
       <div className="mt-4">
         <SectionHead
           title="Volume Leaderboard"
-          hint="Sort by any window · 6h is a rolling sum, 24h and 7d come from upstream metrics"
+          hint="Sort by any window · Heat = today vs the 7d average, >1× means trending up"
           right={<Pill tone="muted">{fmtNum(players.length)} players</Pill>}
         />
         <Card variant="press" padded={false}>

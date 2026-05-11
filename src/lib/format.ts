@@ -2,18 +2,26 @@ export function fmtUsd(n: number, opts: { compact?: boolean; digits?: number } =
   const { compact, digits } = opts;
   if (!Number.isFinite(n)) return "—";
   if (compact) {
+    // Default precision: whole dollars below $1000 (e.g. $319), one decimal
+    // at thousands+ so the compact notation still resolves (e.g. $5.1K,
+    // $1.2M). Callers can override via `digits`.
+    const defaultDigits = Math.abs(n) < 1000 ? 0 : 1;
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
       notation: "compact",
-      maximumFractionDigits: digits ?? 2,
+      maximumFractionDigits: digits ?? defaultDigits,
     }).format(n);
   }
+  // Non-compact dollar values default to whole dollars below $1000
+  // (e.g. $319 — no cents for sub-thousand amounts) and keep cents at
+  // $1000+ where the extra precision still scans.
+  const defaultDigits = Math.abs(n) < 1000 ? 0 : 2;
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    minimumFractionDigits: digits ?? 2,
-    maximumFractionDigits: digits ?? 2,
+    minimumFractionDigits: digits ?? defaultDigits,
+    maximumFractionDigits: digits ?? defaultDigits,
   }).format(n);
 }
 
