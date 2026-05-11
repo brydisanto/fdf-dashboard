@@ -1413,12 +1413,22 @@ export async function getWalletFlow(address: string, windowDays = 7): Promise<Wa
   const dayMs = 24 * 3600 * 1000;
   const todayDay = Math.floor(Date.now() / dayMs) * dayMs;
 
+  // Same case-sensitivity quirk as /wallets/.../holdings — the upstream
+  // returns empty rows for lowercase addresses and full results for the
+  // EIP-55 checksummed form. Convert just for this call.
+  let queryAddress = address;
+  try {
+    queryAddress = getAddress(address);
+  } catch {
+    queryAddress = address;
+  }
+
   const collected: TeneroWalletTradeRow[] = [];
   let cursor: string | null = null;
   let safety = 0;
   try {
     do {
-      const path: string = `/wallets/${encodeURIComponent(address)}/trades?limit=50` +
+      const path: string = `/wallets/${encodeURIComponent(queryAddress)}/trades?limit=50` +
         (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "");
       const data = await tget<{ rows: TeneroWalletTradeRow[]; next: string | null }>(
         path, REVALIDATE.wallet,
