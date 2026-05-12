@@ -577,20 +577,19 @@ function buildTradesByTokenIndex(trades: IndexedTrade[]): Map<string, IndexedTra
 }
 
 // Implied historical spot at `targetMs` from indexed trades. Returns
-// the implied price of the most recent trade at-or-before the target.
-// The spot stays constant between trades on a bonding curve, so this
-// is exact (modulo tiny slippage within the trade — usdAmount /
-// shareAmount is the trade's average fill, ≈ post-trade spot for
-// small fills on deep pools).
+// the implied price (usdAmount / shareAmount) of the most recent
+// buy/sell trade at-or-before the target. Swap legs are skipped
+// because the indexer records usdAmount = 0 on swaps (no paired USDC
+// Transfer) — they'd otherwise null out the whole window even when
+// real buy/sell anchors exist further back.
 //
-// Returns null if no trade ≤ targetMs exists (e.g. the token's first
-// trade was AFTER the target window — caller should leave the delta
-// to the next fallback layer).
+// Returns null only if no buy/sell trade exists ≤ targetMs.
 function priceAtFromTrades(
   trades: IndexedTrade[],     // sorted ASC by blockTime
   targetMs: number,
 ): number | null {
   if (trades.length === 0) return null;
+  // Binary-search the upper bound (latest trade ≤ targetMs).
   let lo = 0;
   let hi = trades.length - 1;
   let idx = -1;
@@ -604,9 +603,18 @@ function priceAtFromTrades(
     }
   }
   if (idx < 0) return null;
-  const t = trades[idx];
-  if (t.shareAmount <= 0 || t.usdAmount <= 0) return null;
-  return t.usdAmount / t.shareAmount;
+  // Walk backward from idx to the first trade with a positive
+  // shareAmount AND usdAmount. Skips swap-in/swap-out legs (usd=0)
+  // until we land on a real-priced buy or sell. Bonding-curve spot
+  // is constant between trades, so a buy 3 days ago anchors the
+  // window even if 6 swap legs sit between then and the target.
+  for (let i = idx; i >= 0; i--) {
+    const t = trades[i];
+    if (t.shareAmount > 0 && t.usdAmount > 0) {
+      return t.usdAmount / t.shareAmount;
+    }
+  }
+  return null;
 }
 
 // Reconstruct a per-token (price, supply) stepped timeline from
