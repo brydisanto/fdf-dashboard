@@ -80,8 +80,39 @@ async function readSnapshotFromRemote(): Promise<TradeStore | null> {
 
 export async function readTradeHistory(): Promise<TradeStore | null> {
   const remote = await readSnapshotFromRemote();
-  if (remote && remote.trades.length > 0) return remote;
-  return readSnapshotFromDisk();
+  const base = (remote && remote.trades.length > 0) ? remote : await readSnapshotFromDisk();
+  if (!base) return null;
+
+  // GitHub Actions scheduled workflows often run 1-3 hours late on the
+  // free tier, so the snapshot file can lag well behind real-time. Pull
+  // a fresh on-chain tail from lastIndexedBlock+1 → head so the Live
+  // Feed and rollups always show the most recent trades. Tail cost is
+  // amortized by a 60s module cache inside trade-tail.
+  try {
+    const { tailNflTrades } = await import("./trade-tail");
+    const tail = await tailNflTrades(base.lastIndexedBlock);
+    if (tail.length === 0) return base;
+
+    // Dedupe on (txId, logIndex) — the indexer may have caught a couple
+    // of overlapping events between cron run and our scan window.
+    const seen = new Set(base.trades.map((t) => `${t.txId}:${t.logIndex}`));
+    const merged: IndexedTrade[] = tail.filter(
+      (t) => !seen.has(`${t.txId}:${t.logIndex}`),
+    );
+    merged.push(...base.trades);
+    merged.sort((a, b) => b.blockTime - a.blockTime);
+
+    return {
+      lastIndexedBlock: Math.max(
+        base.lastIndexedBlock,
+        ...tail.map((t) => t.blockNumber),
+      ),
+      trades: merged,
+    };
+  } catch (err) {
+    console.error("[readTradeHistory] tail scan failed:", err);
+    return base;
+  }
 }
 
 // Map a token suffix → the full token address used by the rest of the
