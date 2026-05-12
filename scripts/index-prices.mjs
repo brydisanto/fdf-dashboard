@@ -36,15 +36,24 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createPublicClient, http, parseAbi } from "viem";
+import { base } from "viem/chains";
 
 const FOOTBALLFUN_CONTRACT = "0x2EeF466e802Ab2835aB81BE63eEbc55167d35b56";
-const UPSTREAM = "https://api.tenero.io/v1/sportsfun";
-// Tenero's IP rate limit is 100 req/min. Sequential with 700ms delay
-// keeps us safely under it.
-const REQUEST_DELAY_MS = 700;
+const PAIR = "0x4Fdce033b9F30019337dDC5cC028DC023580585e";
+const RPC_URL = process.env.BASE_RPC_URL || "https://mainnet.base.org";
 // 7 days × 96 snapshots/day (every 15 min) = 672. Keep ~7 days of
 // 15-min granularity — enough to compute 1h / 24h / 7d windows.
 const HISTORY_LIMIT = 672;
+
+const client = createPublicClient({ chain: base, transport: http(RPC_URL) });
+
+const PAIR_ABI = parseAbi([
+  "function getCurrencyReserves(uint256[]) view returns (uint256[])",
+]);
+const ERC1155_ABI = parseAbi([
+  "function balanceOfBatch(address[],uint256[]) view returns (uint256[])",
+]);
 
 // Must match src/lib/data/roster.ts. Updating this list is the only
 // per-roster maintenance the indexer needs.
@@ -63,36 +72,42 @@ const TOKEN_ID_SUFFIXES = [
   "1049357910","543182829","1953241833","946323199","2078797761","1378093404",
 ];
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-async function uget(p, attempt = 0) {
-  const url = `${UPSTREAM}${p}`;
-  const res = await fetch(url, { cache: "no-store" });
-  if (res.status === 429 && attempt < 5) {
-    await sleep(1000 * (attempt + 1) ** 2);
-    return uget(p, attempt + 1);
-  }
-  if (!res.ok) return null;
-  await sleep(REQUEST_DELAY_MS);
-  return res.json();
-}
-
-async function fetchSpot(tokenAddress) {
-  const path = `/tokens/${encodeURIComponent(tokenAddress)}`;
-  const data = await uget(path);
-  const spot = Number(data?.data?.price?.current_price ?? 0);
-  return Number.isFinite(spot) && spot > 0 ? spot : 0;
+async function fetchOnchainSpots(tokenIdsBig) {
+  // Call 1: PAIR.getCurrencyReserves(tokenIds) → USDC reserves
+  const currencyReserves = await client.readContract({
+    address: PAIR,
+    abi: PAIR_ABI,
+    functionName: "getCurrencyReserves",
+    args: [tokenIdsBig],
+  });
+  // Call 2: PROXY.balanceOfBatch([PAIR repeated N times], tokenIds) → token reserves
+  const wallets = new Array(tokenIdsBig.length).fill(PAIR);
+  const tokenReserves = await client.readContract({
+    address: FOOTBALLFUN_CONTRACT,
+    abi: ERC1155_ABI,
+    functionName: "balanceOfBatch",
+    args: [wallets, tokenIdsBig],
+  });
+  // Spot = currency_usdc / token_count. USDC=6 decimals, shares=18 decimals.
+  return tokenIdsBig.map((_, i) => {
+    const currUsd = Number(currencyReserves[i] ?? 0n) / 1e6;
+    const tokenCount = Number(tokenReserves[i] ?? 0n) / 1e18;
+    if (tokenCount <= 0) return 0;
+    return currUsd / tokenCount;
+  });
 }
 
 async function main() {
   const start = Date.now();
-  const prices = [];
-  for (let i = 0; i < TOKEN_ID_SUFFIXES.length; i++) {
-    const tokenAddress = `${FOOTBALLFUN_CONTRACT}:${TOKEN_ID_SUFFIXES[i]}`;
-    const spot = await fetchSpot(tokenAddress);
-    prices.push(spot);
-    if (process.env.GRIDIRON_VERBOSE) {
-      console.log(`[${i + 1}/${TOKEN_ID_SUFFIXES.length}] ${TOKEN_ID_SUFFIXES[i]} spot=$${spot.toFixed(6)}`);
+  // On-chain spot for all 72 tokens in 2 batched RPC calls. Matches
+  // the live display's source so the delta calc is apples-to-apples
+  // (earlier version captured Tenero's current_price, which ran ~2-3%
+  // above the AMM mid and produced a systemic phantom negative delta).
+  const tokenIdsBig = TOKEN_ID_SUFFIXES.map((s) => BigInt(s));
+  const prices = await fetchOnchainSpots(tokenIdsBig);
+  if (process.env.GRIDIRON_VERBOSE) {
+    for (let i = 0; i < prices.length; i++) {
+      console.log(`[${i + 1}/${prices.length}] ${TOKEN_ID_SUFFIXES[i]} spot=$${prices[i].toFixed(6)}`);
     }
   }
 
