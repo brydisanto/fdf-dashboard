@@ -340,9 +340,9 @@ function ExtremeCard({
                     color: "var(--color-text-dim)",
                   }}
                 >
-                  {p.position} · MKT {p.position}
-                  {p.marketPosRank} · FP {p.position}
-                  {p.fpPosRank}
+                  {p.position} · FDF {p.position}
+                  {p.marketPosRank} · AVG {p.position}
+                  {p.industryAvgRank != null ? Math.round(p.industryAvgRank) : "—"}
                 </span>
               </Link>
               <span
