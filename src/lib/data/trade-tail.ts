@@ -61,10 +61,11 @@ const USDC_TRANSFER_EVENT = parseAbiItem(
 );
 
 // Module cache so concurrent ISR regens / page renders share a single
-// scan. 60s is short enough that fresh trades surface within a minute
-// once they land on-chain, long enough to amortize the RPC cost.
+// scan. 30s is short enough that fresh trades surface within half a
+// minute once they land on-chain, long enough to amortize RPC cost
+// across the burst of in-flight renders right after an ISR regen.
 let cache: { ts: number; fromBlock: bigint; trades: IndexedTrade[] } | null = null;
-const CACHE_TTL_MS = 60_000;
+const CACHE_TTL_MS = 30_000;
 
 export async function tailNflTrades(lastIndexedBlock: number): Promise<IndexedTrade[]> {
   const now = Date.now();
