@@ -1,5 +1,5 @@
 import "server-only";
-import { createPublicClient, http, type Address } from "viem";
+import { createPublicClient, fallback, http, type Address } from "viem";
 import { base } from "viem/chains";
 import { ROSTER, FOOTBALLFUN_CONTRACT } from "./roster";
 import type { WalletHolding } from "../types";
@@ -19,9 +19,18 @@ const BASE_RPCS = [
   "https://base.publicnode.com",
 ];
 
+// Fallback transport — viem cycles through the RPC list on failure. With
+// only one transport configured the public Base RPC's occasional slow
+// responses (~10s+) were causing readOnchainTokenState to silently
+// timeout and fall back to Tenero's stale current_price field, which
+// reads ~3% above the AMM mid. Three independent endpoints with a
+// 30s ceiling each gives us much more headroom.
 const client = createPublicClient({
   chain: base,
-  transport: http(BASE_RPCS[0], { retryCount: 2, timeout: 10_000 }),
+  transport: fallback(
+    BASE_RPCS.map((url) => http(url, { retryCount: 2, timeout: 30_000 })),
+    { rank: false },
+  ),
 });
 
 const ERC1155_ABI = [
@@ -330,7 +339,10 @@ export interface OnchainTokenState {
  * TTL pay nothing.
  */
 let onchainStateCache: { ts: number; data: Map<string, OnchainTokenState> } | null = null;
-const ONCHAIN_STATE_TTL_MS = 15_000; // 15s — matches REVALIDATE.list
+// Module-level cache lifetime. Bumped from 15s to 60s so a single
+// successful read covers a full ISR regeneration window on the home
+// page — protects against transient public-RPC slowness.
+const ONCHAIN_STATE_TTL_MS = 60_000;
 
 export async function readOnchainTokenState(): Promise<Map<string, OnchainTokenState> | null> {
   const now = Date.now();
@@ -403,8 +415,11 @@ export async function readOnchainTokenState(): Promise<Map<string, OnchainTokenS
     onchainStateCache = { ts: now, data: out };
     return out;
   } catch (err) {
-    console.warn("[readOnchainTokenState] failed:", err);
-    // Stale cache is better than nothing if a recent RPC succeeded.
+    // Logged at error level so Vercel surfaces it in the function logs.
+    // When this fires, the dashboard silently falls back to Tenero's
+    // current_price, which can read 2-3% above the AMM mid and inflate
+    // every player's market cap (visible in the NFL Market Cap stat).
+    console.error("[readOnchainTokenState] RPC failed:", err);
     if (onchainStateCache) return onchainStateCache.data;
     return null;
   }
