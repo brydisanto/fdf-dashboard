@@ -18,7 +18,7 @@ import type {
 } from "../types";
 import { ROSTER, ROSTER_BY_ID, ROSTER_BY_TOKEN, FOOTBALLFUN_CONTRACT, type NflPlayer } from "./roster";
 import { POOL_FEE_RATE, FEE_RATE_BUY, FEE_RATE_SELL, FEE_RATE_SWAP } from "../constants";
-import { readManyFunBalances, readManyWalletsNflBalances, readWalletNflBalances, readFunBalance } from "./onchain-client";
+import { readManyFunBalances, readManyWalletsNflBalances, readWalletNflBalances, readFunBalance, readOnchainTokenState } from "./onchain-client";
 import { priceAt, readPriceHistory } from "./price-indexer";
 
 export { POOL_FEE_RATE, FEE_RATE_BUY, FEE_RATE_SELL, FEE_RATE_SWAP };
@@ -332,15 +332,18 @@ async function fetchAllTokens(): Promise<TeneroTokenRow[]> {
 }
 
 async function fetchNflTokenMap(): Promise<Map<string, TeneroTokenRow>> {
-  // The upstream's `/tokens` paginated listing is unreliable — the
-  // cursor follow-up calls have started returning 500s and the limit
-  // caps at 100, so we can only see the first slice of NFL players
-  // (which ranks Soccer + USDC alongside NFL tokens). Fetch each NFL
-  // token individually instead — we know all 72 addresses from the
-  // ROSTER, and per-token /tokens/{address} reads are reliable and
-  // cached at the same 15s revalidate. Falls back to whatever the
-  // paginated listing returns for tokens whose individual fetch fails.
-  const fns = ROSTER.map((player) => async (): Promise<[string, TeneroTokenRow | null]> => {
+  // Phase 1 of the on-chain migration: read price + supply + reserves
+  // directly from the Base chain in 2 batched RPC calls, then use
+  // Tenero's per-token /tokens/{address} response only for the
+  // metadata + activity fields (volume, swaps, holder_count, etc.)
+  // that aren't easily derived on-chain. The financial fields that
+  // were the source of every recent reliability incident — price,
+  // circulating, total supply, TVL — now come from chain and are
+  // independent of Tenero's pagination bugs and snapshot fallbacks.
+
+  // Kick off on-chain and per-token Tenero reads in parallel.
+  const onchainPromise = readOnchainTokenState();
+  const teneroFns = ROSTER.map((player) => async (): Promise<[string, TeneroTokenRow | null]> => {
     try {
       const data = await tget<TeneroTokenRow>(
         `/tokens/${encodeURIComponent(player.tokenAddress)}`,
@@ -351,15 +354,19 @@ async function fetchNflTokenMap(): Promise<Map<string, TeneroTokenRow>> {
       return [player.tokenAddress, null];
     }
   });
-  const results = await chunked(fns, 8);
+  const [onchain, teneroResults] = await Promise.all([
+    onchainPromise,
+    chunked(teneroFns, 8),
+  ]);
+
   const map = new Map<string, TeneroTokenRow>();
-  for (const [addr, row] of results) {
+  for (const [addr, row] of teneroResults) {
     if (row) map.set(addr, row);
   }
 
-  // Backstop: if the per-token path produced almost nothing (some
-  // upstream-wide outage), salvage whatever the paginated listing
-  // returns so the page doesn't render as all-zeros.
+  // Backstop: if Tenero gave us almost nothing AND on-chain is also
+  // dark, try the legacy paginated listing as a last resort. With
+  // on-chain working, this branch should essentially never fire.
   if (map.size < ROSTER.length / 2) {
     const all = await fetchAllTokens();
     const wanted = new Set(ROSTER.map((p) => p.tokenAddress));
@@ -367,6 +374,56 @@ async function fetchNflTokenMap(): Promise<Map<string, TeneroTokenRow>> {
       if (wanted.has(row.address) && !map.has(row.address)) {
         map.set(row.address, row);
       }
+    }
+  }
+
+  // Override the financial fields with on-chain values where available.
+  // Tenero stays authoritative for metadata (symbol, name, image),
+  // 24h/7d volume metrics, swap counts, and holder counts — those still
+  // need an indexer (Phase 2).
+  if (onchain) {
+    for (const [addr, onchainState] of onchain) {
+      let row = map.get(addr);
+      if (!row) {
+        // No Tenero row for this token (cold cache / upstream outage).
+        // Synthesize a minimal row from on-chain data so the player
+        // still renders with correct price/supply/mcap even if the
+        // metadata fields are blank.
+        const player = ROSTER_BY_TOKEN.get(addr);
+        row = {
+          address: addr,
+          symbol: player?.symbol ?? "",
+          name: player?.displayName ?? "",
+          decimals: 18,
+          holder_count: 0,
+          circulating_supply: 0,
+          total_supply: 0,
+          total_liquidity_usd: 0,
+          pool_count: 1,
+          price_usd: 0,
+          marketcap_usd: 0,
+          metrics: {
+            volume_30m_usd: 0, volume_1h_usd: 0, volume_4h_usd: 0,
+            volume_1d_usd: 0, volume_7d_usd: 0,
+            swaps_30m: 0, swaps_1h: 0, swaps_4h: 0, swaps_1d: 0, swaps_7d: 0,
+          },
+          price: {
+            current_price: 0, price_1h_ago: 0, price_4h_ago: 0,
+            price_1d_ago: 0, price_7d_ago: 0, price_30d_ago: 0,
+          },
+        };
+        map.set(addr, row);
+      }
+      // Replace the financial fields with on-chain truth.
+      row.price_usd = onchainState.priceUsd;
+      row.price = {
+        ...row.price,
+        current_price: onchainState.priceUsd,
+      };
+      row.circulating_supply = onchainState.circulatingSupply;
+      row.total_supply = onchainState.totalSupply;
+      row.total_liquidity_usd = onchainState.tvlUsd;
+      row.base_liquidity_usd = onchainState.poolCurrencyUsd;
     }
   }
   return map;
