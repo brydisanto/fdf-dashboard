@@ -421,11 +421,20 @@ async function fetchNflTokenMap(): Promise<Map<string, TeneroTokenRow>> {
         };
         map.set(addr, row);
       }
-      // Replace the financial fields with on-chain truth.
+      // Replace the financial fields with on-chain truth. Sync all historical
+      // price fields to current_price so initial pctChange is 0% — the snapshot
+      // indexer + OHLC enrichment then provides the real deltas. Without this,
+      // Tenero's stale price_*_ago values mismatch the on-chain spot and
+      // produce phantom -2–3% deltas.
       row.price_usd = onchainState.priceUsd;
       row.price = {
         ...row.price,
         current_price: onchainState.priceUsd,
+        price_1h_ago: onchainState.priceUsd,
+        price_4h_ago: onchainState.priceUsd,
+        price_1d_ago: onchainState.priceUsd,
+        price_7d_ago: onchainState.priceUsd,
+        price_30d_ago: onchainState.priceUsd,
       };
       row.circulating_supply = onchainState.circulatingSupply;
       row.total_supply = onchainState.totalSupply;

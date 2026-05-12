@@ -15,13 +15,14 @@ export interface ValueRow extends PlayerSummary {
   fpPosRank: number | null;          // FantasyPros consensus PPR positional rank
   udPosRank: number | null;          // Underdog Sports PPR positional rank
   espnAvgRank: number | null;        // ESPN preseason AVG (fractional)
-  industryAvgRank: number | null;    // mean(fp, ud, espn) over present sources
+  ringerPosRank: number | null;      // The Ringer's PPR positional rank (avg of 3 experts)
+  industryAvgRank: number | null;    // mean(fp, ud, espn, ringer) over present sources
   posRankDelta: number | null;       // industryAvgRank − marketPosRank
   verdict: "undervalued" | "fair" | "overvalued" | "unranked";
 }
 
 type SortKey =
-  | "name" | "marketPosRank" | "fpPosRank" | "udPosRank" | "espnAvgRank" | "industryAvgRank" | "posRankDelta";
+  | "name" | "marketPosRank" | "fpPosRank" | "udPosRank" | "espnAvgRank" | "ringerPosRank" | "industryAvgRank" | "posRankDelta";
 
 const POSITIONS: (Position | "ALL")[] = ["ALL", "QB", "RB", "WR", "TE"];
 
@@ -78,7 +79,7 @@ export function ValueTable({
     else {
       setSortKey(key);
       // Default to asc for ranks (1 first), desc for everything else.
-      const ascKeys = new Set<SortKey>(["name", "marketPosRank", "fpPosRank", "udPosRank", "espnAvgRank", "industryAvgRank"]);
+      const ascKeys = new Set<SortKey>(["name", "marketPosRank", "fpPosRank", "udPosRank", "espnAvgRank", "ringerPosRank", "industryAvgRank"]);
       setSortDir(ascKeys.has(key) ? "asc" : "desc");
     }
   };
@@ -117,7 +118,7 @@ export function ValueTable({
                   FDF Ranking
                 </SortHeader>
               </th>
-              <th colSpan={4} className="px-3 py-2.5 text-center" style={{ ...groupHeadStyle, color: "var(--accent-soft)", borderBottom: "1px solid var(--color-line)" }}>
+              <th colSpan={5} className="px-3 py-2.5 text-center" style={{ ...groupHeadStyle, color: "var(--accent-soft)", borderBottom: "1px solid var(--color-line)" }}>
                 Industry Rankings
               </th>
               <th rowSpan={2} className="px-3 py-3 select-none text-center" style={groupHeadStyle} title="Industry avg − market rank (negative = market may be undervaluing)">
@@ -137,7 +138,10 @@ export function ValueTable({
               <th className="px-3 py-2 text-center" style={groupHeadStyle} title="ESPN AVG — mean of 8 ESPN expert rankers">
                 <SortHeader sortKey="espnAvgRank" current={sortKey} dir={sortDir} onSort={onSort} align="center">ESPN</SortHeader>
               </th>
-              <th className="px-3 py-2 text-center" style={groupHeadStyle} title="Average of FP + UD + ESPN positional ranks">
+              <th className="px-3 py-2 text-center" style={groupHeadStyle} title="The Ringer — average of 3 experts (Heifetz, Kelly, Horlbeck)">
+                <SortHeader sortKey="ringerPosRank" current={sortKey} dir={sortDir} onSort={onSort} align="center">Ringer</SortHeader>
+              </th>
+              <th className="px-3 py-2 text-center" style={groupHeadStyle} title="Average of FP + UD + ESPN + Ringer positional ranks">
                 <SortHeader sortKey="industryAvgRank" current={sortKey} dir={sortDir} onSort={onSort} align="center">Avg</SortHeader>
               </th>
             </tr>
@@ -216,6 +220,16 @@ export function ValueTable({
                     )}
                   </NumCell>
                   <NumCell>
+                    {p.ringerPosRank != null ? (
+                      <span style={{ color: "var(--color-text)" }}>
+                        {p.position}
+                        {p.ringerPosRank}
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--color-text-dim)" }}>—</span>
+                    )}
+                  </NumCell>
+                  <NumCell>
                     {p.industryAvgRank != null ? (
                       <span style={{ color: "var(--accent-soft)", fontWeight: 700 }}>
                         {p.position}
@@ -238,7 +252,7 @@ export function ValueTable({
             })}
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-5 py-12 text-center text-sm text-[var(--color-text-muted)]">
+                <td colSpan={9} className="px-5 py-12 text-center text-sm text-[var(--color-text-muted)]">
                   No matching players.
                 </td>
               </tr>

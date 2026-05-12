@@ -11,7 +11,6 @@ import {
   getWalletSnapshots,
   type WalletSnapshot,
 } from "@/lib/data";
-import type { Timeframe, PricePoint } from "@/lib/types";
 import { Card, CardHeader, Delta, Pill } from "@/components/ui";
 import { PlayerPriceChart } from "@/components/PlayerPriceChart";
 import { HoldersBreakdown } from "@/components/HoldersBreakdown";
@@ -20,9 +19,7 @@ import { RecentTrades } from "@/components/RecentTrades";
 import { TEAM_COLORS, TEAM_NAMES } from "@/lib/data/players";
 import { fmtNum, fmtPrice, fmtUsd } from "@/lib/format";
 
-const TFS: Timeframe[] = ["24H", "7D", "30D", "ALL"];
-
-export const revalidate = 30;
+export const revalidate = 60;
 
 export default async function PlayerPage(props: PageProps<"/player/[id]">) {
   const { id } = await props.params;
@@ -30,18 +27,17 @@ export default async function PlayerPage(props: PageProps<"/player/[id]">) {
   const player = await getPlayer(id);
   if (!player) notFound();
 
-  const [holders, topHolders, pool, trades, ...seriesArr] = await Promise.all([
+  // Only fetch the default 7D series server-side; 30D / ALL load lazily
+  // via /api/player/[id]/series when the user clicks the tab. Cuts two
+  // upstream OHLC fetches + price-history snapshot scans from the cold
+  // render path.
+  const [holders, topHolders, pool, trades, initialSeries] = await Promise.all([
     getHolders(id),
     getTopHolders(id, 25),
     getPoolStats(id),
     getTrades(id, 30),
-    ...TFS.map((tf) => getPriceSeries(id, tf)),
+    getPriceSeries(id, "7D"),
   ]);
-
-  const series = TFS.reduce<Record<Timeframe, PricePoint[]>>((acc, tf, i) => {
-    acc[tf] = seriesArr[i];
-    return acc;
-  }, {} as Record<Timeframe, PricePoint[]>);
 
   // Resolve wallet tier badges for both the trade feed and the
   // largest-holders table — single batched call, deduped.
@@ -148,23 +144,6 @@ export default async function PlayerPage(props: PageProps<"/player/[id]">) {
             >
               {player.firstName} {player.lastName}
             </h1>
-            <div
-              className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[var(--color-text-muted)]"
-              style={{ fontSize: 14 }}
-            >
-              <span>Sport.fun NFL player share</span>
-              <span style={{ color: "var(--color-text-dim)" }}>·</span>
-              <span>3% buy/sell · 5% swap</span>
-              <span style={{ color: "var(--color-text-dim)" }}>·</span>
-              <a
-                href="https://sport.fun"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 hover:text-[var(--color-text)]"
-              >
-                Trade <ExternalLink className="h-3 w-3" />
-              </a>
-            </div>
           </div>
 
           {/* Right column — price + 1h/24h/7d deltas */}
@@ -242,7 +221,10 @@ export default async function PlayerPage(props: PageProps<"/player/[id]">) {
               </div>
             }
           />
-          <PlayerPriceChart series={series} defaultTf="24H" />
+          <PlayerPriceChart
+            playerId={id}
+            initialSeries={initialSeries}
+          />
         </Card>
 
         <Card>
