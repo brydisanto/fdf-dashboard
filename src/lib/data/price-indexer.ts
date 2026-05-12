@@ -24,6 +24,9 @@ const COMMITTED_FILE = path.join(process.cwd(), "data", "price-history.json");
 export interface PriceSnapshot {
   ts: number;             // unix ms
   prices: number[];       // spot per token, aligned to tokenIds index
+  supplies?: number[];    // circulating shares per token, aligned to tokenIds.
+                          // Added 2026-05-12. Older snapshots may omit it; the
+                          // reader falls back to current supply for those.
 }
 
 export interface PriceStore {

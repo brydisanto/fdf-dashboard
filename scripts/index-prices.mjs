@@ -23,10 +23,20 @@
  *   {
  *     tokenIds: ["67997479", "769476837", ...],  // index → token suffix
  *     snapshots: [
- *       { ts: 1700000000000, prices: [0.005678, 0.012345, ...] },
+ *       {
+ *         ts: 1700000000000,
+ *         prices: [0.005678, 0.012345, ...],
+ *         supplies: [5234567, 4123456, ...]  // circulating shares per token
+ *       },
  *       ...
  *     ]
  *   }
+ *
+ * Supplies were added 2026-05-12 so the market-cap chart can be built
+ * from historical (price × historical supply) instead of (historical
+ * price × current supply), which over-states older periods because
+ * supply grows over time. Older snapshots without `supplies` fall back
+ * to current supply in the reader.
  *
  * Compact array-by-index format keeps the JSON small enough that the
  * deployed app can fetch the full history (7 days × 96 samples/day ≈
@@ -72,7 +82,11 @@ const TOKEN_ID_SUFFIXES = [
   "1049357910","543182829","1953241833","946323199","2078797761","1378093404",
 ];
 
-async function fetchOnchainSpots(tokenIdsBig) {
+// Every Sport.fun player token has the same 25M hard cap — circulating
+// supply = TOTAL_SUPPLY − (what the bonding curve still holds).
+const TOTAL_SUPPLY_PER_TOKEN = 25_000_000;
+
+async function fetchOnchainSpotsAndSupplies(tokenIdsBig) {
   // Call 1: PAIR.getCurrencyReserves(tokenIds) → USDC reserves
   const currencyReserves = await client.readContract({
     address: PAIR,
@@ -80,21 +94,39 @@ async function fetchOnchainSpots(tokenIdsBig) {
     functionName: "getCurrencyReserves",
     args: [tokenIdsBig],
   });
-  // Call 2: PROXY.balanceOfBatch([PAIR repeated N times], tokenIds) → token reserves
-  const wallets = new Array(tokenIdsBig.length).fill(PAIR);
-  const tokenReserves = await client.readContract({
+  // Call 2: PROXY.balanceOfBatch with [PAIR×N, FOOTBALLFUN×N] in a single
+  // round-trip. First half is pair's token reserve (for price); second
+  // half is the bonding curve's own balance (for supply).
+  const flatWallets = [];
+  const flatTokens = [];
+  for (const tid of tokenIdsBig) {
+    flatWallets.push(PAIR);
+    flatTokens.push(tid);
+  }
+  for (const tid of tokenIdsBig) {
+    flatWallets.push(FOOTBALLFUN_CONTRACT);
+    flatTokens.push(tid);
+  }
+  const balances = await client.readContract({
     address: FOOTBALLFUN_CONTRACT,
     abi: ERC1155_ABI,
     functionName: "balanceOfBatch",
-    args: [wallets, tokenIdsBig],
+    args: [flatWallets, flatTokens],
   });
-  // Spot = currency_usdc / token_count. USDC=6 decimals, shares=18 decimals.
-  return tokenIdsBig.map((_, i) => {
+  const N = tokenIdsBig.length;
+  const pairBalances = balances.slice(0, N);
+  const contractBalances = balances.slice(N);
+
+  const prices = new Array(N);
+  const supplies = new Array(N);
+  for (let i = 0; i < N; i++) {
     const currUsd = Number(currencyReserves[i] ?? 0n) / 1e6;
-    const tokenCount = Number(tokenReserves[i] ?? 0n) / 1e18;
-    if (tokenCount <= 0) return 0;
-    return currUsd / tokenCount;
-  });
+    const pairTokenCount = Number(pairBalances[i] ?? 0n) / 1e18;
+    const contractTokenCount = Number(contractBalances[i] ?? 0n) / 1e18;
+    prices[i] = pairTokenCount > 0 ? currUsd / pairTokenCount : 0;
+    supplies[i] = Math.max(0, TOTAL_SUPPLY_PER_TOKEN - contractTokenCount);
+  }
+  return { prices, supplies };
 }
 
 async function main() {
@@ -104,16 +136,20 @@ async function main() {
   // (earlier version captured Tenero's current_price, which ran ~2-3%
   // above the AMM mid and produced a systemic phantom negative delta).
   const tokenIdsBig = TOKEN_ID_SUFFIXES.map((s) => BigInt(s));
-  const prices = await fetchOnchainSpots(tokenIdsBig);
+  const { prices, supplies } = await fetchOnchainSpotsAndSupplies(tokenIdsBig);
   if (process.env.GRIDIRON_VERBOSE) {
     for (let i = 0; i < prices.length; i++) {
-      console.log(`[${i + 1}/${prices.length}] ${TOKEN_ID_SUFFIXES[i]} spot=$${prices[i].toFixed(6)}`);
+      console.log(
+        `[${i + 1}/${prices.length}] ${TOKEN_ID_SUFFIXES[i]} ` +
+        `spot=$${prices[i].toFixed(6)} circ=${supplies[i].toFixed(0)}`,
+      );
     }
   }
 
   const snapshot = {
     ts: Date.now(),
     prices,
+    supplies,
   };
 
   const __filename = fileURLToPath(import.meta.url);
@@ -164,8 +200,15 @@ async function main() {
       ts: snapshot.ts,
       tokenCount: snapshot.prices.length,
       nonZeroCount: snapshot.prices.filter((p) => p > 0).length,
+      totalMcapUsd: snapshot.prices.reduce(
+        (a, p, i) => a + p * snapshot.supplies[i], 0,
+      ),
       durationMs,
-      preview: TOKEN_ID_SUFFIXES.slice(0, 5).map((id, i) => ({ id, spot: snapshot.prices[i] })),
+      preview: TOKEN_ID_SUFFIXES.slice(0, 5).map((id, i) => ({
+        id,
+        spot: snapshot.prices[i],
+        circ: snapshot.supplies[i],
+      })),
     }, null, 2));
   }
 }

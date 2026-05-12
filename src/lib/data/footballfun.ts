@@ -1116,25 +1116,53 @@ export async function getHolderHistory(): Promise<{ ts: number; count: number }[
   return store.history;
 }
 
-// NFL-only daily volume series for the last `days` days. Built by
-// summing each active player's 1d OHLC volume across the roster.
+// NFL-only daily volume series for the last `days` days. Sourced from
+// the on-chain trade indexer (every NFL TransferSingle event over the
+// last 30 days, with USDC amounts attributed via the paired USDC
+// Transfer in the same tx). Falls back to summed daily OHLC volumes if
+// the indexer hasn't published yet.
 export async function getNflDailyVolume(days = 30): Promise<{ t: number; volumeUsd: number }[]> {
-  const players = await getPlayers();
-  const active = players.filter((p) => p.volume24h > 0 || p.trades24h > 0);
-  const targets = active.length > 0 ? active : players.slice(0, 20);
-  // "ALL" timeframe uses period=1d, so each point is exactly one day.
-  const fns = targets.map((p) => () => getPriceSeries(p.id, "ALL"));
-  const seriesList = await chunked(fns, 8);
-
   const dayMs = 86_400_000;
+  const todayDay = Math.floor(Date.now() / dayMs) * dayMs;
   const buckets = new Map<number, number>();
-  for (const series of seriesList) {
-    for (const pt of series) {
-      const day = Math.floor(pt.t / dayMs) * dayMs;
-      buckets.set(day, (buckets.get(day) ?? 0) + (pt.volume || 0));
+
+  const trades = await readTradeHistory();
+  if (trades && trades.trades.length > 0) {
+    // Swaps are double-counted in the event stream (both in + out legs),
+    // so collapse them to once-per-swap by deduping on (txId, logIndex
+    // remainder mod 2 → buyer leg only). For NFL volume, count buy +
+    // sell trades + one leg of each swap pair.
+    const seen = new Set<string>();
+    for (const t of trades.trades) {
+      if (t.side === "swap-in") {
+        const key = `${t.txId}:swap`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+      } else if (t.side === "swap-out") {
+        const key = `${t.txId}:swap`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+      const day = Math.floor(t.blockTime / dayMs) * dayMs;
+      buckets.set(day, (buckets.get(day) ?? 0) + (t.usdAmount || 0));
+    }
+  } else {
+    // Fallback path: sum daily OHLC volumes per active player. This is
+    // what the chart used before the trade indexer existed; it can
+    // under-report when Tenero's daily bars miss low-volume tokens.
+    const players = await getPlayers();
+    const active = players.filter((p) => p.volume24h > 0 || p.trades24h > 0);
+    const targets = active.length > 0 ? active : players.slice(0, 20);
+    const fns = targets.map((p) => () => getPriceSeries(p.id, "ALL"));
+    const seriesList = await chunked(fns, 8);
+    for (const series of seriesList) {
+      for (const pt of series) {
+        const day = Math.floor(pt.t / dayMs) * dayMs;
+        buckets.set(day, (buckets.get(day) ?? 0) + (pt.volume || 0));
+      }
     }
   }
-  const todayDay = Math.floor(Date.now() / dayMs) * dayMs;
+
   const out: { t: number; volumeUsd: number }[] = [];
   for (let i = days - 1; i >= 0; i--) {
     const day = todayDay - i * dayMs;
@@ -1592,47 +1620,45 @@ export async function getMarketOverview(): Promise<MarketOverview> {
   const HOUR_MS = 3600 * 1000;
   const now = Date.now();
 
-  // Build the market-cap timeline from real on-chain price snapshots.
-  // Indexer runs every 15 min; each snapshot has spot prices for every
-  // token suffix. We multiply by each token's CURRENT circulating supply
-  // (supply changes slowly — only when the bonding curve mints/burns —
-  // so it's a fair approximation for a 30-day window).
+  // Build the market-cap timeline from real on-chain snapshots — each
+  // has spot prices AND circulating supplies per token (supplies added
+  // 2026-05-12). Snapshots predating that change get filtered out
+  // because using current supply for an old price overstates the
+  // historical market cap (supply grows over time as the bonding curve
+  // mints), which produced a fake "we were higher in April" trend.
   //
-  // Fallback to the coarse 6-point series if the snapshot history isn't
-  // available (cold-start or fetch failure).
+  // Until enough new snapshots accumulate, the chart will be short.
+  // Fallback to the coarse synthetic series only if NO snapshots have
+  // supply data yet.
   const history = await readPriceHistory();
+  const supplied = history?.snapshots.filter(
+    (s) => Array.isArray(s.supplies) && s.supplies.length === s.prices.length,
+  ) ?? [];
+
   let marketCapSeries: PricePoint[] = [];
-  if (history && history.snapshots.length > 0) {
-    // Index circulating supply by tokenIdSuffix so we can look up by the
-    // snapshot's tokenIds array.
-    const supplyByTokenId = new Map<string, number>();
-    for (const p of players) {
-      const roster = ROSTER_BY_ID.get(p.id);
-      if (roster) supplyByTokenId.set(roster.tokenIdSuffix, p.circulatingSupply);
-    }
-    // Pre-compute alignment array: same length/order as snapshot.prices
-    const supplyAligned = history.tokenIds.map((id) => supplyByTokenId.get(id) ?? 0);
-
-    // Decimate to ~200 points max — for a 30-day window of 15-min
-    // snapshots that's ~2880 points, way more than the chart needs.
+  if (supplied.length > 0) {
+    // Decimate to ~200 points max. For a 7-day window of 15-min
+    // snapshots that's ~672 points; for shorter windows it's a no-op.
     const TARGET_POINTS = 200;
-    const stride = Math.max(1, Math.ceil(history.snapshots.length / TARGET_POINTS));
+    const stride = Math.max(1, Math.ceil(supplied.length / TARGET_POINTS));
 
-    for (let i = 0; i < history.snapshots.length; i += stride) {
-      const snap = history.snapshots[i];
+    for (let i = 0; i < supplied.length; i += stride) {
+      const snap = supplied[i];
       let total = 0;
+      const supplies = snap.supplies as number[];
       for (let j = 0; j < snap.prices.length; j++) {
-        total += snap.prices[j] * supplyAligned[j];
+        total += snap.prices[j] * supplies[j];
       }
       marketCapSeries.push({ t: snap.ts, price: Math.round(total), volume: 0 });
     }
-    // Always pin the freshest snapshot + current spot so the chart
-    // terminates at "now".
-    const lastSnap = history.snapshots[history.snapshots.length - 1];
+    // Always pin the freshest snapshot + current live total so the
+    // chart terminates at "now".
+    const lastSnap = supplied[supplied.length - 1];
     if (marketCapSeries.length === 0 || marketCapSeries[marketCapSeries.length - 1].t !== lastSnap.ts) {
       let total = 0;
+      const supplies = lastSnap.supplies as number[];
       for (let j = 0; j < lastSnap.prices.length; j++) {
-        total += lastSnap.prices[j] * supplyAligned[j];
+        total += lastSnap.prices[j] * supplies[j];
       }
       marketCapSeries.push({ t: lastSnap.ts, price: Math.round(total), volume: 0 });
     }
