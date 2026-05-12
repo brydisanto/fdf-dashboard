@@ -557,6 +557,20 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
   });
   await chunked(enrichers, 8);
 
+  // Sanity clamp: bonding-curve price only moves when a trade lands.
+  // If a window had ZERO trades, the spot literally can't have changed
+  // in that window, so any non-zero delta is a snapshot artifact
+  // (e.g. a stale data point captured before an indexer fix). Force
+  // those deltas to 0 — catches the J.K. Dobbins "-19.8% flat" case
+  // and other outliers from older snapshot data.
+  for (const summary of summaries) {
+    const roster = ROSTER_BY_ID.get(summary.id);
+    if (!roster) continue;
+    const row = map.get(roster.tokenAddress);
+    if (!row) continue;
+    clampDeltasToActivity(summary, row);
+  }
+
   // Active Shares = total supply minus what's parked in platform-side
   // wallets (the FDF Marketplace + the Sport.fun swap router contract).
   // Reads both wallets' balances on-chain in a single batched call.
@@ -591,6 +605,47 @@ function isPriceSnapshotReliable(snapshot: number | undefined, currentPrice: num
     return false;
   }
   return Math.abs(currentPrice - snapshot) / currentPrice > 1e-6;
+}
+
+// Sport.fun's bonding-curve spot is `currency_reserve / token_reserve`
+// — it only moves when a trade lands. If a window had ZERO trades the
+// delta MUST be 0%, period. Anything non-zero is a snapshot artifact
+// (stale data captured under a different indexer version, an RPC blip
+// at the snapshot moment, etc.).
+//
+// Tenero's `swaps_*` counters count every trade event (buys + sells +
+// swap legs), so they're the canonical "did anything happen" signal.
+// Activity windows nest (swaps_1h ⊆ swaps_4h ⊆ swaps_1d ⊆ swaps_7d),
+// so a longer empty window forces every shorter window's delta to 0.
+function clampDeltasToActivity(summary: PlayerSummary, row: TeneroTokenRow): void {
+  const m = row.metrics ?? ({} as TeneroTokenRow["metrics"]);
+  const swaps1h = Number(m.swaps_1h ?? 0);
+  const swaps4h = Number(m.swaps_4h ?? 0);
+  const swaps1d = Number(m.swaps_1d ?? 0);
+  const swaps7d = Number(m.swaps_7d ?? 0);
+
+  if (swaps7d === 0) {
+    summary.change1h = 0;
+    summary.change6h = 0;
+    summary.change24h = 0;
+    summary.change7d = 0;
+    return;
+  }
+  if (swaps1d === 0) {
+    summary.change1h = 0;
+    summary.change6h = 0;
+    summary.change24h = 0;
+    return;
+  }
+  // No direct 6h counter — `swaps_4h` covers the inner 4h; we can only
+  // safely clamp 6h to 0 when 24h is fully quiet (handled above). With
+  // some 24h activity but no 4h activity, the 4-6h window may have had
+  // trades, so leave change6h alone.
+  if (swaps1h === 0) summary.change1h = 0;
+  if (swaps4h === 0) {
+    // 4h is the tightest window we know is empty — only clamp 1h.
+    summary.change1h = 0;
+  }
 }
 
 // Wallets whose holdings shouldn't count toward "Active Shares" — these
@@ -721,6 +776,8 @@ export async function getPlayer(id: string): Promise<PlayerSummary | null> {
       if (!got24h && deltas.change24h != null) summary.change24h = deltas.change24h;
       if (!got7d && deltas.change7d != null) summary.change7d = deltas.change7d;
     }
+    // Bonding-curve sanity clamp — same one getPlayers applies.
+    clampDeltasToActivity(summary, data);
     // Apply the same Active Shares definition as getPlayers — total
     // supply minus what the platform-side wallets hold.
     const priceByToken = new Map([[player.tokenAddress, summary.priceUsd]]);
