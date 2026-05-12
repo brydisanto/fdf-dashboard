@@ -183,15 +183,16 @@ export async function tailNflTrades(lastIndexedBlock: number): Promise<IndexedTr
     const headBlock = await client.getBlock({ blockNumber: head });
     const headTimeMs = Number(headBlock.timestamp) * 1000;
 
+    const isAmm = (addr: string) => addr === PAIR_LC || addr === FOOTBALLFUN_LC;
     const out: IndexedTrade[] = [];
     for (const [txHash, legs] of legsByTx) {
-      // Pick the user wallet: the address on each leg that ISN'T the
-      // pair or the proxy contract itself. All legs in a tx share the
-      // same user.
+      // Pick the user wallet: the address on each leg that ISN'T an
+      // AMM endpoint (PAIR or the FOOTBALLFUN proxy itself). All legs
+      // in a tx share the same user.
       let userWallet: string | null = null;
       for (const leg of legs) {
-        const candidate = leg.from === PAIR_LC ? leg.to : leg.from;
-        if (candidate !== PAIR_LC && candidate !== FOOTBALLFUN_LC) {
+        const candidate = isAmm(leg.from) ? leg.to : leg.from;
+        if (!isAmm(candidate)) {
           userWallet = candidate;
           break;
         }
@@ -214,9 +215,13 @@ export async function tailNflTrades(lastIndexedBlock: number): Promise<IndexedTr
 
       for (const leg of legs) {
         let side: IndexedTrade["side"];
-        if (leg.from === PAIR_LC && leg.to === userWallet) {
+        // Either AMM endpoint counts as a trade leg. The PAIR-mediated
+        // leg of an NFL ↔ NFL swap is the received side; the
+        // FOOTBALLFUN-mediated leg is the burned/given side. Counting
+        // only the PAIR leg drops the matching swap-out row.
+        if (isAmm(leg.from) && leg.to === userWallet) {
           side = isSwap ? "swap-in" : "buy";
-        } else if (leg.from === userWallet && leg.to === PAIR_LC) {
+        } else if (leg.from === userWallet && isAmm(leg.to)) {
           side = isSwap ? "swap-out" : "sell";
         } else {
           // Wallet-to-wallet (e.g. marketplace transfer) — skip, not a
