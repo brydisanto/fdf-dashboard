@@ -34,7 +34,7 @@ export default async function PlayerPage(props: PageProps<"/player/[id]">) {
   const [holders, topHolders, pool, trades, initialSeries] = await Promise.all([
     getHolders(id),
     getTopHolders(id, 25),
-    getPoolStats(id),
+    getPoolStats(id, player),
     getTrades(id, 30),
     getPriceSeries(id, "7D"),
   ]);

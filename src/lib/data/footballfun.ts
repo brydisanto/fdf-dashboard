@@ -644,10 +644,33 @@ export async function getPlayer(id: string): Promise<PlayerSummary | null> {
   if (!player) return null;
   // Hit the per-token endpoint for fresher numbers.
   try {
-    const data = await tget<TeneroTokenRow>(
-      `/tokens/${encodeURIComponent(player.tokenAddress)}`,
-      REVALIDATE.detail,
-    );
+    const [data, onchain] = await Promise.all([
+      tget<TeneroTokenRow>(
+        `/tokens/${encodeURIComponent(player.tokenAddress)}`,
+        REVALIDATE.detail,
+      ),
+      readOnchainTokenState(),
+    ]);
+    // Apply the same Phase 1 on-chain override the home page uses so
+    // the player page's displayed price/supplies/TVL match Sport.fun's
+    // bonding-curve truth, and the deltas anchor on the on-chain spot.
+    const onchainState = onchain?.get(player.tokenAddress);
+    if (data && onchainState) {
+      data.price_usd = onchainState.priceUsd;
+      data.price = {
+        ...data.price,
+        current_price: onchainState.priceUsd,
+        price_1h_ago: onchainState.priceUsd,
+        price_4h_ago: onchainState.priceUsd,
+        price_1d_ago: onchainState.priceUsd,
+        price_7d_ago: onchainState.priceUsd,
+        price_30d_ago: onchainState.priceUsd,
+      };
+      data.circulating_supply = onchainState.circulatingSupply;
+      data.total_supply = onchainState.totalSupply;
+      data.total_liquidity_usd = onchainState.tvlUsd;
+      data.base_liquidity_usd = onchainState.poolCurrencyUsd;
+    }
     const summary = buildPlayerSummary(player, data);
     summary.sparkline7d = tinySparkline(data);
     // Same enrichment pipeline as getPlayers() — snapshot-derived deltas
@@ -769,7 +792,7 @@ export async function getPriceSeries(id: string, tf: Timeframe): Promise<PricePo
   // tokens with frequent OHLC activity this is mostly redundant but the
   // dedupe below keeps the output clean.
   const history = await readPriceHistory();
-  let snapshotPoints: PricePoint[] = [];
+  const snapshotPoints: PricePoint[] = [];
   if (history && cutoff != null) {
     const cutoffMs = (nowSec - cutoff) * 1000;
     const idx = history.tokenIds.indexOf(player.tokenIdSuffix);
@@ -1283,9 +1306,12 @@ async function fetchAllHolders(tokenAddress: string, maxPages = 14): Promise<Ten
     try {
       const path: string = `/tokens/${encodeURIComponent(tokenAddress)}/holders?limit=50` +
         (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "");
+      // Holder lists change slowly — use the long REVALIDATE.holders TTL
+      // (30 min) instead of the 30s detail TTL. Without this, every
+      // player-page render fired up to 14 sequential paginated requests.
       const data: ListResponse<TeneroHolderRow> | null = await tget<ListResponse<TeneroHolderRow>>(
         path,
-        REVALIDATE.detail,
+        REVALIDATE.holders,
       );
       const rows = data?.rows ?? [];
       out.push(...rows);
@@ -1527,20 +1553,23 @@ export async function getTopNflWallets(limit = 100, perPool = 100): Promise<TopN
     .sort((a, b) => b.nflValueUsd - a.nflValueUsd);
 }
 
-export async function getPoolStats(id: string): Promise<PoolStats | null> {
-  const player = await getPlayer(id);
-  if (!player) return null;
-  const fees24h = Math.round(player.volume24h * POOL_FEE_RATE);
-  const apr = player.tvl > 0 ? +(((fees24h * 365) / player.tvl) * 100).toFixed(2) : 0;
+export async function getPoolStats(id: string, player?: PlayerSummary): Promise<PoolStats | null> {
+  // Accept an optional pre-fetched summary so callers (the player page)
+  // don't trigger a second full getPlayer pipeline — that was firing
+  // duplicate Tenero/RPC work on every render.
+  const p = player ?? (await getPlayer(id));
+  if (!p) return null;
+  const fees24h = Math.round(p.volume24h * POOL_FEE_RATE);
+  const apr = p.tvl > 0 ? +(((fees24h * 365) / p.tvl) * 100).toFixed(2) : 0;
   return {
     playerId: id,
-    tvl: player.tvl,
+    tvl: p.tvl,
     feeTier: POOL_FEE_RATE * 100,
-    volume24h: player.volume24h,
+    volume24h: p.volume24h,
     fees24h,
     apr,
-    depthBuy: Math.round(player.tvl * 0.5),
-    depthSell: Math.round(player.tvl * 0.5),
+    depthBuy: Math.round(p.tvl * 0.5),
+    depthSell: Math.round(p.tvl * 0.5),
   };
 }
 
@@ -1560,31 +1589,77 @@ export async function getMarketOverview(): Promise<MarketOverview> {
     players.reduce((a, p) => a + p.change24h * (p.marketCap / totalWeight), 0)
   ).toFixed(2);
 
-  // Build a coarse market-cap timeline by walking back through prior price
-  // ratios (1h, 4h, 1d, 7d, 30d, etc.) for the heaviest players.
-  const top = players.slice().sort((a, b) => b.marketCap - a.marketCap).slice(0, 12);
-  const offsets = [0, 1, 4, 24, 24 * 7, 24 * 30];
   const HOUR_MS = 3600 * 1000;
   const now = Date.now();
-  const marketCapSeries: PricePoint[] = offsets
-    .map((hoursAgo) => {
-      const t = now - hoursAgo * HOUR_MS;
+
+  // Build the market-cap timeline from real on-chain price snapshots.
+  // Indexer runs every 15 min; each snapshot has spot prices for every
+  // token suffix. We multiply by each token's CURRENT circulating supply
+  // (supply changes slowly — only when the bonding curve mints/burns —
+  // so it's a fair approximation for a 30-day window).
+  //
+  // Fallback to the coarse 6-point series if the snapshot history isn't
+  // available (cold-start or fetch failure).
+  const history = await readPriceHistory();
+  let marketCapSeries: PricePoint[] = [];
+  if (history && history.snapshots.length > 0) {
+    // Index circulating supply by tokenIdSuffix so we can look up by the
+    // snapshot's tokenIds array.
+    const supplyByTokenId = new Map<string, number>();
+    for (const p of players) {
+      const roster = ROSTER_BY_ID.get(p.id);
+      if (roster) supplyByTokenId.set(roster.tokenIdSuffix, p.circulatingSupply);
+    }
+    // Pre-compute alignment array: same length/order as snapshot.prices
+    const supplyAligned = history.tokenIds.map((id) => supplyByTokenId.get(id) ?? 0);
+
+    // Decimate to ~200 points max — for a 30-day window of 15-min
+    // snapshots that's ~2880 points, way more than the chart needs.
+    const TARGET_POINTS = 200;
+    const stride = Math.max(1, Math.ceil(history.snapshots.length / TARGET_POINTS));
+
+    for (let i = 0; i < history.snapshots.length; i += stride) {
+      const snap = history.snapshots[i];
       let total = 0;
-      for (const p of top) {
-        const change = hoursAgo === 0 ? 0 :
-          hoursAgo === 1  ? p.change1h :
-          hoursAgo === 4  ? p.change1h * 2 :
-          hoursAgo === 24 ? p.change24h :
-          hoursAgo === 24 * 7  ? p.change7d :
-          p.change7d * 1.4;
-        const factor = 1 + change / 100;
-        total += factor === 0 ? p.marketCap : p.marketCap / factor;
+      for (let j = 0; j < snap.prices.length; j++) {
+        total += snap.prices[j] * supplyAligned[j];
       }
-      // Scale to full population so series is comparable to total.
-      const scale = totalMarketCap / Math.max(1, top.reduce((a, p) => a + p.marketCap, 0));
-      return { t, price: Math.round(total * scale), volume: 0 };
-    })
-    .sort((a, b) => a.t - b.t);
+      marketCapSeries.push({ t: snap.ts, price: Math.round(total), volume: 0 });
+    }
+    // Always pin the freshest snapshot + current spot so the chart
+    // terminates at "now".
+    const lastSnap = history.snapshots[history.snapshots.length - 1];
+    if (marketCapSeries.length === 0 || marketCapSeries[marketCapSeries.length - 1].t !== lastSnap.ts) {
+      let total = 0;
+      for (let j = 0; j < lastSnap.prices.length; j++) {
+        total += lastSnap.prices[j] * supplyAligned[j];
+      }
+      marketCapSeries.push({ t: lastSnap.ts, price: Math.round(total), volume: 0 });
+    }
+    marketCapSeries.push({ t: now, price: Math.round(totalMarketCap), volume: 0 });
+  } else {
+    // Fallback: coarse synthetic series from current deltas.
+    const top = players.slice().sort((a, b) => b.marketCap - a.marketCap).slice(0, 12);
+    const offsets = [0, 1, 4, 24, 24 * 7, 24 * 30];
+    marketCapSeries = offsets
+      .map((hoursAgo) => {
+        const t = now - hoursAgo * HOUR_MS;
+        let total = 0;
+        for (const p of top) {
+          const change = hoursAgo === 0 ? 0 :
+            hoursAgo === 1  ? p.change1h :
+            hoursAgo === 4  ? p.change1h * 2 :
+            hoursAgo === 24 ? p.change24h :
+            hoursAgo === 24 * 7  ? p.change7d :
+            p.change7d * 1.4;
+          const factor = 1 + change / 100;
+          total += factor === 0 ? p.marketCap : p.marketCap / factor;
+        }
+        const scale = totalMarketCap / Math.max(1, top.reduce((a, p) => a + p.marketCap, 0));
+        return { t, price: Math.round(total * scale), volume: 0 };
+      })
+      .sort((a, b) => a.t - b.t);
+  }
 
   // 24h volume chart: split totalVolume24h across hourly buckets weighted by
   // each player's actual `volume_1d_usd` distribution (best we can do
