@@ -951,14 +951,28 @@ export async function getPriceSeries(id: string, tf: Timeframe): Promise<PricePo
 // Map an indexed (event-log derived) trade onto the legacy Trade
 // interface so downstream UI doesn't need to know which source it
 // came from. tokenIdSuffix → playerId via ROSTER_BY_TOKEN.
-function indexedToTrade(t: IndexedTrade): Trade | null {
+function indexedToTrade(
+  t: IndexedTrade,
+  spotByPlayerId?: Map<string, number>,
+): Trade | null {
   const tokenAddress = `${FOOTBALLFUN_CONTRACT}:${t.tokenIdSuffix}`;
   const player = ROSTER_BY_TOKEN.get(tokenAddress);
   if (!player) return null;
   const side: "buy" | "sell" =
     t.side === "buy" || t.side === "swap-in" ? "buy" : "sell";
-  const priceUsd = t.shareAmount > 0 && t.usdAmount > 0
-    ? t.usdAmount / t.shareAmount
+  // The indexer hard-codes usdAmount = 0 for swap legs (no paired
+  // USDC Transfer on token-for-token swaps). When a spot lookup is
+  // provided, value those legs at shareAmount × spot — otherwise
+  // every swap shows $0 in the feed and rolls up to $0 in flow tiles.
+  let totalUsd = t.usdAmount;
+  if (totalUsd <= 0 && (t.side === "swap-in" || t.side === "swap-out") && spotByPlayerId) {
+    const spot = spotByPlayerId.get(player.id) ?? 0;
+    if (spot > 0 && t.shareAmount > 0) {
+      totalUsd = t.shareAmount * spot;
+    }
+  }
+  const priceUsd = t.shareAmount > 0 && totalUsd > 0
+    ? totalUsd / t.shareAmount
     : 0;
   return {
     id: `${t.txId}-${t.logIndex}`,
@@ -967,7 +981,7 @@ function indexedToTrade(t: IndexedTrade): Trade | null {
     flow: t.side,
     priceUsd,
     amount: t.shareAmount,
-    totalUsd: t.usdAmount,
+    totalUsd,
     wallet: t.wallet,
     txHash: t.txId,
     timestamp: t.blockTime,
@@ -1075,9 +1089,15 @@ async function getNflTradesAndFlow(perPool = 50): Promise<{ trades: Trade[]; flo
   let classified: Trade[] = [];
   const history = await readTradeHistory();
   if (history && history.trades.length > 0) {
+    // Build spot lookup so swap legs can be valued at shareAmount × spot
+    // instead of the indexer's hard-coded $0.
+    const players = await getPlayers();
+    const spotByPlayerId = new Map<string, number>(
+      players.map((p) => [p.id, p.priceUsd]),
+    );
     // Index is pre-sorted by blockTime DESC; map to Trade and we're done.
     for (const t of history.trades) {
-      const mapped = indexedToTrade(t);
+      const mapped = indexedToTrade(t, spotByPlayerId);
       if (mapped) classified.push(mapped);
     }
   } else {
@@ -1261,28 +1281,40 @@ export async function getNflDailyVolume(days = 30): Promise<{ t: number; volumeU
 
   const trades = await readTradeHistory();
   if (trades && trades.trades.length > 0) {
-    // Swaps are double-counted in the event stream (both in + out legs),
-    // so collapse them to once-per-swap by deduping on (txId, logIndex
-    // remainder mod 2 → buyer leg only). For NFL volume, count buy +
-    // sell trades + one leg of each swap pair.
-    const seen = new Set<string>();
+    // The indexer records usdAmount = 0 for swap legs because they have
+    // no paired USDC Transfer (token-for-token through the pair). Pull
+    // each token's current spot so we can value those swap legs at
+    // shareAmount × spot — otherwise every swap goes uncounted and the
+    // chart systematically under-represents reality.
+    //
+    // For a buy/sell tx the indexer already has the right USD value
+    // from the matched USDC Transfer; use it directly. Swaps emit two
+    // legs per tx (one swap-out + one swap-in) — dedupe on txId so we
+    // only count one leg's value, never both.
+    const players = await getPlayers();
+    const spotBySuffix = new Map<string, number>();
+    for (const p of players) {
+      const roster = ROSTER_BY_ID.get(p.id);
+      if (roster) spotBySuffix.set(roster.tokenIdSuffix, p.priceUsd);
+    }
+    const seenSwapTx = new Set<string>();
     for (const t of trades.trades) {
-      if (t.side === "swap-in") {
-        const key = `${t.txId}:swap`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-      } else if (t.side === "swap-out") {
-        const key = `${t.txId}:swap`;
-        if (seen.has(key)) continue;
-        seen.add(key);
+      let usd = t.usdAmount;
+      if (t.side === "swap-in" || t.side === "swap-out") {
+        if (seenSwapTx.has(t.txId)) continue;
+        seenSwapTx.add(t.txId);
+        if (usd <= 0) {
+          const spot = spotBySuffix.get(t.tokenIdSuffix) ?? 0;
+          usd = t.shareAmount * spot;
+        }
       }
+      if (usd <= 0) continue;
       const day = Math.floor(t.blockTime / dayMs) * dayMs;
-      buckets.set(day, (buckets.get(day) ?? 0) + (t.usdAmount || 0));
+      buckets.set(day, (buckets.get(day) ?? 0) + usd);
     }
   } else {
-    // Fallback path: sum daily OHLC volumes per active player. This is
-    // what the chart used before the trade indexer existed; it can
-    // under-report when Tenero's daily bars miss low-volume tokens.
+    // Fallback path: sum daily OHLC volumes per active player. Used
+    // before the indexer accumulates trades.
     const players = await getPlayers();
     const active = players.filter((p) => p.volume24h > 0 || p.trades24h > 0);
     const targets = active.length > 0 ? active : players.slice(0, 20);
