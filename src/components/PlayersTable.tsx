@@ -12,7 +12,7 @@ import { TEAM_NAMES } from "@/lib/data/players";
 import type { PlayerSummary, Position } from "@/lib/types";
 
 type SortKey =
-  | "rank" | "name" | "priceUsd" | "change6h" | "change24h" | "change7d"
+  | "rank" | "name" | "priceUsd" | "change1h" | "change6h" | "change24h" | "change7d"
   | "marketCap" | "volume24h" | "holders"
   | "activeSupply" | "circulatingSupply";
 
@@ -101,12 +101,13 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1120px] text-[13px]">
+        <table className="w-full min-w-[1180px] text-[13px]">
           <thead style={{ background: "color-mix(in oklab, var(--color-press) 50%, transparent)" }}>
             <tr className="border-b border-[var(--color-line)]">
               <Th onClick={() => onSort("rank")}    active={sortKey === "rank"}    dir={sortDir} align="left" className="w-12 pl-5">#</Th>
               <Th onClick={() => onSort("name")}    active={sortKey === "name"}    dir={sortDir} align="left">Player</Th>
               <Th onClick={() => onSort("priceUsd")} active={sortKey === "priceUsd"} dir={sortDir}>Price</Th>
+              <Th onClick={() => onSort("change1h")} active={sortKey === "change1h"} dir={sortDir}>1h</Th>
               <Th onClick={() => onSort("change6h")} active={sortKey === "change6h"} dir={sortDir}>6h</Th>
               <Th onClick={() => onSort("change24h")} active={sortKey === "change24h"} dir={sortDir}>24h</Th>
               <Th onClick={() => onSort("change7d")} active={sortKey === "change7d"} dir={sortDir}>7d</Th>
@@ -157,6 +158,7 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
                     </Link>
                   </td>
                   <NumCell>{fmtPrice(p.priceUsd)}</NumCell>
+                  <Cell><div className="flex justify-center"><Delta value={p.change1h} /></div></Cell>
                   <Cell><div className="flex justify-center"><Delta value={p.change6h} /></div></Cell>
                   <Cell><div className="flex justify-center"><Delta value={p.change24h} /></div></Cell>
                   <Cell><div className="flex justify-center"><Delta value={p.change7d} /></div></Cell>
