@@ -1,5 +1,5 @@
 import "server-only";
-import { createPublicClient, fallback, http, parseAbiItem, type Address, type Log } from "viem";
+import { createPublicClient, fallback, http, parseAbiItem, type Address } from "viem";
 import { base } from "viem/chains";
 import { ROSTER, FOOTBALLFUN_CONTRACT } from "./roster";
 import type { IndexedTrade } from "./trade-indexer";
@@ -56,9 +56,16 @@ const client = createPublicClient({
 const TRANSFER_SINGLE_EVENT = parseAbiItem(
   "event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)",
 );
-const USDC_TRANSFER_EVENT = parseAbiItem(
-  "event Transfer(address indexed from, address indexed to, uint256 value)",
-);
+
+// USDC ERC-20 Transfer event signature — used to decode receipt logs
+// for USD attribution. We pull receipts per tx (rather than a separate
+// filtered getLogs) so the user's net USDC change is computed
+// regardless of which contract sits on the counterparty side of the
+// USDC move. Router upgrades or new bonding-curve paths can't quietly
+// break this.
+const USDC_TRANSFER_TOPIC =
+  "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+const USDC_LC = USDC_ADDRESS.toLowerCase();
 
 // Module cache so concurrent ISR regens / page renders share a single
 // scan. 30s is short enough that fresh trades surface within half a
@@ -86,32 +93,15 @@ export async function tailNflTrades(lastIndexedBlock: number): Promise<IndexedTr
       ? head - BigInt(MAX_TAIL_BLOCKS) + 1n
       : fromBlock;
 
-    // Three parallel log queries: NFL share transfers, and USDC moves
-    // touching the FDFPair (both directions). USDC volume is huge on
-    // Base, so we MUST filter by topic — an unfiltered range query
-    // would return tens of thousands of unrelated events.
-    const [shareLogs, usdcOut, usdcIn] = await Promise.all([
-      client.getLogs({
-        address: FOOTBALLFUN_CONTRACT as Address,
-        event: TRANSFER_SINGLE_EVENT,
-        fromBlock: scanFrom,
-        toBlock: head,
-      }),
-      client.getLogs({
-        address: USDC_ADDRESS,
-        event: USDC_TRANSFER_EVENT,
-        args: { from: PAIR_ADDRESS },
-        fromBlock: scanFrom,
-        toBlock: head,
-      }),
-      client.getLogs({
-        address: USDC_ADDRESS,
-        event: USDC_TRANSFER_EVENT,
-        args: { to: PAIR_ADDRESS },
-        fromBlock: scanFrom,
-        toBlock: head,
-      }),
-    ]);
+    // Just NFL share transfers. USD attribution comes from each tx's
+    // receipt below — that way we're robust to USDC moving through
+    // any contract (router, FOOTBALLFUN, or PAIR), not just PAIR.
+    const shareLogs = await client.getLogs({
+      address: FOOTBALLFUN_CONTRACT as Address,
+      event: TRANSFER_SINGLE_EVENT,
+      fromBlock: scanFrom,
+      toBlock: head,
+    });
 
     // Filter NFL share movements that involve a user wallet (skip
     // mints/burns and internal pair ↔ contract moves).
@@ -156,32 +146,40 @@ export async function tailNflTrades(lastIndexedBlock: number): Promise<IndexedTr
       return [];
     }
 
-    // Build USDC-movement-by-tx so we can attribute net USD to each
-    // trade. Both `from=PAIR` and `to=PAIR` queries are needed because
-    // the pair pays out USDC on sells and receives it on buys.
-    type UsdcMove = { from: string; to: string; value: bigint };
-    const usdcByTx = new Map<string, UsdcMove[]>();
-    for (const log of [...usdcOut, ...usdcIn] as Log[]) {
-      const txHash = log.transactionHash;
-      if (!txHash) continue;
-      // viem typed the topic args via parseAbiItem; access them through
-      // the typed log shape.
-      const args = (log as unknown as { args: { from?: Address; to?: Address; value?: bigint } }).args;
-      if (!args?.from || !args.to || args.value == null) continue;
-      const move: UsdcMove = {
-        from: args.from.toLowerCase(),
-        to: args.to.toLowerCase(),
-        value: args.value,
-      };
-      const arr = usdcByTx.get(txHash);
-      if (arr) arr.push(move);
-      else usdcByTx.set(txHash, [move]);
-    }
-
-    // Head timestamp anchors the rest — every other block's timestamp
-    // is derived by subtracting blockGap × 2s. Saves N getBlock calls.
+    // Head timestamp anchors block-time derivation. Every other block's
+    // timestamp is computed as (head - blockGap × 2s) — saves a getBlock
+    // call per tx.
     const headBlock = await client.getBlock({ blockNumber: head });
     const headTimeMs = Number(headBlock.timestamp) * 1000;
+
+    // Pull a receipt per tx in parallel so USDC attribution can sum
+    // every USDC Transfer the user is involved in, regardless of
+    // counterparty. One RPC per tx is fine since the tail typically
+    // contains a handful of fresh trades.
+    const txHashes = Array.from(legsByTx.keys());
+    const receipts = await Promise.all(
+      txHashes.map((hash) =>
+        client.getTransactionReceipt({ hash: hash as `0x${string}` }).catch(() => null),
+      ),
+    );
+    type UsdcMove = { from: string; to: string; value: bigint };
+    const usdcByTx = new Map<string, UsdcMove[]>();
+    receipts.forEach((receipt, i) => {
+      if (!receipt) return;
+      const moves: UsdcMove[] = [];
+      for (const log of receipt.logs) {
+        if (log.address.toLowerCase() !== USDC_LC) continue;
+        if (log.topics[0] !== USDC_TRANSFER_TOPIC) continue;
+        const fromTopic = log.topics[1];
+        const toTopic = log.topics[2];
+        if (!fromTopic || !toTopic) continue;
+        const from = ("0x" + fromTopic.slice(26)).toLowerCase();
+        const to = ("0x" + toTopic.slice(26)).toLowerCase();
+        const value = BigInt(log.data);
+        moves.push({ from, to, value });
+      }
+      if (moves.length > 0) usdcByTx.set(txHashes[i], moves);
+    });
 
     const isAmm = (addr: string) => addr === PAIR_LC || addr === FOOTBALLFUN_LC;
     const out: IndexedTrade[] = [];
