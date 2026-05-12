@@ -488,17 +488,22 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
     return summary;
   });
 
-  // Override the upstream's unreliable price_*_ago deltas with values
-  // computed from our own 15-minute price-history snapshot (written by
-  // .github/workflows/index-prices.yml, read from the data branch via
-  // raw.githubusercontent.com). This is a single file fetch per render
-  // instead of 72 OHLC fetches, and it gives precise historical spot
-  // prices regardless of trade density.
+  // Compute 1H / 6H / 24H / 7D deltas from the on-chain trade index.
+  // Each indexed trade carries (usdAmount, shareAmount, blockTime), and
+  // their ratio is the implied spot at that moment — sourced from the
+  // same TransferSingle event logs the rest of the app uses, so it's
+  // untouched by Tenero's stale price_*_ago fields OR by the recent
+  // price-indexer source switch (Tenero → on-chain, 2026-05-12), which
+  // contaminated any snapshot older than that with ~3%-high Tenero
+  // values.
   //
-  // The OHLC override stays as a fallback for the cold-start period
-  // before the snapshot history fills in (first 7 days after deploy)
-  // and for tokens not yet in the snapshot's tokenIds list.
-  const history = await readPriceHistory();
+  // Snapshot history stays as a fallback for tokens whose first trade
+  // lands inside the requested window; OHLC stays as a deeper fallback.
+  const [history, tradeStore] = await Promise.all([
+    readPriceHistory(),
+    readTradeHistory(),
+  ]);
+  const tradesByToken = buildTradesByTokenIndex(tradeStore?.trades ?? []);
   const nowMs = Date.now();
   const enrichers = summaries.map((summary) => async () => {
     const roster = ROSTER_BY_ID.get(summary.id);
@@ -508,40 +513,66 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
     const spot = Number(row.price?.current_price ?? 0);
     if (spot <= 0) return;
 
-    // Primary path: snapshot-derived deltas. The display price is the
-    // sell-side adjusted spot (× 0.97), but for % comparisons we use
-    // raw spot vs raw historical spot on both sides — the fee cancels.
+    const tokenTrades = tradesByToken.get(roster.tokenIdSuffix) ?? [];
+
     let got1h = false;
     let got6h = false;
     let got24h = false;
     let got7d = false;
+
+    // Primary: trade-indexer-derived prices. Defensive — if the implied
+    // price is non-positive or wildly off (>50% from current spot in a
+    // window with little activity), reject it.
+    const tradeAt1h  = priceAtFromTrades(tokenTrades, nowMs - 3600_000);
+    const tradeAt6h  = priceAtFromTrades(tokenTrades, nowMs - 6 * 3600_000);
+    const tradeAt24h = priceAtFromTrades(tokenTrades, nowMs - 86_400_000);
+    const tradeAt7d  = priceAtFromTrades(tokenTrades, nowMs - 7 * 86_400_000);
+    if (tradeAt1h != null) {
+      summary.change1h = +(((spot - tradeAt1h) / tradeAt1h) * 100).toFixed(2);
+      got1h = true;
+    }
+    if (tradeAt6h != null) {
+      summary.change6h = +(((spot - tradeAt6h) / tradeAt6h) * 100).toFixed(2);
+      got6h = true;
+    }
+    if (tradeAt24h != null) {
+      summary.change24h = +(((spot - tradeAt24h) / tradeAt24h) * 100).toFixed(2);
+      got24h = true;
+    }
+    if (tradeAt7d != null) {
+      summary.change7d = +(((spot - tradeAt7d) / tradeAt7d) * 100).toFixed(2);
+      got7d = true;
+    }
+    if (got1h && got6h && got24h && got7d) return;
+
+    // Secondary: snapshot price history (used to be primary, but old
+    // snapshots are contaminated with Tenero prices).
     if (history) {
-      const at1h = priceAt(history, roster.tokenIdSuffix, nowMs - 3600_000);
-      const at6h = priceAt(history, roster.tokenIdSuffix, nowMs - 6 * 3600_000);
-      const at24h = priceAt(history, roster.tokenIdSuffix, nowMs - 86_400_000);
-      const at7d = priceAt(history, roster.tokenIdSuffix, nowMs - 7 * 86_400_000);
-      if (at1h != null) {
+      const at1h = !got1h ? priceAt(history, roster.tokenIdSuffix, nowMs - 3600_000) : null;
+      const at6h = !got6h ? priceAt(history, roster.tokenIdSuffix, nowMs - 6 * 3600_000) : null;
+      const at24h = !got24h ? priceAt(history, roster.tokenIdSuffix, nowMs - 86_400_000) : null;
+      const at7d = !got7d ? priceAt(history, roster.tokenIdSuffix, nowMs - 7 * 86_400_000) : null;
+      if (!got1h && at1h != null) {
         summary.change1h = +(((spot - at1h) / at1h) * 100).toFixed(2);
         got1h = true;
       }
-      if (at6h != null) {
+      if (!got6h && at6h != null) {
         summary.change6h = +(((spot - at6h) / at6h) * 100).toFixed(2);
         got6h = true;
       }
-      if (at24h != null) {
+      if (!got24h && at24h != null) {
         summary.change24h = +(((spot - at24h) / at24h) * 100).toFixed(2);
         got24h = true;
       }
-      if (at7d != null) {
+      if (!got7d && at7d != null) {
         summary.change7d = +(((spot - at7d) / at7d) * 100).toFixed(2);
         got7d = true;
       }
     }
     if (got1h && got6h && got24h && got7d) return;
 
-    // Fallback (cold-start period before the snapshot fills in): keep
-    // the OHLC override for fresh-activity divergence cases. Skip when
-    // the token is inactive or the upstream snapshots are reliable.
+    // Tertiary: Tenero OHLC. Cold-start only — won't fire for tokens
+    // that have any indexer history.
     if (summary.volume24h <= 0 && summary.volume7d <= 0) return;
     if (
       isPriceSnapshotReliable(row.price?.price_1h_ago, spot) &&
@@ -605,6 +636,149 @@ function isPriceSnapshotReliable(snapshot: number | undefined, currentPrice: num
     return false;
   }
   return Math.abs(currentPrice - snapshot) / currentPrice > 1e-6;
+}
+
+// Group every indexed trade by tokenIdSuffix, sorted ascending by
+// blockTime. Used downstream by priceAtFromTrades for binary-search
+// historical price lookups. Computed once per render and shared across
+// all 72 tokens.
+function buildTradesByTokenIndex(trades: IndexedTrade[]): Map<string, IndexedTrade[]> {
+  const out = new Map<string, IndexedTrade[]>();
+  for (const t of trades) {
+    const arr = out.get(t.tokenIdSuffix);
+    if (arr) arr.push(t);
+    else out.set(t.tokenIdSuffix, [t]);
+  }
+  for (const arr of out.values()) arr.sort((a, b) => a.blockTime - b.blockTime);
+  return out;
+}
+
+// Implied historical spot at `targetMs` from indexed trades. Returns
+// the implied price of the most recent trade at-or-before the target.
+// The spot stays constant between trades on a bonding curve, so this
+// is exact (modulo tiny slippage within the trade — usdAmount /
+// shareAmount is the trade's average fill, ≈ post-trade spot for
+// small fills on deep pools).
+//
+// Returns null if no trade ≤ targetMs exists (e.g. the token's first
+// trade was AFTER the target window — caller should leave the delta
+// to the next fallback layer).
+function priceAtFromTrades(
+  trades: IndexedTrade[],     // sorted ASC by blockTime
+  targetMs: number,
+): number | null {
+  if (trades.length === 0) return null;
+  let lo = 0;
+  let hi = trades.length - 1;
+  let idx = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (trades[mid].blockTime <= targetMs) {
+      idx = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  if (idx < 0) return null;
+  const t = trades[idx];
+  if (t.shareAmount <= 0 || t.usdAmount <= 0) return null;
+  return t.usdAmount / t.shareAmount;
+}
+
+// Reconstruct a per-token (price, supply) stepped timeline from
+// trades, anchored on the current state. For each trade we know:
+//   - implied price after the trade = usdAmount / shareAmount
+//   - supply effect: +shareAmount (buy), -shareAmount (sell),
+//     0 (swap-in / swap-out — those move pair balance, not circulating)
+// Walking DESC from current supply lets us derive supplyAfter[i] for
+// every prior trade. Between trade i and i+1, both price and supply
+// hold constant at trade i's values.
+interface TokenStep { t: number; price: number; supply: number }
+function buildTokenStepsFromTrades(
+  trades: IndexedTrade[],         // sorted ASC by blockTime
+  currentSupply: number,
+): TokenStep[] {
+  if (trades.length === 0) return [];
+  const supplyAfter = new Array<number>(trades.length);
+  supplyAfter[trades.length - 1] = currentSupply;
+  for (let i = trades.length - 2; i >= 0; i--) {
+    const next = trades[i + 1];
+    let delta = 0;
+    if (next.side === "buy") delta = next.shareAmount;
+    else if (next.side === "sell") delta = -next.shareAmount;
+    supplyAfter[i] = supplyAfter[i + 1] - delta;
+  }
+  const out: TokenStep[] = new Array(trades.length);
+  for (let i = 0; i < trades.length; i++) {
+    const t = trades[i];
+    out[i] = {
+      t: t.blockTime,
+      price: t.shareAmount > 0 && t.usdAmount > 0 ? t.usdAmount / t.shareAmount : 0,
+      supply: Math.max(0, supplyAfter[i]),
+    };
+  }
+  return out;
+}
+
+function lookupStep(steps: TokenStep[], targetMs: number): TokenStep | null {
+  if (steps.length === 0) return null;
+  let lo = 0;
+  let hi = steps.length - 1;
+  let idx = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (steps[mid].t <= targetMs) {
+      idx = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return idx >= 0 ? steps[idx] : null;
+}
+
+function buildMarketCapSeriesFromTrades(
+  players: PlayerSummary[],
+  tradesByToken: Map<string, IndexedTrade[]>,
+  totalMarketCapNow: number,
+): PricePoint[] {
+  const now = Date.now();
+  // 7-day window, hourly granularity = 168 points. Captures every
+  // meaningful move without overwhelming the chart.
+  const WINDOW_MS = 7 * 86_400_000;
+  const STEP_MS = 3_600_000;
+
+  const stepsByToken = new Map<string, TokenStep[]>();
+  let constantContribution = 0;        // tokens with no indexed trades
+
+  for (const player of players) {
+    const roster = ROSTER_BY_ID.get(player.id);
+    if (!roster) continue;
+    const tokenTrades = tradesByToken.get(roster.tokenIdSuffix) ?? [];
+    if (tokenTrades.length === 0) {
+      // No trades in the indexed window — state is unchanged. Add a
+      // constant baseline to every sample point.
+      constantContribution += player.priceUsd * player.circulatingSupply;
+      continue;
+    }
+    stepsByToken.set(
+      roster.tokenIdSuffix,
+      buildTokenStepsFromTrades(tokenTrades, player.circulatingSupply),
+    );
+  }
+
+  const series: PricePoint[] = [];
+  for (let t = now - WINDOW_MS; t <= now; t += STEP_MS) {
+    let total = constantContribution;
+    for (const steps of stepsByToken.values()) {
+      const step = lookupStep(steps, t);
+      if (step) total += step.price * step.supply;
+    }
+    if (total > 0) series.push({ t, price: Math.round(total), volume: 0 });
+  }
+  series.push({ t: now, price: Math.round(totalMarketCapNow), volume: 0 });
+  return series;
 }
 
 // Sport.fun's bonding-curve spot is `currency_reserve / token_reserve`
@@ -728,34 +902,62 @@ export async function getPlayer(id: string): Promise<PlayerSummary | null> {
     }
     const summary = buildPlayerSummary(player, data);
     summary.sparkline7d = tinySparkline(data);
-    // Same enrichment pipeline as getPlayers() — snapshot-derived deltas
-    // first, OHLC fallback when the snapshot history doesn't reach.
+    // Same enrichment pipeline as getPlayers() — trade-indexer-derived
+    // deltas first, snapshot history second, OHLC last.
     const spot = Number(data?.price?.current_price ?? 0);
     let got1h = false;
     let got6h = false;
     let got24h = false;
     let got7d = false;
     if (spot > 0) {
-      const history = await readPriceHistory();
-      if (history) {
-        const nowMs = Date.now();
-        const at1h = priceAt(history, player.tokenIdSuffix, nowMs - 3600_000);
-        const at6h = priceAt(history, player.tokenIdSuffix, nowMs - 6 * 3600_000);
-        const at24h = priceAt(history, player.tokenIdSuffix, nowMs - 86_400_000);
-        const at7d = priceAt(history, player.tokenIdSuffix, nowMs - 7 * 86_400_000);
-        if (at1h != null) {
+      const [history, tradeStore] = await Promise.all([
+        readPriceHistory(),
+        readTradeHistory(),
+      ]);
+      const nowMs = Date.now();
+      const tokenTrades = (tradeStore?.trades ?? [])
+        .filter((t) => t.tokenIdSuffix === player.tokenIdSuffix)
+        .sort((a, b) => a.blockTime - b.blockTime);
+
+      const tradeAt1h  = priceAtFromTrades(tokenTrades, nowMs - 3600_000);
+      const tradeAt6h  = priceAtFromTrades(tokenTrades, nowMs - 6 * 3600_000);
+      const tradeAt24h = priceAtFromTrades(tokenTrades, nowMs - 86_400_000);
+      const tradeAt7d  = priceAtFromTrades(tokenTrades, nowMs - 7 * 86_400_000);
+      if (tradeAt1h != null) {
+        summary.change1h = +(((spot - tradeAt1h) / tradeAt1h) * 100).toFixed(2);
+        got1h = true;
+      }
+      if (tradeAt6h != null) {
+        summary.change6h = +(((spot - tradeAt6h) / tradeAt6h) * 100).toFixed(2);
+        got6h = true;
+      }
+      if (tradeAt24h != null) {
+        summary.change24h = +(((spot - tradeAt24h) / tradeAt24h) * 100).toFixed(2);
+        got24h = true;
+      }
+      if (tradeAt7d != null) {
+        summary.change7d = +(((spot - tradeAt7d) / tradeAt7d) * 100).toFixed(2);
+        got7d = true;
+      }
+
+      if (history && !(got1h && got6h && got24h && got7d)) {
+        const at1h = !got1h ? priceAt(history, player.tokenIdSuffix, nowMs - 3600_000) : null;
+        const at6h = !got6h ? priceAt(history, player.tokenIdSuffix, nowMs - 6 * 3600_000) : null;
+        const at24h = !got24h ? priceAt(history, player.tokenIdSuffix, nowMs - 86_400_000) : null;
+        const at7d = !got7d ? priceAt(history, player.tokenIdSuffix, nowMs - 7 * 86_400_000) : null;
+        if (!got1h && at1h != null) {
           summary.change1h = +(((spot - at1h) / at1h) * 100).toFixed(2);
           got1h = true;
         }
-        if (at6h != null) {
+        if (!got6h && at6h != null) {
           summary.change6h = +(((spot - at6h) / at6h) * 100).toFixed(2);
           got6h = true;
         }
-        if (at24h != null) {
+        if (!got24h && at24h != null) {
           summary.change24h = +(((spot - at24h) / at24h) * 100).toFixed(2);
           got24h = true;
         }
-        if (at7d != null) {
+        if (!got7d && at7d != null) {
           summary.change7d = +(((spot - at7d) / at7d) * 100).toFixed(2);
           got7d = true;
         }
@@ -1677,72 +1879,21 @@ export async function getMarketOverview(): Promise<MarketOverview> {
   const HOUR_MS = 3600 * 1000;
   const now = Date.now();
 
-  // Build the market-cap timeline from real on-chain snapshots — each
-  // has spot prices AND circulating supplies per token (supplies added
-  // 2026-05-12). Snapshots predating that change get filtered out
-  // because using current supply for an old price overstates the
-  // historical market cap (supply grows over time as the bonding curve
-  // mints), which produced a fake "we were higher in April" trend.
+  // Build the market-cap timeline by reconstructing per-token (price,
+  // supply) at past timestamps from the on-chain trade index. For each
+  // trade we know its implied price (usdAmount / shareAmount) and its
+  // effect on circulating supply (buys mint, sells burn, swaps neutral)
+  // — combined with each token's CURRENT spot + supply this lets us
+  // walk backward and derive (price, supply) at any past time exactly.
   //
-  // Until enough new snapshots accumulate, the chart will be short.
-  // Fallback to the coarse synthetic series only if NO snapshots have
-  // supply data yet.
-  const history = await readPriceHistory();
-  const supplied = history?.snapshots.filter(
-    (s) => Array.isArray(s.supplies) && s.supplies.length === s.prices.length,
-  ) ?? [];
-
-  let marketCapSeries: PricePoint[] = [];
-  if (supplied.length > 0) {
-    // Decimate to ~200 points max. For a 7-day window of 15-min
-    // snapshots that's ~672 points; for shorter windows it's a no-op.
-    const TARGET_POINTS = 200;
-    const stride = Math.max(1, Math.ceil(supplied.length / TARGET_POINTS));
-
-    for (let i = 0; i < supplied.length; i += stride) {
-      const snap = supplied[i];
-      let total = 0;
-      const supplies = snap.supplies as number[];
-      for (let j = 0; j < snap.prices.length; j++) {
-        total += snap.prices[j] * supplies[j];
-      }
-      marketCapSeries.push({ t: snap.ts, price: Math.round(total), volume: 0 });
-    }
-    // Always pin the freshest snapshot + current live total so the
-    // chart terminates at "now".
-    const lastSnap = supplied[supplied.length - 1];
-    if (marketCapSeries.length === 0 || marketCapSeries[marketCapSeries.length - 1].t !== lastSnap.ts) {
-      let total = 0;
-      const supplies = lastSnap.supplies as number[];
-      for (let j = 0; j < lastSnap.prices.length; j++) {
-        total += lastSnap.prices[j] * supplies[j];
-      }
-      marketCapSeries.push({ t: lastSnap.ts, price: Math.round(total), volume: 0 });
-    }
-    marketCapSeries.push({ t: now, price: Math.round(totalMarketCap), volume: 0 });
-  } else {
-    // Fallback: coarse synthetic series from current deltas.
-    const top = players.slice().sort((a, b) => b.marketCap - a.marketCap).slice(0, 12);
-    const offsets = [0, 1, 4, 24, 24 * 7, 24 * 30];
-    marketCapSeries = offsets
-      .map((hoursAgo) => {
-        const t = now - hoursAgo * HOUR_MS;
-        let total = 0;
-        for (const p of top) {
-          const change = hoursAgo === 0 ? 0 :
-            hoursAgo === 1  ? p.change1h :
-            hoursAgo === 4  ? p.change1h * 2 :
-            hoursAgo === 24 ? p.change24h :
-            hoursAgo === 24 * 7  ? p.change7d :
-            p.change7d * 1.4;
-          const factor = 1 + change / 100;
-          total += factor === 0 ? p.marketCap : p.marketCap / factor;
-        }
-        const scale = totalMarketCap / Math.max(1, top.reduce((a, p) => a + p.marketCap, 0));
-        return { t, price: Math.round(total * scale), volume: 0 };
-      })
-      .sort((a, b) => a.t - b.t);
-  }
+  // Tokens with no recent trades contribute a constant
+  // currentPrice × currentSupply across the whole series (their state
+  // genuinely didn't change). Tokens whose first indexed trade lands
+  // after a sample time get excluded for that sample (we don't know
+  // their state pre-first-trade).
+  const tradeStoreForChart = await readTradeHistory();
+  const tradesByToken = buildTradesByTokenIndex(tradeStoreForChart?.trades ?? []);
+  const marketCapSeries = buildMarketCapSeriesFromTrades(players, tradesByToken, totalMarketCap);
 
   // 24h volume chart: split totalVolume24h across hourly buckets weighted by
   // each player's actual `volume_1d_usd` distribution (best we can do
