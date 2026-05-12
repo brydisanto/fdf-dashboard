@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ChevronRight, ExternalLink } from "lucide-react";
 import {
@@ -27,26 +28,23 @@ export default async function PlayerPage(props: PageProps<"/player/[id]">) {
   const player = await getPlayer(id);
   if (!player) notFound();
 
-  // Only fetch the default 7D series server-side; 30D / ALL load lazily
-  // via /api/player/[id]/series when the user clicks the tab. Cuts two
-  // upstream OHLC fetches + price-history snapshot scans from the cold
-  // render path.
-  const [holders, topHolders, pool, trades, initialSeries] = await Promise.all([
-    getHolders(id),
-    getTopHolders(id, 25),
+  // Fast critical-path fetches — chart + pool + trades + initial series.
+  // Holders sections (distribution + largest) move below into Suspense
+  // boundaries so the slow Tenero /holders pagination doesn't block the
+  // first paint. Without this, a single rate-limited holders fetch
+  // could leave the entire page hanging for 10-30s.
+  const [pool, trades, initialSeries] = await Promise.all([
     getPoolStats(id, player),
     getTrades(id, 30),
     getPriceSeries(id, "7D"),
   ]);
 
-  // Resolve wallet tier badges for both the trade feed and the
-  // largest-holders table — single batched call, deduped.
+  // Resolve wallet tier badges for the trade feed only — the holders
+  // section fetches its own snapshots inside its Suspense boundary.
   const tradeAddrs = Array.from(new Set(trades.map((t) => t.wallet))).slice(0, 50);
-  const holderAddrs = topHolders.map((h) => h.address);
-  const allAddrs = Array.from(new Set([...tradeAddrs, ...holderAddrs]));
-  const snapshotMap = await getWalletSnapshots(allAddrs);
-  const wallets: Record<string, WalletSnapshot> = {};
-  for (const [k, v] of snapshotMap) wallets[k] = v;
+  const tradeSnapshotMap = await getWalletSnapshots(tradeAddrs);
+  const tradeWallets: Record<string, WalletSnapshot> = {};
+  for (const [k, v] of tradeSnapshotMap) tradeWallets[k] = v;
 
   const supplyShare = player.circulatingSupply / player.maxSupply;
   const activeShare = player.activeSupply / Math.max(1, player.maxSupply);
@@ -258,11 +256,10 @@ export default async function PlayerPage(props: PageProps<"/player/[id]">) {
         </Card>
       </div>
 
-      {/* Holder Distribution — full width */}
-      <Card className="mt-4">
-        <CardHeader title="Holder Distribution" hint="By share of circulating supply" />
-        <HoldersBreakdown buckets={holders} totalHolders={player.holders} />
-      </Card>
+      {/* Holder Distribution — streams in after fetchAllHolders resolves. */}
+      <Suspense fallback={<HolderDistributionSkeleton totalHolders={player.holders} />}>
+        <HolderDistributionSection playerId={id} totalHolders={player.holders} />
+      </Suspense>
 
       {/* Recent Trades — press card */}
       <div className="mt-4">
@@ -277,25 +274,102 @@ export default async function PlayerPage(props: PageProps<"/player/[id]">) {
           }
         />
         <Card variant="press" padded={false}>
-          <RecentTrades trades={trades} wallets={wallets} showPlayer={false} />
+          <RecentTrades trades={trades} wallets={tradeWallets} showPlayer={false} />
         </Card>
       </div>
 
-      {/* Largest Holders — press card */}
-      <div className="mt-4">
-        <SectionHead
-          title="Largest Holders"
-          hint={`Top ${topHolders.length} wallets by share of circulating supply · AMM router excluded`}
-          right={<Pill tone="muted">{fmtNum(player.holders)} TOTAL</Pill>}
+      {/* Largest Holders — streams in after fetchAllHolders resolves. */}
+      <Suspense
+        fallback={
+          <LargestHoldersSkeleton totalHolders={player.holders} />
+        }
+      >
+        <LargestHoldersSection
+          playerId={id}
+          totalHolders={player.holders}
+          priceUsd={player.priceUsd}
         />
-        <Card variant="press" padded={false}>
-          <LargestHoldersTable
-            holders={topHolders}
-            wallets={wallets}
-            priceUsd={player.priceUsd}
-          />
-        </Card>
+      </Suspense>
+    </div>
+  );
+}
+
+async function HolderDistributionSection({
+  playerId,
+  totalHolders,
+}: {
+  playerId: string;
+  totalHolders: number;
+}) {
+  const holders = await getHolders(playerId);
+  return (
+    <Card className="mt-4">
+      <CardHeader title="Holder Distribution" hint="By share of circulating supply" />
+      <HoldersBreakdown buckets={holders} totalHolders={totalHolders} />
+    </Card>
+  );
+}
+
+function HolderDistributionSkeleton({ totalHolders }: { totalHolders: number }) {
+  return (
+    <Card className="mt-4">
+      <CardHeader title="Holder Distribution" hint="By share of circulating supply" />
+      <div className="flex items-center justify-between py-6 text-[12px] text-[var(--color-text-dim)]">
+        <span>Loading holder breakdown…</span>
+        <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700 }}>
+          {fmtNum(totalHolders)} TOTAL
+        </span>
       </div>
+    </Card>
+  );
+}
+
+async function LargestHoldersSection({
+  playerId,
+  totalHolders,
+  priceUsd,
+}: {
+  playerId: string;
+  totalHolders: number;
+  priceUsd: number;
+}) {
+  const topHolders = await getTopHolders(playerId, 25);
+  const holderAddrs = topHolders.map((h) => h.address);
+  const snapshotMap = await getWalletSnapshots(holderAddrs);
+  const wallets: Record<string, WalletSnapshot> = {};
+  for (const [k, v] of snapshotMap) wallets[k] = v;
+
+  return (
+    <div className="mt-4">
+      <SectionHead
+        title="Largest Holders"
+        hint={`Top ${topHolders.length} wallets by share of circulating supply · AMM router excluded`}
+        right={<Pill tone="muted">{fmtNum(totalHolders)} TOTAL</Pill>}
+      />
+      <Card variant="press" padded={false}>
+        <LargestHoldersTable
+          holders={topHolders}
+          wallets={wallets}
+          priceUsd={priceUsd}
+        />
+      </Card>
+    </div>
+  );
+}
+
+function LargestHoldersSkeleton({ totalHolders }: { totalHolders: number }) {
+  return (
+    <div className="mt-4">
+      <SectionHead
+        title="Largest Holders"
+        hint="Loading holder list…"
+        right={<Pill tone="muted">{fmtNum(totalHolders)} TOTAL</Pill>}
+      />
+      <Card variant="press" padded={false}>
+        <div className="px-5 py-8 text-center text-[12px] text-[var(--color-text-dim)]">
+          Loading holders…
+        </div>
+      </Card>
     </div>
   );
 }
