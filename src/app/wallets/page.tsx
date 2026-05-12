@@ -11,10 +11,12 @@ export const metadata = {
     "Leaderboard of NFL token holders ranked by NFL portfolio value. See whales, sharks, and the most active wallets across Sport.fun's NFL market.",
 };
 
-// Top-K wallet aggregation reaches across every pool in the
-// roster, so 60s revalidate keeps it fresh without hammering
-// the upstream every render.
-export const revalidate = 60;
+// Top-K wallet aggregation reaches across every pool in the roster
+// (250 holders × 72 pools = ~18k fetches), so it exceeds the static
+// prerender 60s timeout. Render dynamically per request — the page
+// then leans on the underlying Tenero cache (REVALIDATE.holders =
+// 1800s) so subsequent requests in the same window are near-instant.
+export const dynamic = "force-dynamic";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 

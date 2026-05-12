@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Big_Shoulders, JetBrains_Mono } from "next/font/google";
 import Link from "next/link";
+import { Flame, Scale } from "lucide-react";
 import "./globals.css";
 
 const body = Geist({
@@ -67,29 +68,65 @@ function SiteHeader() {
           </div>
         </Link>
         <nav className="hidden md:flex items-center gap-1 text-sm">
-          <NavLink href="/">Market</NavLink>
+          <NavLink href="/">Overview</NavLink>
           <NavLink href="/#players">Players</NavLink>
-          <NavLink href="/#trades">Trades</NavLink>
+          <NavLink href="/#trades">Live Feed</NavLink>
           <NavLink href="/wallets">Wallets</NavLink>
-          <NavLink href="/value">Value</NavLink>
-          <NavLink href="/on-fire">On Fire</NavLink>
+          <NavLink href="/on-fire" icon={<Flame className="h-3.5 w-3.5" strokeWidth={2} />}>
+            On Fire
+          </NavLink>
+          <NavLinkHighlighted href="/value" icon={<Scale className="h-3.5 w-3.5" strokeWidth={2} />}>
+            Value Tool
+          </NavLinkHighlighted>
         </nav>
-        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-[var(--r-8)] border border-[var(--color-line)] bg-[var(--color-bench)]">
-          <span className="live-dot inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-turf)]" />
-          <span className="mono-eyebrow" style={{ fontSize: "10px" }}>LIVE · BASE</span>
-        </div>
       </div>
     </header>
   );
 }
 
-function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
+function NavLink({
+  href,
+  icon,
+  children,
+}: {
+  href: string;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <Link
       href={href}
-      className="rounded-[var(--r-8)] px-3 py-1.5 text-[13px] font-bold text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bench)] transition-colors"
+      className="inline-flex items-center gap-1.5 rounded-[var(--r-8)] px-3 py-1.5 text-[13px] font-bold text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bench)] transition-colors"
     >
-      {children}
+      {icon}
+      <span>{children}</span>
+    </Link>
+  );
+}
+
+// Accent-filled chip variant — used to make a single nav item stand out
+// as the primary call-to-action (Value Tool right now).
+function NavLinkHighlighted({
+  href,
+  icon,
+  children,
+}: {
+  href: string;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      className="ml-1 inline-flex items-center gap-1.5 rounded-[var(--r-8)] border px-3 py-1.5 text-[13px] font-bold transition-colors"
+      style={{
+        borderColor: "var(--accent-line)",
+        background: "var(--accent-tint)",
+        color: "var(--accent-soft)",
+      }}
+    >
+      {icon}
+      <span>{children}</span>
     </Link>
   );
 }

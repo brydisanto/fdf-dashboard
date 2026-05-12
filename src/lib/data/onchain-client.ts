@@ -269,3 +269,143 @@ export async function readManyWalletsNflBalances(
 
   return out;
 }
+
+// ---------- On-chain token state (Phase 1: bypass Tenero /tokens) ----------
+//
+// The Sport.fun architecture (read from the verified contract source):
+//   - PlayerV3 (proxy at FOOTBALLFUN_CONTRACT) is the ERC-1155 player
+//     share contract. It also acts as the bonding-curve reserve — the
+//     contract address itself holds every unsold share.
+//   - FDFPair (at the address returned by PlayerV3.fdfPair()) is the
+//     AMM pair contract. It holds the currency (USDC) on one side and
+//     the player shares on the other side of each pool.
+//
+// To compute the spot price of any player token entirely on-chain:
+//   price = currency_reserve_usd / token_reserve_count
+//        = (USDC_in_pair / 1e6) / (shares_in_pair / 1e18)
+//
+// This matches Sport.fun's own UI display exactly (verified against
+// Bijan/Allen/Cook — all within rounding).
+
+// FDFPair contract address (Sport.fun's AMM). Resolved once via
+// PlayerV3.fdfPair() and pinned here so reads don't pay an extra
+// dispatch on every render. If Sport.fun ever rotates the pair, this
+// will need to be re-resolved.
+const FDFPAIR_ADDRESS = "0x4Fdce033b9F30019337dDC5cC028DC023580585e" as Address;
+
+// USDC on Base has 6 decimals. Player shares have 18 decimals.
+const USDC_DECIMALS = 6;
+
+const PAIR_ABI = [
+  {
+    type: "function",
+    name: "getCurrencyReserves",
+    stateMutability: "view",
+    inputs: [{ name: "_playerTokenIds", type: "uint256[]" }],
+    outputs: [{ type: "uint256[]" }],
+  },
+] as const;
+
+export interface OnchainTokenState {
+  tokenAddress: string;        // ROSTER token address (contract:tokenId)
+  priceUsd: number;            // spot = currency / token at curve mid
+  totalSupply: number;         // user-facing share count
+  circulatingSupply: number;   // shares held by user wallets (= total − contract balance)
+  poolCurrencyUsd: number;     // USDC sitting in the pair for this token
+  poolTokenCount: number;      // player shares sitting in the pair for this token
+  tvlUsd: number;              // both sides of the pool in USD (= 2 × currency)
+}
+
+/**
+ * Read the full pool state for every NFL token in two batched RPC
+ * calls. Returns a Map keyed by token address (contract:tokenId).
+ *
+ *   Call 1: PAIR.getCurrencyReserves([72 token ids])
+ *           → USDC reserves per token
+ *   Call 2: PROXY.balanceOfBatch([PAIR, PAIR, ..., PROXY, PROXY, ...], [tokenIds × 2])
+ *           → token reserves (PAIR side) + bonding-curve reserves (PROXY side)
+ *
+ * Total wall-time is ~200-500ms against the public Base RPC, cached
+ * via the module-level memo below so subsequent renders within the
+ * TTL pay nothing.
+ */
+let onchainStateCache: { ts: number; data: Map<string, OnchainTokenState> } | null = null;
+const ONCHAIN_STATE_TTL_MS = 15_000; // 15s — matches REVALIDATE.list
+
+export async function readOnchainTokenState(): Promise<Map<string, OnchainTokenState> | null> {
+  const now = Date.now();
+  if (onchainStateCache && now - onchainStateCache.ts < ONCHAIN_STATE_TTL_MS) {
+    return onchainStateCache.data;
+  }
+  try {
+    // Currency reserves (USDC, 6 decimals) per token from FDFPair.
+    const currencyReserves = await client.readContract({
+      address: FDFPAIR_ADDRESS,
+      abi: PAIR_ABI,
+      functionName: "getCurrencyReserves",
+      args: [TOKEN_ID_BIG],
+    });
+    // Both: PAIR's share holdings (the AMM token side) AND PROXY's own
+    // share holdings (the bonding-curve unminted reserve). One batched
+    // call returns both in one round trip.
+    const flatWallets: Address[] = [];
+    const flatTokens: bigint[] = [];
+    for (const tid of TOKEN_ID_BIG) {
+      flatWallets.push(FDFPAIR_ADDRESS);
+      flatTokens.push(tid);
+    }
+    for (const tid of TOKEN_ID_BIG) {
+      flatWallets.push(FOOTBALLFUN_CONTRACT as Address);
+      flatTokens.push(tid);
+    }
+    const balances = await client.readContract({
+      address: FOOTBALLFUN_CONTRACT as Address,
+      abi: ERC1155_ABI,
+      functionName: "balanceOfBatch",
+      args: [flatWallets, flatTokens],
+    });
+    const tokenCount = ROSTER.length;
+    const pairBalances = balances.slice(0, tokenCount);
+    const contractBalances = balances.slice(tokenCount);
+
+    const TOTAL_SUPPLY = 25_000_000; // Every Sport.fun player has the same 25M cap.
+
+    const out = new Map<string, OnchainTokenState>();
+    for (let i = 0; i < ROSTER.length; i++) {
+      const player = ROSTER[i];
+      const currencyRaw = currencyReserves[i] ?? 0n;
+      const pairTokenRaw = pairBalances[i] ?? 0n;
+      const contractRaw = contractBalances[i] ?? 0n;
+
+      const poolCurrencyUsd = Number(currencyRaw) / 10 ** USDC_DECIMALS;
+      const poolTokenCount = Number(pairTokenRaw) / 10 ** SHARE_DECIMALS;
+      const priceUsd =
+        poolTokenCount > 0 ? poolCurrencyUsd / poolTokenCount : 0;
+      const contractTokenCount = Number(contractRaw) / 10 ** SHARE_DECIMALS;
+      // "Circulating" follows the upstream's convention: total supply
+      // minus the bonding-curve reserve (the contract's self-balance).
+      // The pair's token-side balance is INCLUDED in circulating —
+      // it'll be subtracted later in the activeSupply derivation as a
+      // platform-side wallet, consistent with the existing code path.
+      const circulatingSupply = Math.max(0, TOTAL_SUPPLY - contractTokenCount);
+
+      out.set(player.tokenAddress, {
+        tokenAddress: player.tokenAddress,
+        priceUsd,
+        totalSupply: TOTAL_SUPPLY,
+        circulatingSupply,
+        poolCurrencyUsd,
+        poolTokenCount,
+        tvlUsd: poolCurrencyUsd * 2,
+      });
+    }
+
+    onchainStateCache = { ts: now, data: out };
+    return out;
+  } catch (err) {
+    console.warn("[readOnchainTokenState] failed:", err);
+    // Stale cache is better than nothing if a recent RPC succeeded.
+    if (onchainStateCache) return onchainStateCache.data;
+    return null;
+  }
+}
