@@ -39,7 +39,13 @@ const API_BASE = "https://api.tenero.io/v1/sportsfun";
 // per-pool endpoints (OHLC, holders, wallet snapshots) live longer.
 const REVALIDATE = {
   list:    15,        // /tokens list — drives mcap, prices, supplies
-  detail:  30,
+  detail:  300,       // 5 min — single-token Tenero detail. The on-chain
+                      // override replaces price/supply/TVL on every render,
+                      // so Tenero's role here is metadata (name, image)
+                      // plus volume/swap counters — none of which need
+                      // sub-minute freshness. Bumped from 30s so that
+                      // clicking through several player pages doesn't
+                      // hit a cold Tenero call every time.
   ohlc:    300,       // 5 min — OHLC bars don't change intraday
   trades:  45,        // bumped from 20s — under ISR (revalidate=60), the
                       // trade fetches were misaligned with the page cycle
