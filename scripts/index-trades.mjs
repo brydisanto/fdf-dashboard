@@ -260,26 +260,33 @@ async function main() {
     }
 
     // Determine the user wallet — it's the address on the user side of
-    // each leg (NOT the pair contract). For most txs all legs share
-    // the same user.
+    // each leg (NOT the AMM endpoints). Sport.fun routes share moves
+    // through both PAIR (for paired trades) and FOOTBALLFUN_CONTRACT
+    // (for bonding-curve mint/burn during swaps), so a leg's "AMM"
+    // side can be either address.
+    const isAmm = (addr) => addr === PAIR_LC || addr === FOOTBALLFUN_LC;
     let userWallet = null;
     for (const { parsed } of entries) {
-      const candidate = parsed.from === PAIR_LC ? parsed.to : parsed.from;
-      if (candidate !== PAIR_LC && candidate !== FOOTBALLFUN_LC) {
+      const candidate = isAmm(parsed.from) ? parsed.to : parsed.from;
+      if (!isAmm(candidate)) {
         userWallet = candidate;
         break;
       }
     }
     if (!userWallet) continue; // contract-internal move, skip
 
-    // Classify each leg's side.
+    // Classify each leg's side. NFL ↔ NFL swaps emit one leg through
+    // PAIR (the received side) AND one through FOOTBALLFUN_CONTRACT
+    // (the burned/given side) — counting only the PAIR leg drops the
+    // matching swap-out from the feed. Treat both AMM endpoints as
+    // trade legs.
     const isSwap = entries.length > 1;
     for (const { log, parsed } of entries) {
       let side;
       const shares = Number(parsed.value) / 1e18;
-      if (parsed.from === PAIR_LC && parsed.to === userWallet) {
+      if (isAmm(parsed.from) && parsed.to === userWallet) {
         side = isSwap ? "swap-in" : "buy";
-      } else if (parsed.from === userWallet && parsed.to === PAIR_LC) {
+      } else if (parsed.from === userWallet && isAmm(parsed.to)) {
         side = isSwap ? "swap-out" : "sell";
       } else {
         // User-to-user transfer (e.g. marketplace transfer) — skip for

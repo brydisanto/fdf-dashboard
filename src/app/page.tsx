@@ -32,7 +32,7 @@ export default async function Home() {
   const [overview, players, feedAndFlow, dailyVolume] = await Promise.all([
     getMarketOverview(),
     getPlayers(),
-    getNflTradeFeedAndFlow(50, 50),
+    getNflTradeFeedAndFlow(100, 200),
     getNflDailyVolume(30),
   ]);
   const recent = feedAndFlow.trades;
