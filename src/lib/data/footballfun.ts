@@ -174,16 +174,21 @@ function buildPlayerSummary(player: NflPlayer, row: TeneroTokenRow): PlayerSumma
   // — that one effectively averages the two. We do the same so our
   // headline market cap tracks the official chart instead of straddling
   // it by 1-2%.
-  // Sport.fun's UI displays the SELL-side price — spot × (1 − sell_fee)
-  // — which is what a holder would actually receive if they hit "sell"
-  // right now. The curve spot itself is the mid-price; what users see
-  // on the trade screen is post-fee execution. Probed Robinson/Gibbs/
-  // Allen/Bowers/Taylor against FDF and the sell-side formula matches
-  // within rounding for every one.
+  // Display the on-chain spot price directly — that's what Sport.fun's
+  // own UI shows (verified post-Phase 1 against Bijan/Gibbs/Allen/
+  // Bowers — all match within rounding). The earlier sell-side
+  // discount was based on a wrong hypothesis: the divergence vs FDF
+  // came from our averaged `(last_trade + spot)/2` display, NOT from
+  // FDF applying a fee. Now that Phase 1 reads spot directly from the
+  // AMM reserves, no fee adjustment is needed.
+  //
+  // Bonus: this also fixes a phantom -3% delta across every 1h/24h
+  // column — the snapshot indexer records spot (no fee) and the
+  // display was showing spot × 0.97, so every change read 3% lower
+  // than reality.
   const lastTrade = Number(row.price_usd ?? 0);
   const liveSpot  = Number(row.price?.current_price ?? 0);
-  const sellPrice = liveSpot > 0 ? liveSpot * (1 - FEE_RATE_SELL) : 0;
-  const price = sellPrice > 0 ? sellPrice : lastTrade;
+  const price = liveSpot > 0 ? liveSpot : lastTrade;
   // % changes must compare spot-to-spot. The upstream's price_*_ago
   // fields are all snapshots of `current_price`, so if we anchor those
   // against our averaged display price we get a phantom delta whenever
