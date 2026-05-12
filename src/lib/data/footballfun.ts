@@ -19,7 +19,7 @@ import type {
 import { ROSTER, ROSTER_BY_ID, ROSTER_BY_TOKEN, FOOTBALLFUN_CONTRACT, type NflPlayer } from "./roster";
 import { POOL_FEE_RATE, FEE_RATE_BUY, FEE_RATE_SELL, FEE_RATE_SWAP } from "../constants";
 import { readManyFunBalances, readManyWalletsNflBalances, readWalletNflBalances, readFunBalance, readOnchainTokenState } from "./onchain-client";
-import { priceAt, readPriceHistory } from "./price-indexer";
+import { readPriceHistory } from "./price-indexer";
 import { readTradeHistory, type IndexedTrade } from "./trade-indexer";
 
 export { POOL_FEE_RATE, FEE_RATE_BUY, FEE_RATE_SELL, FEE_RATE_SWAP };
@@ -488,23 +488,23 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
     return summary;
   });
 
-  // Compute 1H / 6H / 24H / 7D deltas from the on-chain trade index.
-  // Each indexed trade carries (usdAmount, shareAmount, blockTime), and
-  // their ratio is the implied spot at that moment — sourced from the
-  // same TransferSingle event logs the rest of the app uses, so it's
-  // untouched by Tenero's stale price_*_ago fields OR by the recent
-  // price-indexer source switch (Tenero → on-chain, 2026-05-12), which
-  // contaminated any snapshot older than that with ~3%-high Tenero
-  // values.
+  // Compute 1H / 6H / 24H / 7D deltas exclusively from the on-chain
+  // trade index. Earlier versions also consulted the price-snapshot
+  // history + Tenero OHLC as fallbacks, but those layers were the
+  // direct cause of the % numbers "jumping around": old snapshots
+  // carry Tenero prices (~3% above on-chain), so when a token had
+  // no trade in the indexed window we'd flip from the trade-indexer's
+  // accurate +9% to the snapshot's contaminated -3% and back as
+  // data files refreshed every 5 min. Trade-indexer-only is stable.
   //
-  // Snapshot history stays as a fallback for tokens whose first trade
-  // lands inside the requested window; OHLC stays as a deeper fallback.
-  const [history, tradeStore] = await Promise.all([
-    readPriceHistory(),
-    readTradeHistory(),
-  ]);
+  // Reference timestamps are bucketed to a 5-min grid so that within
+  // each bucket, the same trades are picked as the historical anchor
+  // — eliminates "the boundary just crossed an old trade" jitter as
+  // `nowMs - 7d` drifts continuously between renders.
+  const tradeStore = await readTradeHistory();
   const tradesByToken = buildTradesByTokenIndex(tradeStore?.trades ?? []);
-  const nowMs = Date.now();
+  const BUCKET_MS = 5 * 60 * 1000;
+  const bucketedNow = Math.floor(Date.now() / BUCKET_MS) * BUCKET_MS;
   const enrichers = summaries.map((summary) => async () => {
     const roster = ROSTER_BY_ID.get(summary.id);
     if (!roster) return;
@@ -514,77 +514,16 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
     if (spot <= 0) return;
 
     const tokenTrades = tradesByToken.get(roster.tokenIdSuffix) ?? [];
+    if (tokenTrades.length === 0) return;   // clamp handles 0% downstream
 
-    let got1h = false;
-    let got6h = false;
-    let got24h = false;
-    let got7d = false;
-
-    // Primary: trade-indexer-derived prices. Defensive — if the implied
-    // price is non-positive or wildly off (>50% from current spot in a
-    // window with little activity), reject it.
-    const tradeAt1h  = priceAtFromTrades(tokenTrades, nowMs - 3600_000);
-    const tradeAt6h  = priceAtFromTrades(tokenTrades, nowMs - 6 * 3600_000);
-    const tradeAt24h = priceAtFromTrades(tokenTrades, nowMs - 86_400_000);
-    const tradeAt7d  = priceAtFromTrades(tokenTrades, nowMs - 7 * 86_400_000);
-    if (tradeAt1h != null) {
-      summary.change1h = +(((spot - tradeAt1h) / tradeAt1h) * 100).toFixed(2);
-      got1h = true;
-    }
-    if (tradeAt6h != null) {
-      summary.change6h = +(((spot - tradeAt6h) / tradeAt6h) * 100).toFixed(2);
-      got6h = true;
-    }
-    if (tradeAt24h != null) {
-      summary.change24h = +(((spot - tradeAt24h) / tradeAt24h) * 100).toFixed(2);
-      got24h = true;
-    }
-    if (tradeAt7d != null) {
-      summary.change7d = +(((spot - tradeAt7d) / tradeAt7d) * 100).toFixed(2);
-      got7d = true;
-    }
-    if (got1h && got6h && got24h && got7d) return;
-
-    // Secondary: snapshot price history (used to be primary, but old
-    // snapshots are contaminated with Tenero prices).
-    if (history) {
-      const at1h = !got1h ? priceAt(history, roster.tokenIdSuffix, nowMs - 3600_000) : null;
-      const at6h = !got6h ? priceAt(history, roster.tokenIdSuffix, nowMs - 6 * 3600_000) : null;
-      const at24h = !got24h ? priceAt(history, roster.tokenIdSuffix, nowMs - 86_400_000) : null;
-      const at7d = !got7d ? priceAt(history, roster.tokenIdSuffix, nowMs - 7 * 86_400_000) : null;
-      if (!got1h && at1h != null) {
-        summary.change1h = +(((spot - at1h) / at1h) * 100).toFixed(2);
-        got1h = true;
-      }
-      if (!got6h && at6h != null) {
-        summary.change6h = +(((spot - at6h) / at6h) * 100).toFixed(2);
-        got6h = true;
-      }
-      if (!got24h && at24h != null) {
-        summary.change24h = +(((spot - at24h) / at24h) * 100).toFixed(2);
-        got24h = true;
-      }
-      if (!got7d && at7d != null) {
-        summary.change7d = +(((spot - at7d) / at7d) * 100).toFixed(2);
-        got7d = true;
-      }
-    }
-    if (got1h && got6h && got24h && got7d) return;
-
-    // Tertiary: Tenero OHLC. Cold-start only — won't fire for tokens
-    // that have any indexer history.
-    if (summary.volume24h <= 0 && summary.volume7d <= 0) return;
-    if (
-      isPriceSnapshotReliable(row.price?.price_1h_ago, spot) &&
-      isPriceSnapshotReliable(row.price?.price_1d_ago, spot) &&
-      isPriceSnapshotReliable(row.price?.price_7d_ago, spot)
-    ) {
-      return;
-    }
-    const deltas = await fetchOhlcDeltas(roster.tokenAddress, spot);
-    if (!got1h && deltas.change1h != null) summary.change1h = deltas.change1h;
-    if (!got24h && deltas.change24h != null) summary.change24h = deltas.change24h;
-    if (!got7d && deltas.change7d != null) summary.change7d = deltas.change7d;
+    const tradeAt1h  = priceAtFromTrades(tokenTrades, bucketedNow - 3600_000);
+    const tradeAt6h  = priceAtFromTrades(tokenTrades, bucketedNow - 6 * 3600_000);
+    const tradeAt24h = priceAtFromTrades(tokenTrades, bucketedNow - 86_400_000);
+    const tradeAt7d  = priceAtFromTrades(tokenTrades, bucketedNow - 7 * 86_400_000);
+    if (tradeAt1h != null) summary.change1h = +(((spot - tradeAt1h) / tradeAt1h) * 100).toFixed(2);
+    if (tradeAt6h != null) summary.change6h = +(((spot - tradeAt6h) / tradeAt6h) * 100).toFixed(2);
+    if (tradeAt24h != null) summary.change24h = +(((spot - tradeAt24h) / tradeAt24h) * 100).toFixed(2);
+    if (tradeAt7d != null) summary.change7d = +(((spot - tradeAt7d) / tradeAt7d) * 100).toFixed(2);
   });
   await chunked(enrichers, 8);
 
@@ -625,17 +564,6 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
   }
 
   return summaries;
-}
-
-// The upstream's price_*_ago fields fall back to `current_price` when
-// no real historical snapshot exists. A non-trivial difference from
-// current means the upstream actually has a real snapshot for that
-// window — we should trust it rather than override with OHLC.
-function isPriceSnapshotReliable(snapshot: number | undefined, currentPrice: number): boolean {
-  if (snapshot == null || !Number.isFinite(snapshot) || snapshot <= 0 || currentPrice <= 0) {
-    return false;
-  }
-  return Math.abs(currentPrice - snapshot) / currentPrice > 1e-6;
 }
 
 // Group every indexed trade by tokenIdSuffix, sorted ascending by
@@ -902,81 +830,27 @@ export async function getPlayer(id: string): Promise<PlayerSummary | null> {
     }
     const summary = buildPlayerSummary(player, data);
     summary.sparkline7d = tinySparkline(data);
-    // Same enrichment pipeline as getPlayers() — trade-indexer-derived
-    // deltas first, snapshot history second, OHLC last.
+    // Same trade-indexer-only delta computation as getPlayers, with
+    // the same 5-min bucketing for stability.
     const spot = Number(data?.price?.current_price ?? 0);
-    let got1h = false;
-    let got6h = false;
-    let got24h = false;
-    let got7d = false;
     if (spot > 0) {
-      const [history, tradeStore] = await Promise.all([
-        readPriceHistory(),
-        readTradeHistory(),
-      ]);
-      const nowMs = Date.now();
+      const tradeStore = await readTradeHistory();
+      const BUCKET_MS = 5 * 60 * 1000;
+      const bucketedNow = Math.floor(Date.now() / BUCKET_MS) * BUCKET_MS;
       const tokenTrades = (tradeStore?.trades ?? [])
         .filter((t) => t.tokenIdSuffix === player.tokenIdSuffix)
         .sort((a, b) => a.blockTime - b.blockTime);
 
-      const tradeAt1h  = priceAtFromTrades(tokenTrades, nowMs - 3600_000);
-      const tradeAt6h  = priceAtFromTrades(tokenTrades, nowMs - 6 * 3600_000);
-      const tradeAt24h = priceAtFromTrades(tokenTrades, nowMs - 86_400_000);
-      const tradeAt7d  = priceAtFromTrades(tokenTrades, nowMs - 7 * 86_400_000);
-      if (tradeAt1h != null) {
-        summary.change1h = +(((spot - tradeAt1h) / tradeAt1h) * 100).toFixed(2);
-        got1h = true;
+      if (tokenTrades.length > 0) {
+        const tradeAt1h  = priceAtFromTrades(tokenTrades, bucketedNow - 3600_000);
+        const tradeAt6h  = priceAtFromTrades(tokenTrades, bucketedNow - 6 * 3600_000);
+        const tradeAt24h = priceAtFromTrades(tokenTrades, bucketedNow - 86_400_000);
+        const tradeAt7d  = priceAtFromTrades(tokenTrades, bucketedNow - 7 * 86_400_000);
+        if (tradeAt1h != null) summary.change1h = +(((spot - tradeAt1h) / tradeAt1h) * 100).toFixed(2);
+        if (tradeAt6h != null) summary.change6h = +(((spot - tradeAt6h) / tradeAt6h) * 100).toFixed(2);
+        if (tradeAt24h != null) summary.change24h = +(((spot - tradeAt24h) / tradeAt24h) * 100).toFixed(2);
+        if (tradeAt7d != null) summary.change7d = +(((spot - tradeAt7d) / tradeAt7d) * 100).toFixed(2);
       }
-      if (tradeAt6h != null) {
-        summary.change6h = +(((spot - tradeAt6h) / tradeAt6h) * 100).toFixed(2);
-        got6h = true;
-      }
-      if (tradeAt24h != null) {
-        summary.change24h = +(((spot - tradeAt24h) / tradeAt24h) * 100).toFixed(2);
-        got24h = true;
-      }
-      if (tradeAt7d != null) {
-        summary.change7d = +(((spot - tradeAt7d) / tradeAt7d) * 100).toFixed(2);
-        got7d = true;
-      }
-
-      if (history && !(got1h && got6h && got24h && got7d)) {
-        const at1h = !got1h ? priceAt(history, player.tokenIdSuffix, nowMs - 3600_000) : null;
-        const at6h = !got6h ? priceAt(history, player.tokenIdSuffix, nowMs - 6 * 3600_000) : null;
-        const at24h = !got24h ? priceAt(history, player.tokenIdSuffix, nowMs - 86_400_000) : null;
-        const at7d = !got7d ? priceAt(history, player.tokenIdSuffix, nowMs - 7 * 86_400_000) : null;
-        if (!got1h && at1h != null) {
-          summary.change1h = +(((spot - at1h) / at1h) * 100).toFixed(2);
-          got1h = true;
-        }
-        if (!got6h && at6h != null) {
-          summary.change6h = +(((spot - at6h) / at6h) * 100).toFixed(2);
-          got6h = true;
-        }
-        if (!got24h && at24h != null) {
-          summary.change24h = +(((spot - at24h) / at24h) * 100).toFixed(2);
-          got24h = true;
-        }
-        if (!got7d && at7d != null) {
-          summary.change7d = +(((spot - at7d) / at7d) * 100).toFixed(2);
-          got7d = true;
-        }
-      }
-    }
-    const needsOhlcFallback =
-      spot > 0 &&
-      !(got1h && got6h && got24h && got7d) &&
-      (summary.volume24h > 0 || summary.volume7d > 0) &&
-      !(
-        isPriceSnapshotReliable(data?.price?.price_1h_ago, spot) &&
-        isPriceSnapshotReliable(data?.price?.price_1d_ago, spot) &&
-        isPriceSnapshotReliable(data?.price?.price_7d_ago, spot)
-      );
-    if (needsOhlcFallback) {
-      const deltas = await fetchOhlcDeltas(player.tokenAddress, spot);
-      if (!got1h && deltas.change1h != null) summary.change1h = deltas.change1h;
-      if (!got24h && deltas.change24h != null) summary.change24h = deltas.change24h;
-      if (!got7d && deltas.change7d != null) summary.change7d = deltas.change7d;
     }
     // Bonding-curve sanity clamp — same one getPlayers applies.
     clampDeltasToActivity(summary, data);
@@ -1462,70 +1336,6 @@ async function fetchOhlcBars(
   } catch {
     return [];
   }
-}
-
-/**
- * Derive 1h/24h/7d % changes from hourly OHLC bars instead of trusting
- * the upstream's `price_*_ago` snapshot fields, which fall back to
- * `current_price` for low-activity tokens and produce phantom 0% reads
- * after real curve moves.
- *
- * Strategy: fetch 168 most-recent active hourly bars. For each window,
- * find the most recent bar whose timestamp is ≤ (now − window) — that
- * bar's close approximates the spot at the anchor point. % = (spot
- * vs anchor close). Returns null per field if no anchor bar exists
- * (caller can keep the upstream value as a last-resort fallback).
- */
-async function fetchOhlcDeltas(
-  tokenAddress: string,
-  currentSpot: number,
-): Promise<{ change1h: number | null; change24h: number | null; change7d: number | null }> {
-  const bars = await fetchOhlcBars(tokenAddress, "1h", 168);
-  if (bars.length === 0 || currentSpot <= 0) {
-    return { change1h: null, change24h: null, change7d: null };
-  }
-  const nowSec = Math.floor(Date.now() / 1000);
-  // Fresh activity that hasn't propagated into the OHLC yet shows up as
-  // a divergence between `currentSpot` (upstream's live current_price)
-  // and the latest OHLC bar's close. When that gap exists, the latest
-  // bar's close is our best estimate of the pre-activity spot, which we
-  // can use as a fallback anchor when no in-band bar is available.
-  // Conservative override: only emit an OHLC-derived delta when there's
-  // CLEAR evidence of fresh activity — i.e. the live spot has diverged
-  // from the most-recent OHLC bar's close. That divergence is the
-  // unambiguous signal of an on-chain trade the upstream's snapshot
-  // hasn't picked up yet (the Jacobs/Swift/Brown case).
-  //
-  // Previous versions anchored against older bars within a sliding cap,
-  // but for sparse tokens that bar could be an outlier (Gibbs had a 45h-
-  // old bar that was a 6% dip relative to its neighbors, producing a
-  // fake +6.3% on the 24h delta). When there's no fresh-activity
-  // divergence, returning null lets the caller keep the upstream's
-  // value — usually 0% for these quiet tokens, which is closer to the
-  // truth than an outlier-driven OHLC anchor.
-  const mostRecentBar = bars[0];
-  const mostRecentClose = mostRecentBar ? Number(mostRecentBar.close ?? 0) : 0;
-  if (mostRecentClose <= 0) {
-    return { change1h: null, change24h: null, change7d: null };
-  }
-  const divergence = Math.abs(currentSpot - mostRecentClose) / mostRecentClose;
-  // 0.01% threshold — anything smaller is rounding noise, not real
-  // unreflected activity.
-  if (divergence <= 1e-4) {
-    return { change1h: null, change24h: null, change7d: null };
-  }
-  // Fresh activity confirmed. The latest bar's close is the pre-trade
-  // spot; the move since reflects the unreflected fresh activity. Apply
-  // the same delta to all visible windows — for these "trade just
-  // happened" cases the user wants to SEE the move show up, and we
-  // don't have finer-grained data to attribute it to a specific window.
-  void nowSec; // retained for symmetry, unused under conservative path
-  const change = +(((currentSpot - mostRecentClose) / mostRecentClose) * 100).toFixed(2);
-  return {
-    change1h: change,
-    change24h: change,
-    change7d: change,
-  };
 }
 
 /**
