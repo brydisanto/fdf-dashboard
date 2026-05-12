@@ -20,6 +20,7 @@ import { ROSTER, ROSTER_BY_ID, ROSTER_BY_TOKEN, FOOTBALLFUN_CONTRACT, type NflPl
 import { POOL_FEE_RATE, FEE_RATE_BUY, FEE_RATE_SELL, FEE_RATE_SWAP } from "../constants";
 import { readManyFunBalances, readManyWalletsNflBalances, readWalletNflBalances, readFunBalance, readOnchainTokenState } from "./onchain-client";
 import { priceAt, readPriceHistory } from "./price-indexer";
+import { readTradeHistory, type IndexedTrade } from "./trade-indexer";
 
 export { POOL_FEE_RATE, FEE_RATE_BUY, FEE_RATE_SELL, FEE_RATE_SWAP };
 
@@ -777,9 +778,49 @@ export async function getPriceSeries(id: string, tf: Timeframe): Promise<PricePo
   return Array.from(merged.values()).sort((a, b) => a.t - b.t);
 }
 
+// Map an indexed (event-log derived) trade onto the legacy Trade
+// interface so downstream UI doesn't need to know which source it
+// came from. tokenIdSuffix → playerId via ROSTER_BY_TOKEN.
+function indexedToTrade(t: IndexedTrade): Trade | null {
+  const tokenAddress = `${FOOTBALLFUN_CONTRACT}:${t.tokenIdSuffix}`;
+  const player = ROSTER_BY_TOKEN.get(tokenAddress);
+  if (!player) return null;
+  const side: "buy" | "sell" =
+    t.side === "buy" || t.side === "swap-in" ? "buy" : "sell";
+  const priceUsd = t.shareAmount > 0 && t.usdAmount > 0
+    ? t.usdAmount / t.shareAmount
+    : 0;
+  return {
+    id: `${t.txId}-${t.logIndex}`,
+    playerId: player.id,
+    side,
+    flow: t.side,
+    priceUsd,
+    amount: t.shareAmount,
+    totalUsd: t.usdAmount,
+    wallet: t.wallet,
+    txHash: t.txId,
+    timestamp: t.blockTime,
+  };
+}
+
 export async function getTrades(id: string, limit = 30): Promise<Trade[]> {
   const player = ROSTER_BY_ID.get(id);
   if (!player) return [];
+  // Primary: our own event-log index.
+  const history = await readTradeHistory();
+  if (history && history.trades.length > 0) {
+    const out: Trade[] = [];
+    for (const t of history.trades) {
+      if (t.tokenIdSuffix !== player.tokenIdSuffix) continue;
+      const trade = indexedToTrade(t);
+      if (trade) out.push(trade);
+      if (out.length >= limit) break;
+    }
+    if (out.length > 0) return out;
+  }
+  // Fallback to Tenero during cold-start (before the indexer has
+  // accumulated history) or if the index is unavailable.
   try {
     const data = await tget<ListResponse<TeneroTradeRow>>(
       `/tokens/${encodeURIComponent(player.tokenAddress)}/trades?limit=${limit}`,
@@ -856,19 +897,29 @@ export interface FlowRollup {
   totalFeesUsd: number;
 }
 
-// Pull recent trades from every active NFL pool ONCE, then derive both
-// the live trade feed and the 24h flow rollup from the same data.
+// Pull recent trades from our own event-log index ONCE, then derive
+// both the live trade feed and the 24h flow rollup from the same data.
+// Phase 2 of the on-chain migration: replaces 50+ Tenero /trades calls
+// with a single snapshot file read (cached at 5 min on the data branch).
 async function getNflTradesAndFlow(perPool = 50): Promise<{ trades: Trade[]; flow: FlowRollup }> {
-  const players = await getPlayers();
-  const active = players.filter((p) => p.volume24h > 0 || p.trades24h > 0);
-  const targets = active.length > 0 ? active : players.slice(0, 20);
-  const fns = targets.map((p) => () => getTrades(p.id, perPool));
-  // Drop to concurrency 4 (was 6) — under ISR regeneration the home
-  // page fires 50+ trade fetches alongside OHLC + token list calls in
-  // a burst, and Tenero's 100 req/min limit was getting tripped, which
-  // returned empty rows. Slower fan-out keeps us under the limit.
-  const all = await chunked(fns, 4);
-  const classified = all.flat().sort((a, b) => b.timestamp - a.timestamp);
+  let classified: Trade[] = [];
+  const history = await readTradeHistory();
+  if (history && history.trades.length > 0) {
+    // Index is pre-sorted by blockTime DESC; map to Trade and we're done.
+    for (const t of history.trades) {
+      const mapped = indexedToTrade(t);
+      if (mapped) classified.push(mapped);
+    }
+  } else {
+    // Cold-start fallback: fan out to Tenero per-pool as before. Once
+    // the indexer has accumulated history this branch never fires.
+    const players = await getPlayers();
+    const active = players.filter((p) => p.volume24h > 0 || p.trades24h > 0);
+    const targets = active.length > 0 ? active : players.slice(0, 20);
+    const fns = targets.map((p) => () => getTrades(p.id, perPool));
+    const all = await chunked(fns, 4);
+    classified = all.flat().sort((a, b) => b.timestamp - a.timestamp);
+  }
 
   const cutoff = Date.now() - 24 * 3600 * 1000;
   // Track swap-in and swap-out volumes separately, then take the larger
@@ -1840,16 +1891,53 @@ interface TeneroWalletTradeRow {
 }
 
 /**
- * Recent trade feed for a single wallet. One upstream call (no
- * pagination — just the most-recent `limit` rows), enriched with
- * roster lookups so NFL rows can link to the player page.
+ * Recent trade feed for a single wallet. Reads from our own event-log
+ * index (NFL-only). Falls back to the Tenero /wallets/.../trades
+ * endpoint for backward compatibility — but note the index covers
+ * ONLY NFL trades, so a wallet's Soccer/other activity won't appear
+ * unless the fallback is used.
  */
 export async function getWalletTrades(
   address: string,
   limit = 30,
 ): Promise<WalletTradeRow[]> {
-  // Same case-sensitivity quirk — the /wallets/.../trades endpoint
-  // returns 0 rows for lowercase addresses.
+  const target = address.toLowerCase();
+
+  // Primary: our own event-log index, NFL-only.
+  const history = await readTradeHistory();
+  if (history && history.trades.length > 0) {
+    const out: WalletTradeRow[] = [];
+    for (const t of history.trades) {
+      if (t.wallet !== target) continue;
+      const tokenAddress = `${FOOTBALLFUN_CONTRACT}:${t.tokenIdSuffix}`;
+      const rosterPlayer = ROSTER_BY_TOKEN.get(tokenAddress);
+      if (!rosterPlayer) continue;
+      const side: "buy" | "sell" =
+        t.side === "buy" || t.side === "swap-in" ? "buy" : "sell";
+      const priceUsd = t.shareAmount > 0 && t.usdAmount > 0
+        ? t.usdAmount / t.shareAmount
+        : 0;
+      out.push({
+        txId: t.txId,
+        timestamp: t.blockTime,
+        side,
+        isNfl: true,
+        symbol: rosterPlayer.symbol,
+        name: rosterPlayer.displayName,
+        imageUrl: undefined,
+        playerId: rosterPlayer.id,
+        position: rosterPlayer.position,
+        team: rosterPlayer.team,
+        baseAmount: t.shareAmount,
+        priceUsd,
+        amountUsd: t.usdAmount,
+      });
+      if (out.length >= limit) break;
+    }
+    if (out.length > 0) return out;
+  }
+
+  // Fallback to Tenero — same case-sensitivity workaround as before.
   let queryAddress = address;
   try {
     queryAddress = getAddress(address);
