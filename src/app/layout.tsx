@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Big_Shoulders, JetBrains_Mono } from "next/font/google";
 import Link from "next/link";
-import { Flame, Scale } from "lucide-react";
+import { Flame } from "lucide-react";
 import "./globals.css";
 
 const body = Geist({
@@ -75,9 +75,7 @@ function SiteHeader() {
           <NavLink href="/on-fire" icon={<Flame className="h-3.5 w-3.5" strokeWidth={2} />}>
             On Fire
           </NavLink>
-          <NavLinkHighlighted href="/value" icon={<Scale className="h-3.5 w-3.5" strokeWidth={2} />}>
-            Value Tool
-          </NavLinkHighlighted>
+          <NavLinkHighlighted href="/value">Value Machine</NavLinkHighlighted>
         </nav>
       </div>
     </header>
