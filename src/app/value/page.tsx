@@ -8,6 +8,7 @@ import {
 } from "@/lib/data/fantasypros";
 import { getUnderdogRankings, indexUdByName } from "@/lib/data/underdog";
 import { getEspnRankings, indexEspnByName } from "@/lib/data/espn";
+import { getRingerRankings, indexRingerByName } from "@/lib/data/ringer";
 import { Pill } from "@/components/ui";
 import { ValuePageBody } from "@/components/ValuePageBody";
 import { type ValueRow } from "@/components/ValueTable";
@@ -17,7 +18,7 @@ import type { Position } from "@/lib/types";
 export const metadata = {
   title: "Value · FDF Box Score",
   description:
-    "Sport.fun market rank vs an industry-consensus rank averaged across FantasyPros, Underdog Sports, and ESPN — surfaces NFL player tokens the market may be over- or undervaluing.",
+    "Sport.fun market rank vs an industry-consensus rank averaged across FantasyPros, Underdog Sports, ESPN, and The Ringer — surfaces NFL player tokens the market may be over- or undervaluing.",
 };
 
 export const revalidate = 600;
@@ -31,13 +32,14 @@ const FAIR_BAND = 1;
 export default async function ValuePage() {
   const [players, fp] = await Promise.all([getPlayers(), getFantasyProsRankings()]);
   const fpByName = indexFpByName(fp);
-  // Underdog + ESPN are sourced from static snapshot files (no
-  // server-side fetch — Underdog is Cloudflare-blocked, ESPN is
-  // JS-rendered). Refreshed periodically by re-running the Chrome
-  // MCP scrape and overwriting underdog-rankings.json /
-  // espn-rankings.json.
+  // Underdog + ESPN + Ringer are sourced from static snapshot files.
+  // Underdog is Cloudflare-blocked and ESPN is JS-rendered (both
+  // refreshed via Chrome MCP scrape); Ringer is fetchable directly
+  // (refresh via `node scripts/scrape-ringer.mjs`). Each source's
+  // rank is positional within QB/RB/WR/TE.
   const udByName = indexUdByName(getUnderdogRankings());
   const espnByName = indexEspnByName(getEspnRankings());
+  const ringerByName = indexRingerByName(getRingerRankings());
 
   // Group roster by position; market positional rank within each,
   // sorted by raw share price (highest price = #1).
@@ -55,9 +57,9 @@ export default async function ValuePage() {
   }
 
   // Build rows. Industry-average rank model:
-  //   industryAvgRank = mean(fpPosRank, udPosRank) when both present
-  //                   = whichever single one is present
-  //                   = null if neither
+  //   industryAvgRank = mean of FP + UD + ESPN + Ringer positional ranks,
+  //                     over whichever sources have a value for this player
+  //                   = null if none of them have a rank
   //   posRankDelta    = industryAvgRank − marketPosRank
   // Negative Δ → industry ranks them higher than market → market may
   // be UNDERVALUING them. Positive → market ranks them higher than
@@ -70,11 +72,13 @@ export default async function ValuePage() {
       const fpHit = fpByName.get(nameKey);
       const udHit = udByName.get(nameKey);
       const espnHit = espnByName.get(nameKey);
+      const ringerHit = ringerByName.get(nameKey);
       const fpPosRank = fpHit?.posRankNum && fpHit.posRankNum > 0 ? fpHit.posRankNum : null;
       const udPosRank = udHit?.posRank && udHit.posRank > 0 ? udHit.posRank : null;
       const espnAvgRank = espnHit?.avgRank && espnHit.avgRank > 0 ? espnHit.avgRank : null;
+      const ringerPosRank = ringerHit?.posRank && ringerHit.posRank > 0 ? ringerHit.posRank : null;
 
-      const industryRanks = [fpPosRank, udPosRank, espnAvgRank].filter(
+      const industryRanks = [fpPosRank, udPosRank, espnAvgRank, ringerPosRank].filter(
         (r): r is number => r != null,
       );
       const industryAvgRank = industryRanks.length
@@ -100,6 +104,7 @@ export default async function ValuePage() {
         fpPosRank,
         udPosRank,
         espnAvgRank,
+        ringerPosRank,
         industryAvgRank,
         posRankDelta,
         verdict,
@@ -163,7 +168,7 @@ export default async function ValuePage() {
         <div className="relative flex flex-col gap-6" style={{ padding: "32px 32px 28px" }}>
           <div className="flex flex-wrap items-center gap-2">
             <Pill tone="brand">Rank Disparity</Pill>
-            <Pill tone="muted">PPR · 3-source industry consensus</Pill>
+            <Pill tone="muted">PPR · 4-source industry consensus</Pill>
           </div>
           <h1
             className="m-0 text-[var(--color-text)]"
@@ -267,8 +272,9 @@ function InfoTooltip() {
             <strong className="block text-[var(--color-text)]" style={{ marginBottom: 2 }}>
               Industry rank
             </strong>
-            Average of three PPR sources: FantasyPros consensus ECR, Underdog Sports rankings,
-            and ESPN&apos;s preseason AVG (mean of 8 ESPN expert rankers).
+            Average of four PPR sources: FantasyPros consensus ECR, Underdog Sports rankings,
+            ESPN&apos;s preseason AVG (mean of 8 ESPN expert rankers), and The Ringer&apos;s
+            consensus (avg of Heifetz, Kelly, and Horlbeck).
           </span>
           <span className="mt-3 block">
             <strong className="block text-[var(--color-text)]" style={{ marginBottom: 2 }}>
