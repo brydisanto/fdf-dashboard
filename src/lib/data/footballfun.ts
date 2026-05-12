@@ -501,14 +501,24 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
   // each bucket, the same trades are picked as the historical anchor
   // — eliminates "the boundary just crossed an old trade" jitter as
   // `nowMs - 7d` drifts continuously between renders.
-  // Two parallel sources for historical price anchors:
-  //   1. Trade indexer — every NFL trade with implied price. Primary
-  //      for any window where the token has had buy/sell activity.
-  //   2. Price snapshot — on-chain spot every 15 min. Secondary, for
-  //      tokens with no recent trades or windows the trade indexer
-  //      doesn't cover (e.g. the 1H window when last buy was 4h ago).
-  // If both come back null for a window, the delta stays at the
-  // buildPlayerSummary 0% default — correct for genuinely flat spots.
+  // PRIMARY anchor: price-snapshot history. Each entry is the actual
+  // on-chain mid spot (USDC_reserve / pair_shares) captured every
+  // 15 min, so it's directly comparable to today's spot — anchor and
+  // numerator share the same units and are both fee-unbiased.
+  //
+  // SECONDARY anchor (only when snapshot doesn't cover the window):
+  // trade-indexer's implied price (usdAmount / shareAmount). This is
+  // the AVERAGE execution price across the trade, which includes the
+  // 3% buy/sell fee and any slippage. So it sits ~3% above the post-
+  // trade mid spot for buys and ~3% below for sells. Adjust by the
+  // trade's side so the anchor approximates the post-trade mid spot:
+  //
+  //   buy:  anchor = implied / (1 + buy_fee)
+  //   sell: anchor = implied × (1 + sell_fee)
+  //
+  // Without this adjustment, every token that's only had buy activity
+  // shows a phantom -3% (today's mid vs yesterday's gross-of-fee
+  // execution).
   const [tradeStore, priceHistory] = await Promise.all([
     readTradeHistory(),
     readPriceHistory(),
@@ -526,17 +536,22 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
 
     const tokenTrades = tradesByToken.get(roster.tokenIdSuffix) ?? [];
 
-    // Helper: prefer the trade-indexer anchor, fall back to the
-    // price-snapshot's most-recent-at-or-before-target sample. Both
-    // are post-switch on-chain values so anchoring against either
-    // is consistent.
     const anchorFor = (windowMs: number): number | null => {
-      const fromTrade = tokenTrades.length > 0
-        ? priceAtFromTrades(tokenTrades, bucketedNow - windowMs)
-        : null;
-      if (fromTrade != null) return fromTrade;
+      // Snapshot first — fee-unbiased mid spot at that timestamp.
       if (priceHistory) {
-        return priceAt(priceHistory, roster.tokenIdSuffix, bucketedNow - windowMs);
+        const fromSnapshot = priceAt(
+          priceHistory,
+          roster.tokenIdSuffix,
+          bucketedNow - windowMs,
+        );
+        if (fromSnapshot != null) return fromSnapshot;
+      }
+      // Snapshot doesn't cover this window yet (snapshot file currently
+      // has ~17h of data; will fill out to 7d as the cron accumulates).
+      // Fall back to the trade indexer's implied price, adjusted to
+      // approximate the post-trade mid spot.
+      if (tokenTrades.length > 0) {
+        return tradeAnchorAt(tokenTrades, bucketedNow - windowMs);
       }
       return null;
     };
@@ -601,20 +616,23 @@ function buildTradesByTokenIndex(trades: IndexedTrade[]): Map<string, IndexedTra
   return out;
 }
 
-// Implied historical spot at `targetMs` from indexed trades. Returns
-// the implied price (usdAmount / shareAmount) of the most recent
-// buy/sell trade at-or-before the target. Swap legs are skipped
-// because the indexer records usdAmount = 0 on swaps (no paired USDC
-// Transfer) — they'd otherwise null out the whole window even when
-// real buy/sell anchors exist further back.
+// Fee-adjusted post-trade mid spot from the most recent buy/sell
+// at-or-before `targetMs`. The trade indexer stores implied price
+// (usdAmount / shareAmount), which is the AVG execution price across
+// the trade — for buys that includes the 3% fee + slippage, so it
+// sits ~3% above the post-trade mid spot. Adjust by the trade's
+// side so the anchor lands close to where the bonding-curve spot
+// actually was after the trade.
 //
-// Returns null only if no buy/sell trade exists ≤ targetMs.
-function priceAtFromTrades(
+// Returns null if no buy/sell exists ≤ targetMs (swap legs skipped
+// because usdAmount=0). Caller falls back to next anchor source.
+const BUY_FEE = 0.03;
+const SELL_FEE = 0.03;
+function tradeAnchorAt(
   trades: IndexedTrade[],     // sorted ASC by blockTime
   targetMs: number,
 ): number | null {
   if (trades.length === 0) return null;
-  // Binary-search the upper bound (latest trade ≤ targetMs).
   let lo = 0;
   let hi = trades.length - 1;
   let idx = -1;
@@ -628,19 +646,25 @@ function priceAtFromTrades(
     }
   }
   if (idx < 0) return null;
-  // Walk backward from idx to the first trade with a positive
-  // shareAmount AND usdAmount. Skips swap-in/swap-out legs (usd=0)
-  // until we land on a real-priced buy or sell. Bonding-curve spot
-  // is constant between trades, so a buy 3 days ago anchors the
-  // window even if 6 swap legs sit between then and the target.
   for (let i = idx; i >= 0; i--) {
     const t = trades[i];
-    if (t.shareAmount > 0 && t.usdAmount > 0) {
-      return t.usdAmount / t.shareAmount;
-    }
+    if (t.shareAmount <= 0 || t.usdAmount <= 0) continue;  // skip swap legs
+    const implied = t.usdAmount / t.shareAmount;
+    if (t.side === "buy") return implied / (1 + BUY_FEE);
+    if (t.side === "sell") return implied * (1 + SELL_FEE);
+    // swap-in / swap-out shouldn't reach here (usdAmount=0 filtered above)
+    return implied;
   }
   return null;
 }
+
+// (Removed: priceAtFromTrades raw-implied helper.) The trade indexer's
+// implied price = usdAmount / shareAmount is the avg execution price
+// across the trade — for buys that includes the 3% fee + slippage,
+// so it sits ~3% above the post-trade mid spot. Using it as a delta
+// anchor produced a systematic -3% on every token with only buy
+// activity. `tradeAnchorAt` above applies the fee correction; the
+// price-snapshot is preferred when it covers the window.
 
 // Reconstruct a per-token (price, supply) stepped timeline from
 // trades, anchored on the current state. For each trade we know:
@@ -817,27 +841,40 @@ export async function getPlayer(id: string): Promise<PlayerSummary | null> {
     }
     const summary = buildPlayerSummary(player, data);
     summary.sparkline7d = tinySparkline(data);
-    // Same trade-indexer-only delta computation as getPlayers, with
-    // the same 5-min bucketing for stability.
+    // Same anchor strategy as getPlayers: price-snapshot (fee-unbiased
+    // mid spot) first, fee-adjusted trade-indexer fallback when the
+    // snapshot doesn't cover the window.
     const spot = Number(data?.price?.current_price ?? 0);
     if (spot > 0) {
-      const tradeStore = await readTradeHistory();
+      const [tradeStore, priceHistory] = await Promise.all([
+        readTradeHistory(),
+        readPriceHistory(),
+      ]);
       const BUCKET_MS = 5 * 60 * 1000;
       const bucketedNow = Math.floor(Date.now() / BUCKET_MS) * BUCKET_MS;
       const tokenTrades = (tradeStore?.trades ?? [])
         .filter((t) => t.tokenIdSuffix === player.tokenIdSuffix)
         .sort((a, b) => a.blockTime - b.blockTime);
 
-      if (tokenTrades.length > 0) {
-        const tradeAt1h  = priceAtFromTrades(tokenTrades, bucketedNow - 3600_000);
-        const tradeAt6h  = priceAtFromTrades(tokenTrades, bucketedNow - 6 * 3600_000);
-        const tradeAt24h = priceAtFromTrades(tokenTrades, bucketedNow - 86_400_000);
-        const tradeAt7d  = priceAtFromTrades(tokenTrades, bucketedNow - 7 * 86_400_000);
-        if (tradeAt1h != null) summary.change1h = +(((spot - tradeAt1h) / tradeAt1h) * 100).toFixed(2);
-        if (tradeAt6h != null) summary.change6h = +(((spot - tradeAt6h) / tradeAt6h) * 100).toFixed(2);
-        if (tradeAt24h != null) summary.change24h = +(((spot - tradeAt24h) / tradeAt24h) * 100).toFixed(2);
-        if (tradeAt7d != null) summary.change7d = +(((spot - tradeAt7d) / tradeAt7d) * 100).toFixed(2);
-      }
+      const anchorFor = (windowMs: number): number | null => {
+        if (priceHistory) {
+          const fromSnapshot = priceAt(priceHistory, player.tokenIdSuffix, bucketedNow - windowMs);
+          if (fromSnapshot != null) return fromSnapshot;
+        }
+        if (tokenTrades.length > 0) {
+          return tradeAnchorAt(tokenTrades, bucketedNow - windowMs);
+        }
+        return null;
+      };
+
+      const a1h  = anchorFor(3600_000);
+      const a6h  = anchorFor(6 * 3600_000);
+      const a24h = anchorFor(86_400_000);
+      const a7d  = anchorFor(7 * 86_400_000);
+      if (a1h != null) summary.change1h = +(((spot - a1h) / a1h) * 100).toFixed(2);
+      if (a6h != null) summary.change6h = +(((spot - a6h) / a6h) * 100).toFixed(2);
+      if (a24h != null) summary.change24h = +(((spot - a24h) / a24h) * 100).toFixed(2);
+      if (a7d != null) summary.change7d = +(((spot - a7d) / a7d) * 100).toFixed(2);
     }
     // Apply the same Active Shares definition as getPlayers — total
     // supply minus what the platform-side wallets hold.
