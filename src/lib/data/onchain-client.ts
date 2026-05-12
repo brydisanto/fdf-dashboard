@@ -339,10 +339,12 @@ export interface OnchainTokenState {
  * TTL pay nothing.
  */
 let onchainStateCache: { ts: number; data: Map<string, OnchainTokenState> } | null = null;
-// Module-level cache lifetime. Bumped from 15s to 60s so a single
-// successful read covers a full ISR regeneration window on the home
-// page — protects against transient public-RPC slowness.
-const ONCHAIN_STATE_TTL_MS = 60_000;
+// Module-level cache lifetime. Aligned with the trade-indexer / price-
+// snapshot remote TTLs (5 min) so a single render's "spot" stays in
+// sync with the same 5-min bucket used to anchor historical deltas —
+// otherwise spot refreshes every minute while reference prices only
+// refresh every 5 min, producing visible % jitter between renders.
+const ONCHAIN_STATE_TTL_MS = 5 * 60_000;
 
 export async function readOnchainTokenState(): Promise<Map<string, OnchainTokenState> | null> {
   const now = Date.now();
