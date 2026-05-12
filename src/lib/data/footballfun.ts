@@ -364,10 +364,11 @@ async function fetchNflTokenMap(): Promise<Map<string, TeneroTokenRow>> {
     if (row) map.set(addr, row);
   }
 
-  // Backstop: if Tenero gave us almost nothing AND on-chain is also
-  // dark, try the legacy paginated listing as a last resort. With
-  // on-chain working, this branch should essentially never fire.
-  if (map.size < ROSTER.length / 2) {
+  // Backstop only fires when BOTH on-chain failed AND Tenero per-token
+  // gave us less than half the roster. With on-chain working, the
+  // synthesis path below produces 72 valid rows and we skip this
+  // entirely. Avoids cascading Tenero 429s during build-time prerender.
+  if (map.size < ROSTER.length / 2 && (!onchain || onchain.size === 0)) {
     const all = await fetchAllTokens();
     const wanted = new Set(ROSTER.map((p) => p.tokenAddress));
     for (const row of all) {
