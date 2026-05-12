@@ -25,26 +25,15 @@ export const revalidate = 60;
 export default async function PlayerPage(props: PageProps<"/player/[id]">) {
   const { id } = await props.params;
 
-  const player = await getPlayer(id);
-  if (!player) notFound();
-
-  // Fast critical-path fetches — chart + pool + trades + initial series.
-  // Holders sections (distribution + largest) move below into Suspense
-  // boundaries so the slow Tenero /holders pagination doesn't block the
-  // first paint. Without this, a single rate-limited holders fetch
-  // could leave the entire page hanging for 10-30s.
-  const [pool, trades, initialSeries] = await Promise.all([
-    getPoolStats(id, player),
-    getTrades(id, 30),
+  // Only what the hero / chart / pool stats need on the critical path.
+  // Recent Trades + Holders sections stream in below via Suspense so
+  // their fetches don't gate the first paint.
+  const [player, initialSeries] = await Promise.all([
+    getPlayer(id),
     getPriceSeries(id, "7D"),
   ]);
-
-  // Resolve wallet tier badges for the trade feed only — the holders
-  // section fetches its own snapshots inside its Suspense boundary.
-  const tradeAddrs = Array.from(new Set(trades.map((t) => t.wallet))).slice(0, 50);
-  const tradeSnapshotMap = await getWalletSnapshots(tradeAddrs);
-  const tradeWallets: Record<string, WalletSnapshot> = {};
-  for (const [k, v] of tradeSnapshotMap) tradeWallets[k] = v;
+  if (!player) notFound();
+  const pool = await getPoolStats(id, player); // pure math from player, instant
 
   const supplyShare = player.circulatingSupply / player.maxSupply;
   const activeShare = player.activeSupply / Math.max(1, player.maxSupply);
@@ -261,22 +250,11 @@ export default async function PlayerPage(props: PageProps<"/player/[id]">) {
         <HolderDistributionSection playerId={id} totalHolders={player.holders} />
       </Suspense>
 
-      {/* Recent Trades — press card */}
-      <div className="mt-4">
-        <SectionHead
-          title="Recent Trades"
-          hint={`Latest ${trades.length} trades for ${player.firstName} ${player.lastName}`}
-          right={
-            <span className="mono-eyebrow inline-flex items-center gap-2" style={{ fontSize: 10 }}>
-              <span className="live-dot inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-turf)]" />
-              LIVE
-            </span>
-          }
-        />
-        <Card variant="press" padded={false}>
-          <RecentTrades trades={trades} wallets={tradeWallets} showPlayer={false} />
-        </Card>
-      </div>
+      {/* Recent Trades — streams in via Suspense so the trade index
+          read + wallet badge lookups don't gate the chart render. */}
+      <Suspense fallback={<RecentTradesSkeleton playerName={`${player.firstName} ${player.lastName}`} />}>
+        <RecentTradesSection playerId={id} playerName={`${player.firstName} ${player.lastName}`} />
+      </Suspense>
 
       {/* Largest Holders — streams in after fetchAllHolders resolves. */}
       <Suspense
@@ -368,6 +346,60 @@ function LargestHoldersSkeleton({ totalHolders }: { totalHolders: number }) {
       <Card variant="press" padded={false}>
         <div className="px-5 py-8 text-center text-[12px] text-[var(--color-text-dim)]">
           Loading holders…
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+async function RecentTradesSection({
+  playerId,
+  playerName,
+}: {
+  playerId: string;
+  playerName: string;
+}) {
+  const trades = await getTrades(playerId, 30);
+  const tradeAddrs = Array.from(new Set(trades.map((t) => t.wallet))).slice(0, 50);
+  const snapshotMap = await getWalletSnapshots(tradeAddrs);
+  const wallets: Record<string, WalletSnapshot> = {};
+  for (const [k, v] of snapshotMap) wallets[k] = v;
+
+  return (
+    <div className="mt-4">
+      <SectionHead
+        title="Recent Trades"
+        hint={`Latest ${trades.length} trades for ${playerName}`}
+        right={
+          <span className="mono-eyebrow inline-flex items-center gap-2" style={{ fontSize: 10 }}>
+            <span className="live-dot inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-turf)]" />
+            LIVE
+          </span>
+        }
+      />
+      <Card variant="press" padded={false}>
+        <RecentTrades trades={trades} wallets={wallets} showPlayer={false} />
+      </Card>
+    </div>
+  );
+}
+
+function RecentTradesSkeleton({ playerName }: { playerName: string }) {
+  return (
+    <div className="mt-4">
+      <SectionHead
+        title="Recent Trades"
+        hint={`Loading trade history for ${playerName}…`}
+        right={
+          <span className="mono-eyebrow inline-flex items-center gap-2" style={{ fontSize: 10 }}>
+            <span className="live-dot inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-turf)]" />
+            LIVE
+          </span>
+        }
+      />
+      <Card variant="press" padded={false}>
+        <div className="px-5 py-8 text-center text-[12px] text-[var(--color-text-dim)]">
+          Loading trades…
         </div>
       </Card>
     </div>
