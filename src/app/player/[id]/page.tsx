@@ -20,7 +20,7 @@ import { RecentTrades } from "@/components/RecentTrades";
 import { TEAM_COLORS, TEAM_NAMES } from "@/lib/data/players";
 import { fmtNum, fmtPrice, fmtUsd } from "@/lib/format";
 
-export const revalidate = 60;
+export const revalidate = 30;
 
 export default async function PlayerPage(props: PageProps<"/player/[id]">) {
   const { id } = await props.params;

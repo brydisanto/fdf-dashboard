@@ -721,7 +721,10 @@ let nonActiveBalanceCache: {
   ts: number;
   data: Map<string, WalletHolding[] | null>;
 } | null = null;
-const NON_ACTIVE_CACHE_TTL_MS = 5 * 60 * 1000;
+// 60s matches the on-chain state cache — Active Shares drifts as soon
+// as the bonding-curve balance changes (buys mint, sells burn), so we
+// want both numbers refreshed together within a minute.
+const NON_ACTIVE_CACHE_TTL_MS = 60_000;
 
 async function getNonActiveBalances(
   priceByToken: Map<string, number>,

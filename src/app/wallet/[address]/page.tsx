@@ -11,7 +11,7 @@ import { WalletTradesTable } from "@/components/WalletTradesTable";
 import { getWalletLabel } from "@/lib/data/wallet-labels";
 import { fmtNum, fmtTimeAgo, fmtUsd, shortAddr } from "@/lib/format";
 
-export const revalidate = 60;
+export const revalidate = 30;
 
 // Soccer slice color — broadcast-blue, distinct from amber + turf so
 // the dominance bar / composition donut read at a glance.
