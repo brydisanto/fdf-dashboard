@@ -119,16 +119,16 @@ export default async function Home() {
 
         <section className="mt-6 grid gap-4 lg:grid-cols-3">
           <Card>
+            <CardHeader title="Who's Hot" hint="24h volume leaders" right={<Pill tone="brand">Trending</Pill>} />
+            <MoversList players={players} variant="trending" />
+          </Card>
+          <Card>
             <CardHeader title="Top Gainers" hint="24h price change" right={<Pill tone="gain">24H</Pill>} />
             <MoversList players={players} variant="gainers" />
           </Card>
           <Card>
             <CardHeader title="Top Losers" hint="24h price change" right={<Pill tone="loss">24H</Pill>} />
             <MoversList players={players} variant="losers" />
-          </Card>
-          <Card>
-            <CardHeader title="Most Traded" hint="24h volume leaders" right={<Pill tone="brand">Trending</Pill>} />
-            <MoversList players={players} variant="trending" />
           </Card>
         </section>
 
