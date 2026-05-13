@@ -32,11 +32,11 @@ export function LargestHoldersTable({
           <tr className="border-b border-[var(--color-line)]">
             <Th align="left" className="pl-5">#</Th>
             <Th align="left">Wallet</Th>
-            <Th>Balance</Th>
-            <Th>Value</Th>
-            <Th>Share</Th>
-            <Th>First Held</Th>
-            <Th className="pr-5">Last Active</Th>
+            <Th align="center">Balance</Th>
+            <Th align="center">Value</Th>
+            <Th align="center">Share</Th>
+            <Th align="center">First Held</Th>
+            <Th align="center" className="pr-5">Last Active</Th>
           </tr>
         </thead>
         <tbody>
@@ -85,12 +85,12 @@ export function LargestHoldersTable({
                     </Link>
                   )}
                 </td>
-                <NumCell>{fmtNum(h.balance, { compact: true })}</NumCell>
-                <NumCell className="font-semibold">{fmtUsd(valueUsd, { compact: true })}</NumCell>
-                <NumCell>
+                <NumCell align="center">{fmtNum(h.balance, { compact: true })}</NumCell>
+                <NumCell align="center" className="font-semibold">{fmtUsd(valueUsd, { compact: true })}</NumCell>
+                <NumCell align="center">
                   {h.sharePct >= 0.01 ? `${h.sharePct.toFixed(2)}%` : "<0.01%"}
                 </NumCell>
-                <NumCell className="text-[var(--color-text-muted)]">
+                <NumCell align="center" className="text-[var(--color-text-muted)]">
                   {h.startHoldingAt ? fmtTimeAgo(h.startHoldingAt) : "—"}
                 </NumCell>
                 <td
@@ -101,6 +101,7 @@ export function LargestHoldersTable({
                     fontSize: 11,
                     fontVariantNumeric: "tabular-nums",
                     color: "var(--color-text-muted)",
+                    textAlign: "center",
                   }}
                 >
                   {h.lastActiveAt ? fmtTimeAgo(h.lastActiveAt) : "—"}
@@ -114,7 +115,15 @@ export function LargestHoldersTable({
   );
 }
 
-function NumCell({ children, className }: { children: React.ReactNode; className?: string }) {
+function NumCell({
+  children,
+  className,
+  align = "right",
+}: {
+  children: React.ReactNode;
+  className?: string;
+  align?: "left" | "center" | "right";
+}) {
   return (
     <td
       className={className}
@@ -122,6 +131,7 @@ function NumCell({ children, className }: { children: React.ReactNode; className
         padding: "var(--row-pad-y) 12px",
         fontFamily: "var(--font-mono)",
         fontVariantNumeric: "tabular-nums",
+        textAlign: align,
       }}
     >
       {children}

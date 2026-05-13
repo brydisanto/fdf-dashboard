@@ -5,7 +5,7 @@ import {
   Bar, BarChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { ArrowDownLeft, ArrowUpRight, RefreshCw } from "lucide-react";
-import { Card, CardHeader, Delta, Pill } from "./ui";
+import { Card, CardHeader, Pill } from "./ui";
 import { fmtNum, fmtUsd } from "@/lib/format";
 import type { FlowRollup } from "@/lib/data";
 
@@ -24,8 +24,6 @@ export function MarketPulse({
 }) {
   const sortedVolume = useMemo(() => dailyVolume.slice().sort((a, b) => a.t - b.t), [dailyVolume]);
   const today = sortedVolume[sortedVolume.length - 1]?.volumeUsd ?? 0;
-  const yesterday = sortedVolume[sortedVolume.length - 2]?.volumeUsd ?? 0;
-  const dayDelta = yesterday > 0 ? ((today - yesterday) / yesterday) * 100 : 0;
 
   return (
     <Card padded={false} className="p-5">
@@ -85,9 +83,8 @@ export function MarketPulse({
                 Daily, last {sortedVolume.length} days · sum of every NFL pool
               </div>
             </div>
-            <div className="flex items-baseline gap-2">
-              <div className="tabular text-base font-semibold">{fmtUsd(today, { compact: true })}</div>
-              <Delta value={dayDelta} className="text-xs" />
+            <div className="tabular text-base font-semibold">
+              {fmtUsd(today, { compact: true })}
             </div>
           </div>
           <div className="h-[200px]">

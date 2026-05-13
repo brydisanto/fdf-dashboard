@@ -565,6 +565,26 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
     if (a6h != null) summary.change6h = +(((spot - a6h) / a6h) * 100).toFixed(2);
     if (a24h != null) summary.change24h = +(((spot - a24h) / a24h) * 100).toFixed(2);
     if (a7d != null) summary.change7d = +(((spot - a7d) / a7d) * 100).toFixed(2);
+
+    // 7D Trend sparkline: pull every snapshot's price for this token
+    // from the past 7 days. Tenero's stale price_*_ago fields gave us
+    // a flat line; the snapshot has real intra-day movement.
+    if (priceHistory) {
+      const cutoff = bucketedNow - 7 * 86_400_000;
+      const tokenIdx = priceHistory.tokenIds.indexOf(roster.tokenIdSuffix);
+      if (tokenIdx >= 0) {
+        const points: number[] = [];
+        for (const snap of priceHistory.snapshots) {
+          if (snap.ts < cutoff) continue;
+          const p = snap.prices[tokenIdx];
+          if (p > 0) points.push(p);
+        }
+        // Always terminate at the live spot so the sparkline's last
+        // point matches the table's price column exactly.
+        points.push(spot);
+        if (points.length >= 2) summary.sparkline7d = points;
+      }
+    }
   });
   await chunked(enrichers, 8);
 

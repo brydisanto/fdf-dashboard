@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, Flame } from "lucide-react";
 import { getNflHotPlayers } from "@/lib/data";
-import { Card, Pill } from "@/components/ui";
+import { Card, Delta, Pill } from "@/components/ui";
 import { HotPlayersTable } from "@/components/HotPlayersTable";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
 import { TEAM_NAMES } from "@/lib/data/players";
@@ -210,7 +210,7 @@ function LeaderCard({ leader }: { leader: HotPlayerRow }) {
           color: "var(--accent-soft)",
         }}
       >
-        Today&rsquo;s Leader
+        Today&rsquo;s Top Mover
       </div>
       <div className="mt-2.5 flex items-center gap-2.5">
         <PlayerAvatar player={leader} size="sm" />
@@ -259,6 +259,21 @@ function LeaderCard({ leader }: { leader: HotPlayerRow }) {
           }}
         >
           24h volume
+        </span>
+      </div>
+      <div className="mt-2 flex items-baseline gap-2">
+        <Delta value={leader.change24h} />
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.18em",
+            textTransform: "uppercase",
+            color: "var(--color-text-dim)",
+          }}
+        >
+          24h price
         </span>
       </div>
     </Link>
