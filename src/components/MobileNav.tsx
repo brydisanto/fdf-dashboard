@@ -15,7 +15,7 @@ const LINKS: Array<{ href: string; label: string; highlight?: boolean; icon?: Re
   { href: "/", label: "Overview" },
   { href: "/#players", label: "Players" },
   { href: "/#trades", label: "Live Feed" },
-  { href: "/wallets", label: "Wallets" },
+  { href: "/wallets", label: "Top Wallets" },
   { href: "/on-fire", label: "On Fire", icon: <Flame className="h-3.5 w-3.5" strokeWidth={2} /> },
   { href: "/value", label: "Value Plays", highlight: true },
 ];
