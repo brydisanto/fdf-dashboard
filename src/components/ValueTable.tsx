@@ -346,8 +346,11 @@ function VerdictBadge({ verdict, delta }: { verdict: ValueRow["verdict"]; delta:
         fontWeight: 700,
         letterSpacing: "0.14em",
         color: fg,
-        background: `color-mix(in oklab, ${fg} 12%, transparent)`,
-        borderColor: `color-mix(in oklab, ${fg} 40%, transparent)`,
+        // Percentages are CSS vars (--verdict-bg-pct, --verdict-border-pct)
+        // so the NFL light theme can bump them up for better contrast
+        // against the white substrate.
+        background: `color-mix(in oklab, ${fg} var(--verdict-bg-pct, 12%), transparent)`,
+        borderColor: `color-mix(in oklab, ${fg} var(--verdict-border-pct, 40%), transparent)`,
       }}
       title={`${modifier}${label} · Δ ${display}`}
     >
