@@ -19,25 +19,6 @@ export function LiveTicker({ movers }: { movers: PlayerSummary[] }) {
           className="flex items-stretch overflow-hidden rounded-[var(--r-8)] border border-[var(--color-line)] bg-[var(--color-bench)] my-3"
           style={{ height: 44 }}
         >
-          {/* Left pill */}
-          <div
-            className="flex shrink-0 items-center gap-2 border-r border-[var(--color-line)] bg-[var(--color-press)]"
-            style={{ padding: "0 14px" }}
-          >
-            <span className="live-dot inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-turf)]" />
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: "10px",
-                fontWeight: 600,
-                letterSpacing: "0.18em",
-                textTransform: "uppercase",
-                color: "var(--color-text-muted)",
-              }}
-            >
-              LIVE · BASE
-            </span>
-          </div>
           {/* Track */}
           <div className="ticker-mask relative flex h-full flex-1 items-center overflow-hidden">
             <div className="ticker-track flex h-full items-center gap-7 whitespace-nowrap" style={{ padding: "0 24px" }}>
