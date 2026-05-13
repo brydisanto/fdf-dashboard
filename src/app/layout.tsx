@@ -3,7 +3,20 @@ import { Geist, Big_Shoulders, JetBrains_Mono } from "next/font/google";
 import Link from "next/link";
 import { Flame } from "lucide-react";
 import { MobileNav } from "@/components/MobileNav";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import "./globals.css";
+
+// Runs in <head> before any paint so the stored theme is applied
+// before the first frame. Avoids the dark-flash → light-snap that
+// would happen if we waited for ThemeToggle's effect to fire.
+const THEME_INIT_SCRIPT = `
+(function(){
+  try {
+    var t = localStorage.getItem("fdf-theme");
+    if (t === "nfl") document.documentElement.setAttribute("data-theme", "nfl");
+  } catch (e) {}
+})();
+`;
 
 const body = Geist({
   subsets: ["latin"],
@@ -36,6 +49,9 @@ export default function RootLayout({
       lang="en"
       className={`${body.variable} ${display.variable} ${mono.variable} h-full antialiased`}
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="min-h-full flex flex-col">
         <SiteHeader />
         <main className="flex-1">{children}</main>
@@ -78,6 +94,8 @@ function SiteHeader() {
             On Fire
           </NavLink>
           <NavLinkHighlighted href="/value">Value Plays</NavLinkHighlighted>
+          <span className="mx-1 h-5 w-px bg-[var(--color-line)]" aria-hidden />
+          <ThemeToggle />
         </nav>
         {/* Mobile hamburger + slide-down panel */}
         <MobileNav />

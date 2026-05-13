@@ -68,6 +68,58 @@
   --row-pad-y: 8px;
 }
 
+/* ── NFL theme — opt-in via <html data-theme="nfl"> ─────────────
+   Drop-in palette override: red/white/blue inspired by the league's
+   color marks. White stadium, navy text, red accent. Component
+   markup is unchanged — every surface, text, and brand swatch is
+   re-pointed via custom-property overrides. */
+[data-theme="nfl"] {
+  /* Surfaces */
+  --color-stadium:      #FFFFFF;
+  --color-bench:        #F4F6F9;
+  --color-press:        #E9ECF1;
+  --color-line:         #C8CDD7;
+  --color-line-strong:  #98A0AE;
+
+  --color-bg:           #FFFFFF;
+  --color-surface:      #F4F6F9;
+  --color-surface-2:    #E9ECF1;
+  --color-border:       #C8CDD7;
+  --color-border-strong:#98A0AE;
+
+  /* Text — NFL deep navy */
+  --color-text:         #013369;
+  --color-text-muted:   #4A5673;
+  --color-text-dim:     #8A93A6;
+
+  /* "Amber" tokens repointed to navy so existing accent-amber refs
+     pick up a coherent navy ladder. */
+  --color-amber-12:     #3B6CB5;
+  --color-amber-10:     #013369;
+  --color-amber-08:     #001C45;
+  --color-amber-04:     #C7D5EA;
+
+  --color-brand:        #013369;
+  --color-brand-soft:   #3B6CB5;
+
+  /* Semantic — green/yellow stay readable on white; loss = NFL red. */
+  --color-turf:         #006B3C;
+  --color-penalty:      #D50A0A;
+  --color-flag:         #FFB81C;
+  --color-broadcast:    #013369;
+
+  --color-gain:         #006B3C;
+  --color-loss:         #D50A0A;
+
+  /* Accent = NFL red. Decoupled from --color-amber-10 (navy)
+     because we want highlights/hovers/active states to POP red on
+     a navy-on-white substrate. */
+  --accent:             #D50A0A;
+  --accent-soft:        #E83A3A;
+  --accent-tint:        color-mix(in oklab, #D50A0A 12%, transparent);
+  --accent-line:        color-mix(in oklab, #D50A0A 35%, transparent);
+}
+
 html, body {
   background: var(--color-stadium);
   color: var(--color-text);
