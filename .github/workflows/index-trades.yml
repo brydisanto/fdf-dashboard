@@ -11,6 +11,11 @@ on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
+    inputs:
+      rescan_blocks:
+        description: "Re-scan the most recent N blocks (leave blank for normal incremental run). Used to backfill gaps from past RPC truncation — existing trades are deduped by (txId, logIndex) so this is safe."
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -70,6 +75,8 @@ jobs:
           node-version: "20"
 
       - name: Run indexer
+        env:
+          GRIDIRON_RESCAN_BLOCKS: ${{ github.event.inputs.rescan_blocks }}
         run: node scripts/index-trades.mjs --write
 
       - name: Commit snapshot to data branch
