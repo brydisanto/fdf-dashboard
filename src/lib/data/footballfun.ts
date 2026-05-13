@@ -21,6 +21,7 @@ import { POOL_FEE_RATE, FEE_RATE_BUY, FEE_RATE_SELL, FEE_RATE_SWAP } from "../co
 import { readManyFunBalances, readManyWalletsNflBalances, readWalletNflBalances, readFunBalance, readOnchainTokenState } from "./onchain-client";
 import { priceAt, readPriceHistory } from "./price-indexer";
 import { readTradeHistory, type IndexedTrade } from "./trade-indexer";
+import { readTopWalletsIndex, type TopWalletIndex } from "./top-wallets-indexer";
 
 export { POOL_FEE_RATE, FEE_RATE_BUY, FEE_RATE_SELL, FEE_RATE_SWAP };
 
@@ -1743,13 +1744,78 @@ export async function getTopNflWallets(limit = 100, perPool = 100): Promise<TopN
   if (cached && now - cached.ts < TOP_WALLETS_CACHE_TTL_MS) {
     return cached.promise;
   }
-  const promise = computeTopNflWallets(limit, perPool).catch((err) => {
-    // Don't poison the cache on error.
+  // Prefer the cron-precomputed leaderboard if available — that path
+  // is near-instant. Falls back to the live aggregation only when the
+  // indexer JSON is missing/unreadable (e.g. before the first cron
+  // run after deploy, or a transient GitHub raw outage).
+  const promise = computeFromIndexerOrLive(limit, perPool).catch((err) => {
     if (topWalletsCache.get(key)?.promise === promise) topWalletsCache.delete(key);
     throw err;
   });
   topWalletsCache.set(key, { ts: now, promise });
   return promise;
+}
+
+async function computeFromIndexerOrLive(limit: number, perPool: number): Promise<TopNflWallet[]> {
+  const index = await readTopWalletsIndex();
+  if (index && index.wallets.length > 0) {
+    return computeFromIndex(index, limit);
+  }
+  return computeTopNflWallets(limit, perPool);
+}
+
+// Multiply each indexed wallet's per-token balances by the current
+// spot price to derive NFL portfolio value. Pure CPU — no network
+// or RPC calls. This is the path the deployed app should hit ~100%
+// of the time once the cron has populated top-wallets.json.
+async function computeFromIndex(index: TopWalletIndex, limit: number): Promise<TopNflWallet[]> {
+  const players = await getPlayers();
+  const priceBySuffix = new Map<string, number>();
+  const playerIdBySuffix = new Map<string, string>();
+  for (const p of players) {
+    const roster = ROSTER_BY_ID.get(p.id);
+    if (!roster) continue;
+    priceBySuffix.set(roster.tokenIdSuffix, p.priceUsd);
+    playerIdBySuffix.set(roster.tokenIdSuffix, p.id);
+  }
+  const funInfo = await getFunPriceInfo();
+  const funPrice = funInfo.priceUsd;
+
+  const out: TopNflWallet[] = [];
+  for (const w of index.wallets) {
+    let nflValueUsd = 0;
+    let topPositionUsd = 0;
+    let topPositionPlayerId: string | null = null;
+    let positions = 0;
+    for (const [suffix, balance] of Object.entries(w.balances)) {
+      const price = priceBySuffix.get(suffix);
+      if (!price || price <= 0) continue;
+      const value = balance * price;
+      if (value <= 0) continue;
+      nflValueUsd += value;
+      positions += 1;
+      if (value > topPositionUsd) {
+        topPositionUsd = value;
+        topPositionPlayerId = playerIdBySuffix.get(suffix) ?? null;
+      }
+    }
+    if (nflValueUsd <= 0) continue;
+    const funValueUsd = +(w.funBalance * funPrice).toFixed(2);
+    out.push({
+      address: w.address,
+      nflValueUsd: +nflValueUsd.toFixed(2),
+      positions,
+      topPositionPlayerId,
+      topPositionUsd: +topPositionUsd.toFixed(2),
+      firstHeldAt: w.firstHeldAt,
+      lastActiveAt: w.lastActiveAt,
+      tier: tierForValue(nflValueUsd),
+      funBalance: w.funBalance,
+      funValueUsd,
+    });
+  }
+  out.sort((a, b) => b.nflValueUsd - a.nflValueUsd);
+  return out.slice(0, limit);
 }
 
 async function computeTopNflWallets(limit: number, perPool: number): Promise<TopNflWallet[]> {
