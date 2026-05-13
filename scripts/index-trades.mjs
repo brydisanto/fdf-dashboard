@@ -69,7 +69,21 @@ const BACKFILL_TARGET_MS = HISTORY_LIMIT_MS;
 
 // eth_getLogs max range on public Base RPC. Some endpoints accept more,
 // but 10k is the safe ceiling.
-const LOGS_CHUNK_BLOCKS = 10_000;
+// eth_getLogs chunk size. Public Base RPC silently truncates responses
+// that exceed ~10k logs — Sport.fun is busy enough that a 10k-block
+// chunk can blow past that cap on active days, dropping events with
+// no error. (This was the cause of missing trades like the Josh Allen
+// sell at block 45,948,382: the chunk that contained it returned a
+// truncated subset and the sell wasn't in it.) 2,000 blocks ≈ 70 min
+// of chain time on Base — comfortably under the cap even at peak
+// activity, and we still recursively split if a chunk somehow does
+// hit the threshold (see fetchTransferLogs).
+const LOGS_CHUNK_BLOCKS = 2_000;
+
+// Treat any chunk that returns this many logs (or more) as suspicious
+// — the RPC may have truncated. Halve the chunk and re-query the two
+// halves to be safe. Effectively self-healing against the silent cap.
+const LOGS_TRUNCATION_THRESHOLD = 9_500;
 
 // Head-of-chain safety lag. Public Base RPC log indexing can lag the
 // chain tip by a few blocks — if we scan up to `latestBlock` and the
@@ -163,14 +177,30 @@ function computeNetUsd(wallet, logs) {
   return Number(netRaw) / 1e6;
 }
 
-// Fetch all TransferSingle logs from FOOTBALLFUN_CONTRACT in a block range.
+// Fetch all TransferSingle logs from FOOTBALLFUN_CONTRACT in a block
+// range. Self-healing: if the RPC returns at or above the truncation
+// threshold for this window, halve the range and recurse — that lets
+// us silently work around the public Base RPC's undocumented response
+// cap without missing events.
 async function fetchTransferLogs(fromBlock, toBlock) {
-  return rpc("eth_getLogs", [{
+  const logs = await rpc("eth_getLogs", [{
     address: FOOTBALLFUN_CONTRACT,
     topics: [ERC1155_TRANSFER_SINGLE],
     fromBlock: "0x" + fromBlock.toString(16),
     toBlock: "0x" + toBlock.toString(16),
   }]);
+  if (logs.length >= LOGS_TRUNCATION_THRESHOLD && toBlock > fromBlock) {
+    if (process.env.GRIDIRON_VERBOSE) {
+      console.error(`  ⚠ chunk ${fromBlock}..${toBlock} returned ${logs.length} logs (possible truncation) — splitting`);
+    }
+    const mid = Math.floor((fromBlock + toBlock) / 2);
+    const [a, b] = await Promise.all([
+      fetchTransferLogs(fromBlock, mid),
+      fetchTransferLogs(mid + 1, toBlock),
+    ]);
+    return [...a, ...b];
+  }
+  return logs;
 }
 
 async function fetchBlock(numberHex) {
@@ -232,6 +262,26 @@ async function main() {
       // Normal incremental.
       fromBlock = existing.lastIndexedBlock + 1;
     }
+  }
+
+  // --rescan-blocks N (or env GRIDIRON_RESCAN_BLOCKS=N) forces the
+  // run to re-scan the most recent N blocks regardless of where
+  // lastIndexedBlock sits. Used to recover from past truncation —
+  // e.g. when the RPC silently dropped events the original run
+  // would have caught. Existing trades in that range are deduped
+  // by (txId, logIndex) in the merge step, so a rescan is safe to
+  // run any time.
+  const rescanArg = process.argv.find((a) => a.startsWith("--rescan-blocks="));
+  const rescanBlocks = rescanArg
+    ? parseInt(rescanArg.slice("--rescan-blocks=".length), 10)
+    : process.env.GRIDIRON_RESCAN_BLOCKS
+    ? parseInt(process.env.GRIDIRON_RESCAN_BLOCKS, 10)
+    : 0;
+  if (Number.isFinite(rescanBlocks) && rescanBlocks > 0) {
+    fromBlock = Math.max(0, safeLatestBlock - rescanBlocks);
+    toBlock = safeLatestBlock;
+    isBackfill = true;
+    console.error(`Rescan mode: re-scanning last ${rescanBlocks} blocks (${fromBlock}..${toBlock})`);
   }
 
   console.error(`Scanning blocks ${fromBlock} → ${toBlock} (${toBlock - fromBlock + 1} blocks)${isBackfill ? " [BACKFILL]" : ""}`);
