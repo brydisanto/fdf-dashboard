@@ -27,9 +27,11 @@ export function PlayerAvatar({
   size?: keyof typeof SIZES;
   className?: string;
 }) {
-  // Fall back to initials only if jersey is missing/zero (data hole).
+  // Fall back to initials only when the jersey is truly missing
+  // (non-finite). 0 is a valid jersey since the NFL began allowing
+  // it in 2023 — Jahmyr Gibbs (DET) and a handful of others wear it.
   const jersey =
-    typeof player.jerseyNumber === "number" && player.jerseyNumber > 0
+    typeof player.jerseyNumber === "number" && Number.isFinite(player.jerseyNumber) && player.jerseyNumber >= 0
       ? String(player.jerseyNumber)
       : `${player.firstName[0] ?? ""}${player.lastName[0] ?? ""}`;
   const teamColor = TEAM_COLORS[player.team] ?? "var(--color-line)";
