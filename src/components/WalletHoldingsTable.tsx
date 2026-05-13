@@ -77,19 +77,19 @@ export function WalletHoldingsTable({
               const player = variant === "nfl" ? ROSTER_BY_TOKEN.get(h.tokenAddress) : null;
               return (
                 <tr key={h.tokenAddress} className="border-b border-[var(--color-border)]/60 last:border-b-0 hover:bg-[var(--color-surface-2)]/60">
-                  <td className="px-3 py-2.5" style={{ textAlign: "left" }}>
+                  <td className="px-3 py-2.5 text-left">
                     {player ? (
-                      <Link href={`/player/${player.id}`} className="flex items-center gap-2 hover:text-[var(--color-brand-soft)]">
+                      <Link href={`/player/${player.id}`} className="flex w-full items-center gap-2 text-left hover:text-[var(--color-brand-soft)]">
                         <PlayerAvatar player={player} size="sm" />
-                        <div>
-                          <div className="font-medium">{player.firstName} {player.lastName}</div>
-                          <div className="text-[11px] text-[var(--color-text-dim)]">{player.position} · {player.team}</div>
+                        <div className="min-w-0 flex-1 text-left">
+                          <div className="font-medium text-left">{player.firstName} {player.lastName}</div>
+                          <div className="text-[11px] text-left text-[var(--color-text-dim)]">{player.position} · {player.team}</div>
                         </div>
                       </Link>
                     ) : (
-                      <div>
-                        <div className="font-medium truncate max-w-[260px]">{h.name}</div>
-                        <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-dim)]">{h.symbol}</div>
+                      <div className="text-left">
+                        <div className="font-medium truncate max-w-[260px] text-left">{h.name}</div>
+                        <div className="text-[10px] uppercase tracking-wider text-left text-[var(--color-text-dim)]">{h.symbol}</div>
                       </div>
                     )}
                   </td>

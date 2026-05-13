@@ -46,6 +46,18 @@
   --accent-tint:        color-mix(in oklab, var(--color-amber-10) 12%, transparent);
   --accent-line:        color-mix(in oklab, var(--color-amber-10) 35%, transparent);
 
+  /* ── Value-disparity tones (used by /value verdict badges + scatter)
+     Mild/mod/sev × under/over. Default values are tuned for the dark
+     surfaces — light pastels read soft on charcoal. NFL theme below
+     overrides the mild tier to darker values so chips stay legible
+     against the white substrate. */
+  --tone-under-mild:    oklch(0.80 0.13 145);
+  --tone-under-mod:     oklch(0.74 0.18 156);
+  --tone-under-sev:     oklch(0.70 0.22 156);
+  --tone-over-mild:     oklch(0.82 0.14 90);
+  --tone-over-mod:      oklch(0.74 0.18 50);
+  --tone-over-sev:      oklch(0.68 0.21 22);
+
   /* ── Type ─────────────────────────────────────────────────────── */
   --font-display:       var(--font-display-raw), 'Big Shoulders Display', system-ui, sans-serif;
   --font-ui:            var(--font-body-raw), 'Geist', ui-sans-serif, system-ui, sans-serif;
@@ -66,6 +78,75 @@
 
   /* ── Density (default Dense) ──────────────────────────────────── */
   --row-pad-y: 8px;
+}
+
+/* ── NFL theme — opt-in via <html data-theme="nfl"> ─────────────
+   Drop-in palette override: red/white/blue inspired by the league's
+   color marks. White stadium, navy text, red accent. Component
+   markup is unchanged — every surface, text, and brand swatch is
+   re-pointed via custom-property overrides. */
+[data-theme="nfl"] {
+  /* Surfaces */
+  --color-stadium:      #FFFFFF;
+  --color-bench:        #F4F6F9;
+  --color-press:        #E9ECF1;
+  --color-line:         #C8CDD7;
+  --color-line-strong:  #98A0AE;
+
+  --color-bg:           #FFFFFF;
+  --color-surface:      #F4F6F9;
+  --color-surface-2:    #E9ECF1;
+  --color-border:       #C8CDD7;
+  --color-border-strong:#98A0AE;
+
+  /* Text — NFL deep navy */
+  --color-text:         #013369;
+  --color-text-muted:   #4A5673;
+  --color-text-dim:     #8A93A6;
+
+  /* "Amber" tokens repointed to navy so existing accent-amber refs
+     pick up a coherent navy ladder. */
+  --color-amber-12:     #3B6CB5;
+  --color-amber-10:     #013369;
+  --color-amber-08:     #001C45;
+  --color-amber-04:     #C7D5EA;
+
+  --color-brand:        #013369;
+  --color-brand-soft:   #3B6CB5;
+
+  /* Semantic — green/yellow stay readable on white; loss = NFL red. */
+  --color-turf:         #006B3C;
+  --color-penalty:      #D50A0A;
+  --color-flag:         #FFB81C;
+  --color-broadcast:    #013369;
+
+  --color-gain:         #006B3C;
+  --color-loss:         #D50A0A;
+
+  /* Accent = NFL red. Decoupled from --color-amber-10 (navy)
+     because we want highlights/hovers/active states to POP red on
+     a navy-on-white substrate. */
+  --accent:             #D50A0A;
+  --accent-soft:        #E83A3A;
+  --accent-tint:        color-mix(in oklab, #D50A0A 12%, transparent);
+  --accent-line:        color-mix(in oklab, #D50A0A 35%, transparent);
+
+  /* Value tones — darker / more saturated than the dark-theme
+     defaults so MILDLY UNDER/OVERVALUED chips remain readable on
+     the white substrate. The badge composes fg @ 12% bg + fg @ 40%
+     border, so both the text and the chip outline come from these.
+     Higher chroma + lower lightness = legible on white. */
+  --tone-under-mild:    oklch(0.50 0.18 150);  /* darker green */
+  --tone-under-mod:     oklch(0.42 0.20 150);
+  --tone-under-sev:     oklch(0.36 0.18 150);
+  --tone-over-mild:     oklch(0.58 0.22 50);   /* darker amber/orange */
+  --tone-over-mod:      oklch(0.52 0.22 35);
+  --tone-over-sev:      oklch(0.50 0.22 22);   /* deep red */
+
+  /* Verdict-pill composition: stronger fill + border on white so
+     mild chips don't ghost. Default dark theme keeps 12% / 40%. */
+  --verdict-bg-pct:     20%;
+  --verdict-border-pct: 60%;
 }
 
 html, body {

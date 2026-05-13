@@ -135,15 +135,15 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
                   >
                     {ranked.get(p.id)}
                   </td>
-                  <td className="px-3" style={{ padding: "var(--row-pad-y) 12px", textAlign: "left" }}>
-                    <Link href={`/player/${p.id}`} className="flex items-center gap-2.5">
+                  <td className="px-3 text-left" style={{ padding: "var(--row-pad-y) 12px" }}>
+                    <Link href={`/player/${p.id}`} className="flex w-full items-center gap-2.5 text-left">
                       <PlayerAvatar player={p} size="sm" />
-                      <div className="min-w-0">
-                        <div className="truncate font-semibold text-[14px] group-hover:text-[var(--accent-soft)]">
+                      <div className="min-w-0 flex-1 text-left">
+                        <div className="truncate font-semibold text-[14px] text-left group-hover:text-[var(--accent-soft)]">
                           {p.firstName} {p.lastName}
                         </div>
                         <div
-                          className="mt-0.5 truncate"
+                          className="mt-0.5 truncate text-left"
                           style={{
                             fontFamily: "var(--font-mono)",
                             fontSize: "10.5px",

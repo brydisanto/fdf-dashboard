@@ -22,16 +22,19 @@ export interface DeltaTone {
   tier: DeltaTier;
 }
 
+// Foreground references CSS custom properties (--tone-*) so the NFL
+// light theme can substitute darker, more saturated values in
+// globals.css without having to fork this logic.
 export function deltaTone(value: number | null): DeltaTone {
   if (value == null) return { fg: "var(--color-text-dim)", tier: "unranked" };
   const abs = Math.abs(value);
   if (abs <= 1) return { fg: "var(--color-text-muted)", tier: "fair" };
   if (value < 0) {
-    if (abs <= 3) return { fg: "oklch(0.80 0.13 145)", tier: "under-mild" };
-    if (abs <= 6) return { fg: "var(--color-turf)", tier: "under-mod" };
-    return { fg: "oklch(0.70 0.22 156)", tier: "under-sev" };
+    if (abs <= 3) return { fg: "var(--tone-under-mild)", tier: "under-mild" };
+    if (abs <= 6) return { fg: "var(--tone-under-mod)",  tier: "under-mod" };
+    return { fg: "var(--tone-under-sev)", tier: "under-sev" };
   }
-  if (abs <= 3) return { fg: "oklch(0.82 0.14 90)", tier: "over-mild" };
-  if (abs <= 6) return { fg: "oklch(0.74 0.18 50)", tier: "over-mod" };
-  return { fg: "var(--color-penalty)", tier: "over-sev" };
+  if (abs <= 3) return { fg: "var(--tone-over-mild)", tier: "over-mild" };
+  if (abs <= 6) return { fg: "var(--tone-over-mod)",  tier: "over-mod" };
+  return { fg: "var(--tone-over-sev)", tier: "over-sev" };
 }

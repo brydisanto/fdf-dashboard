@@ -14,7 +14,6 @@ import { MarketPulse } from "@/components/MarketPulse";
 import { MoversList } from "@/components/MoversList";
 import { PlayersTable } from "@/components/PlayersTable";
 import { RecentTrades } from "@/components/RecentTrades";
-import { LiveTicker } from "@/components/LiveTicker";
 import { FreshnessIndicator } from "@/components/FreshnessIndicator";
 import { UniqueHoldersCard, UniqueHoldersCardSkeleton } from "@/components/UniqueHoldersCard";
 import { fmtUsd } from "@/lib/format";
@@ -56,16 +55,11 @@ export default async function Home() {
 
   const activePoolsCount = players.filter((p) => p.volume24h > 0 || p.trades24h > 0).length;
   const generatedAt = Date.now();
-  const tickerMovers = players
-    .slice()
-    .sort((a, b) => Math.abs(b.change24h) - Math.abs(a.change24h))
-    .slice(0, 8);
+  // (Ticker now lives in the root layout — see TickerStrip — so it
+  // rolls on every page at identical placement.)
 
   return (
     <>
-      {/* Live ticker — full-width, sits between header and hero */}
-      <LiveTicker movers={tickerMovers} />
-
       <div className="mx-auto max-w-[var(--max-w)] px-5 sm:px-8 py-6 sm:py-8">
         <Hero />
 
