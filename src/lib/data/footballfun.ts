@@ -850,16 +850,30 @@ function buildMarketCapSeriesFromSnapshots(
     }
     if (total > 0) series.push({ t, price: Math.round(total), volume: 0 });
   }
-  // Boundary-artifact guard: when the first sample lands exactly on
-  // the oldest trade's blockTime, the chunky launch trade's implied
-  // price (avg execution across a wide curve range) can sit well
-  // above the post-trade spot the curve actually settles into. Drop
-  // leading samples that deviate > 5% from the next stable point so
-  // the chart doesn't open with a phantom spike.
-  while (series.length >= 2) {
-    const a = series[0].price;
-    const b = series[1].price;
-    if (b > 0 && Math.abs(a - b) / b > 0.05) {
+  // Cold-start trim. The trade indexer's first ~36 hours are sparse
+  // (Apr 13 = 17 trades / 72 players, Apr 14 = 88 — vs Apr 15's 279)
+  // because the indexer's first run picked up only a partial day.
+  // With <1.5 trades/token, per-token price reconstruction over-
+  // states mcap: feeAdjustedTradeAnchor returns a chunky launch
+  // trade's implied price (avg execution across a wide curve range)
+  // instead of the actual settled spot, and tokens with no early
+  // trades fall back to a later "earliest known price" via the
+  // priceAtTime fallback.
+  //
+  // Drop leading samples while the head exceeds the local trough by
+  // > 2%. The trough = minimum of the next 8 samples (~24h smoothing
+  // window). Stops once the head sits at-or-below the trough — i.e.
+  // we've entered the indexer's "settled" coverage zone.
+  const TROUGH_LOOKAHEAD = 8;
+  const TROUGH_TOLERANCE = 1.02;
+  while (series.length > TROUGH_LOOKAHEAD + 1) {
+    const head = series[0].price;
+    let trough = Infinity;
+    for (let i = 1; i <= TROUGH_LOOKAHEAD; i++) {
+      const p = series[i].price;
+      if (p > 0 && p < trough) trough = p;
+    }
+    if (trough > 0 && head > trough * TROUGH_TOLERANCE) {
       series.shift();
     } else {
       break;
