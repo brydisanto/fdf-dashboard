@@ -769,6 +769,46 @@ function buildMarketCapSeriesFromSnapshots(
     return Math.max(0, s);
   };
 
+  // Earliest known price for a token. Used as the fallback when T
+  // predates everything we have on file — pinning to today's price
+  // over-states mcap for periods before our data window (tokens that
+  // have since cooled drag historical mcap UP rather than down).
+  //
+  // Memoized per-anchor because we call it for every sample point in
+  // the pre-data tail.
+  const earliestKnownPriceCache = new Map<string, number>();
+  const earliestKnownPrice = (anchor: Anchor): number => {
+    const key = String(anchor.tokenIdx) + ":" + anchor.trades.length;
+    const cached = earliestKnownPriceCache.get(key);
+    if (cached !== undefined) return cached;
+
+    // Walk snapshots oldest-first for this token.
+    if (history && anchor.tokenIdx >= 0) {
+      for (let i = 0; i < history.snapshots.length; i++) {
+        const p = history.snapshots[i].prices[anchor.tokenIdx];
+        if (p > 0) {
+          earliestKnownPriceCache.set(key, p);
+          return p;
+        }
+      }
+    }
+    // No snapshot price — try the earliest trade with positive usd.
+    for (let i = 0; i < anchor.trades.length; i++) {
+      const t = anchor.trades[i];
+      if (t.shareAmount <= 0 || t.usdAmount <= 0) continue;
+      const implied = t.usdAmount / t.shareAmount;
+      const adj =
+        t.side === "buy" ? implied / (1 + BUY_FEE) :
+        t.side === "sell" ? implied * (1 + SELL_FEE) :
+        implied;
+      earliestKnownPriceCache.set(key, adj);
+      return adj;
+    }
+    // Truly nothing — last resort: today's price.
+    earliestKnownPriceCache.set(key, anchor.price);
+    return anchor.price;
+  };
+
   // Pick the best price for a token at time T. Snapshot is preferred
   // when its timestamp is within ±1h of T; otherwise fall back to the
   // fee-adjusted implied price of the latest buy/sell ≤ T.
@@ -792,9 +832,10 @@ function buildMarketCapSeriesFromSnapshots(
     // Snapshot didn't cover this region — try trade indexer.
     const fromTrade = feeAdjustedTradeAnchor(anchor.trades, targetMs);
     if (fromTrade != null) return fromTrade;
-    // No data at all — use current price as a flat baseline. Tokens
-    // with no historical data are treated as "constant since launch."
-    return anchor.price;
+    // Target predates all observed data for this token. Anchor to
+    // the EARLIEST known price (snapshot or trade implied) instead
+    // of today's spot — today's price would warp pre-data history.
+    return earliestKnownPrice(anchor);
   };
 
   // Generate sample timestamps + compute total mcap at each.
