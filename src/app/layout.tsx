@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Big_Shoulders, JetBrains_Mono } from "next/font/google";
 import Link from "next/link";
 import { Flame } from "lucide-react";
+import { MobileNav } from "@/components/MobileNav";
 import "./globals.css";
 
 const body = Geist({
@@ -47,7 +48,7 @@ export default function RootLayout({
 function SiteHeader() {
   return (
     <header className="sticky top-0 z-30 border-b border-[var(--color-line)] bg-[color-mix(in_oklab,var(--color-stadium)_85%,transparent)] backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-[var(--max-w)] items-center justify-between px-5 sm:px-8">
+      <div className="relative mx-auto flex h-16 max-w-[var(--max-w)] items-center justify-between px-5 sm:px-8">
         <Link href="/" className="flex items-center gap-3 group">
           <BrandMark />
           <div className="leading-none">
@@ -67,6 +68,7 @@ function SiteHeader() {
             </div>
           </div>
         </Link>
+        {/* Desktop nav — md+ */}
         <nav className="hidden md:flex items-center gap-1 text-sm">
           <NavLink href="/">Overview</NavLink>
           <NavLink href="/#players">Players</NavLink>
@@ -77,6 +79,8 @@ function SiteHeader() {
           </NavLink>
           <NavLinkHighlighted href="/value">Value Plays</NavLinkHighlighted>
         </nav>
+        {/* Mobile hamburger + slide-down panel */}
+        <MobileNav />
       </div>
     </header>
   );

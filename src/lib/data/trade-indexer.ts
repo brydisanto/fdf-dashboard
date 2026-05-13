@@ -52,7 +52,11 @@ async function readSnapshotFromDisk(): Promise<TradeStore | null> {
   return null;
 }
 
-const REMOTE_URL = process.env.GRIDIRON_TRADE_HISTORY_URL;
+// Default to the project's own data branch so the dashboard works
+// without any env var configuration. Override with
+// GRIDIRON_TRADE_HISTORY_URL if the snapshot lives elsewhere.
+const REMOTE_URL = process.env.GRIDIRON_TRADE_HISTORY_URL
+  ?? "https://raw.githubusercontent.com/brydisanto/fdf-dashboard/data/data/trade-history.json";
 let remoteCache: { fetchedAt: number; store: TradeStore } | null = null;
 // Remote refresh aligned with the indexer cadence (5 min).
 const REMOTE_TTL_MS = 5 * 60 * 1000;
