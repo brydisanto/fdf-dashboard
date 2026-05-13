@@ -38,7 +38,13 @@ const API_BASE = "https://api.tenero.io/v1/sportsfun";
 // every market cap calculation so it's the shortest-lived; heavier
 // per-pool endpoints (OHLC, holders, wallet snapshots) live longer.
 const REVALIDATE = {
-  list:    15,        // /tokens list — drives mcap, prices, supplies
+  list:    60,        // /tokens list — drives mcap, prices, supplies.
+                      // Was 15s, but the home page streams ~6 Suspense
+                      // sections all needing this data on cold cache,
+                      // and 15s TTL meant most worker instances paid
+                      // a full Tenero roundtrip per render. 60s aligns
+                      // with the playersCache + staleTimes.dynamic = 30s
+                      // client cache.
   detail:  300,       // 5 min — single-token Tenero detail. The on-chain
                       // override replaces price/supply/TVL on every render,
                       // so Tenero's role here is metadata (name, image)
@@ -468,7 +474,36 @@ function tinySparkline(row: TeneroTokenRow): number[] {
 
 // ---------- Public API ----------
 
+// Module-level memo for getPlayers. Without this, a single home-page
+// render runs getPlayers() at least twice (once via getMarketOverview
+// → getPlayers, once via the loadPlayers React.cache wrapper used by
+// the All Players + Movers + Trade Feed sections). Each call does the
+// 72-player delta + sparkline enrichment, on-chain non-active balance
+// read, etc. — heavy CPU and network. 30s TTL keeps prices fresh and
+// is comfortably under the staleTimes.dynamic = 30s client cache.
+//
+// In-flight dedup: when multiple concurrent callers race to compute,
+// they all wait on the SAME promise instead of each starting their
+// own build. Critical for streaming pages where every Suspense child
+// fires its data fetch simultaneously.
+let playersCache: { ts: number; promise: Promise<PlayerSummary[]> } | null = null;
+const PLAYERS_CACHE_TTL_MS = 30_000;
+
 export async function getPlayers(): Promise<PlayerSummary[]> {
+  const now = Date.now();
+  if (playersCache && now - playersCache.ts < PLAYERS_CACHE_TTL_MS) {
+    return playersCache.promise;
+  }
+  const promise = computePlayers().catch((err) => {
+    // Don't poison the cache on error — let the next call retry.
+    if (playersCache?.promise === promise) playersCache = null;
+    throw err;
+  });
+  playersCache = { ts: now, promise };
+  return promise;
+}
+
+async function computePlayers(): Promise<PlayerSummary[]> {
   const map = await fetchNflTokenMap();
   const summaries = ROSTER.map((player) => {
     const row = map.get(player.tokenAddress);
