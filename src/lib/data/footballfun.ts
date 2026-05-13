@@ -665,98 +665,60 @@ function feeAdjustedTradeAnchor(
 // directly comparable to today's mid spot. The trade indexer
 // stays purely for the Live Feed display.
 
-// Reconstruct a per-token (price, supply) stepped timeline from
-// trades, anchored on the current state. For each trade we know:
-//   - implied price after the trade = usdAmount / shareAmount
-//   - supply effect: +shareAmount (buy), -shareAmount (sell),
-//     0 (swap-in / swap-out — those move pair balance, not circulating)
-// Walking DESC from current supply lets us derive supplyAfter[i] for
-// every prior trade. Between trade i and i+1, both price and supply
-// hold constant at trade i's values.
-interface TokenStep { t: number; price: number; supply: number }
-function buildTokenStepsFromTrades(
-  trades: IndexedTrade[],         // sorted ASC by blockTime
-  currentSupply: number,
-): TokenStep[] {
-  if (trades.length === 0) return [];
-  const supplyAfter = new Array<number>(trades.length);
-  supplyAfter[trades.length - 1] = currentSupply;
-  for (let i = trades.length - 2; i >= 0; i--) {
-    const next = trades[i + 1];
-    let delta = 0;
-    if (next.side === "buy") delta = next.shareAmount;
-    else if (next.side === "sell") delta = -next.shareAmount;
-    supplyAfter[i] = supplyAfter[i + 1] - delta;
-  }
-  const out: TokenStep[] = new Array(trades.length);
-  for (let i = 0; i < trades.length; i++) {
-    const t = trades[i];
-    out[i] = {
-      t: t.blockTime,
-      price: t.shareAmount > 0 && t.usdAmount > 0 ? t.usdAmount / t.shareAmount : 0,
-      supply: Math.max(0, supplyAfter[i]),
-    };
-  }
-  return out;
-}
+// (Removed: buildTokenStepsFromTrades + lookupStep + TokenStep.) The
+// trade-step reconstruction had two bugs the snapshot-based builder
+// avoids: implied price ≠ post-trade mid spot (fee inclusion), and
+// swap legs had price=0 because their usdAmount is 0. See
+// buildMarketCapSeriesFromSnapshots above.
 
-function lookupStep(steps: TokenStep[], targetMs: number): TokenStep | null {
-  if (steps.length === 0) return null;
-  let lo = 0;
-  let hi = steps.length - 1;
-  let idx = -1;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    if (steps[mid].t <= targetMs) {
-      idx = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  return idx >= 0 ? steps[idx] : null;
-}
-
-function buildMarketCapSeriesFromTrades(
+// Build the total market-cap timeline from the price snapshot's
+// per-token mid spots + circulating supplies. Each snapshot point
+// gives an exact mcap at that timestamp:
+//   total_mcap(t) = Σ(snapshot.prices[i] × snapshot.supplies[i])
+//
+// Older snapshots (pre-2026-05-12) lack the `supplies` field;
+// they're filtered out (using current supply for a historical price
+// would over-state the past because circulating supply grows as the
+// bonding curve mints). For windows the snapshot doesn't yet cover
+// (>21h ago today, growing toward 7d coverage by 2026-05-19), the
+// chart simply starts there. The current total is pinned as the
+// freshest point so the chart always terminates at "now".
+function buildMarketCapSeriesFromSnapshots(
+  history: { tokenIds: string[]; snapshots: Array<{ ts: number; prices: number[]; supplies?: number[] }> } | null,
   players: PlayerSummary[],
-  tradesByToken: Map<string, IndexedTrade[]>,
   totalMarketCapNow: number,
 ): PricePoint[] {
   const now = Date.now();
-  // 7-day window, hourly granularity = 168 points. Captures every
-  // meaningful move without overwhelming the chart.
-  const WINDOW_MS = 7 * 86_400_000;
-  const STEP_MS = 3_600_000;
-
-  const stepsByToken = new Map<string, TokenStep[]>();
-  let constantContribution = 0;        // tokens with no indexed trades
-
-  for (const player of players) {
-    const roster = ROSTER_BY_ID.get(player.id);
-    if (!roster) continue;
-    const tokenTrades = tradesByToken.get(roster.tokenIdSuffix) ?? [];
-    if (tokenTrades.length === 0) {
-      // No trades in the indexed window — state is unchanged. Add a
-      // constant baseline to every sample point.
-      constantContribution += player.priceUsd * player.circulatingSupply;
-      continue;
-    }
-    stepsByToken.set(
-      roster.tokenIdSuffix,
-      buildTokenStepsFromTrades(tokenTrades, player.circulatingSupply),
-    );
-  }
-
   const series: PricePoint[] = [];
-  for (let t = now - WINDOW_MS; t <= now; t += STEP_MS) {
-    let total = constantContribution;
-    for (const steps of stepsByToken.values()) {
-      const step = lookupStep(steps, t);
-      if (step) total += step.price * step.supply;
+
+  if (history && history.snapshots.length > 0) {
+    const usable = history.snapshots.filter(
+      (s) => Array.isArray(s.supplies) && s.supplies.length === s.prices.length,
+    );
+    for (const snap of usable) {
+      const supplies = snap.supplies as number[];
+      let total = 0;
+      for (let i = 0; i < snap.prices.length; i++) {
+        total += snap.prices[i] * supplies[i];
+      }
+      if (total > 0) {
+        series.push({ t: snap.ts, price: Math.round(total), volume: 0 });
+      }
     }
-    if (total > 0) series.push({ t, price: Math.round(total), volume: 0 });
   }
-  series.push({ t: now, price: Math.round(totalMarketCapNow), volume: 0 });
+
+  // Anchor the rightmost point at "now" with the live total so the
+  // chart's endpoint always matches the headline mcap stat.
+  if (
+    series.length === 0 ||
+    series[series.length - 1].t !== now
+  ) {
+    series.push({ t: now, price: Math.round(totalMarketCapNow), volume: 0 });
+  }
+  // Reference players to suppress unused-arg lint — it's part of the
+  // signature so this can drop in for the old trade-based builder
+  // without rippling through call sites.
+  void players;
   return series;
 }
 
@@ -1746,21 +1708,30 @@ export async function getMarketOverview(): Promise<MarketOverview> {
   const HOUR_MS = 3600 * 1000;
   const now = Date.now();
 
-  // Build the market-cap timeline by reconstructing per-token (price,
-  // supply) at past timestamps from the on-chain trade index. For each
-  // trade we know its implied price (usdAmount / shareAmount) and its
-  // effect on circulating supply (buys mint, sells burn, swaps neutral)
-  // — combined with each token's CURRENT spot + supply this lets us
-  // walk backward and derive (price, supply) at any past time exactly.
+  // Build the market-cap timeline directly from the price-snapshot
+  // history. Each snapshot has on-chain mid spot AND circulating
+  // supply per token, so total mcap at that snapshot's timestamp is
+  // just Σ(prices[i] × supplies[i]).
   //
-  // Tokens with no recent trades contribute a constant
-  // currentPrice × currentSupply across the whole series (their state
-  // genuinely didn't change). Tokens whose first indexed trade lands
-  // after a sample time get excluded for that sample (we don't know
-  // their state pre-first-trade).
-  const tradeStoreForChart = await readTradeHistory();
-  const tradesByToken = buildTradesByTokenIndex(tradeStoreForChart?.trades ?? []);
-  const marketCapSeries = buildMarketCapSeriesFromTrades(players, tradesByToken, totalMarketCap);
+  // We previously reconstructed this from the trade indexer, but that
+  // had two unfixable issues:
+  //   1. The "implied price" (usdAmount / shareAmount) is the AVG
+  //      execution price including fee + slippage — buys came out
+  //      ~3% above the post-trade mid spot, sells ~3% below.
+  //   2. Swap legs have usdAmount = 0, so the reconstructed step
+  //      had price = 0, dropping the token's contribution to $0 at
+  //      every swap timestamp — visible as sharp dips in the chart.
+  //
+  // The price-snapshot has neither issue: it stores the actual on-
+  // chain mid spot (USDC reserve / pair shares) and the actual
+  // circulating supply at each snapshot. Chart is as clean as the
+  // snapshot cron's resolution (every 15 min).
+  const priceHistoryForChart = await readPriceHistory();
+  const marketCapSeries = buildMarketCapSeriesFromSnapshots(
+    priceHistoryForChart,
+    players,
+    totalMarketCap,
+  );
 
   // 24h volume chart: split totalVolume24h across hourly buckets weighted by
   // each player's actual `volume_1d_usd` distribution (best we can do
