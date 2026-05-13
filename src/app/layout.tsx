@@ -25,7 +25,7 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "FDF Box Score — NFL Player Token Market",
   description:
-    "Real-time market intelligence for tokenized NFL player shares. Prices, pools, holders, and trades across every listed athlete.",
+    "Real-time price action, trade feed, top wallets, trends, value assessment and more for every tokenized athlete on Sport.fun's NFL market. Includes 72 players. This is how Real Football™ is played.",
 };
 
 export default function RootLayout({
@@ -73,7 +73,7 @@ function SiteHeader() {
           <NavLink href="/">Overview</NavLink>
           <NavLink href="/#players">Players</NavLink>
           <NavLink href="/#trades">Live Feed</NavLink>
-          <NavLink href="/wallets">Wallets</NavLink>
+          <NavLink href="/wallets">Top Wallets</NavLink>
           <NavLink href="/on-fire" icon={<Flame className="h-3.5 w-3.5" strokeWidth={2} />}>
             On Fire
           </NavLink>
