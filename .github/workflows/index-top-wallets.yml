@@ -1,0 +1,85 @@
+name: Index NFL Top Wallets
+
+# Every 10 minutes + manual trigger. Precomputes the wallet
+# leaderboard (Tenero holder aggregation + on-chain Multicall
+# balance refinement) so the deployed app doesn't pay that cost
+# on every cold worker.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: index-top-wallets
+  cancel-in-progress: false
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: data
+          fetch-depth: 0
+        continue-on-error: true
+
+      - name: Configure git identity
+        shell: bash
+        run: |
+          git config --global user.name "Gridiron Indexer"
+          git config --global user.email "indexer@users.noreply.github.com"
+
+      - name: Bootstrap data branch if missing, then overlay main scripts
+        shell: bash
+        run: |
+          set -e
+          if [ ! -f "scripts/index-top-wallets.mjs" ]; then
+            echo "data branch missing the script — bootstrapping"
+            git init -b data
+            git remote remove origin 2>/dev/null || true
+            git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+            git fetch origin main
+            git fetch origin data 2>/dev/null || true
+            if git show-ref --verify --quiet refs/remotes/origin/data; then
+              git reset --hard origin/data
+              git checkout origin/main -- scripts/ .github/workflows/ 2>/dev/null || true
+              git add -A
+              if ! git diff --staged --quiet; then
+                git commit -m "Sync scripts from main"
+              fi
+            else
+              git reset --hard origin/main
+            fi
+          fi
+
+      - name: Sync latest scripts from main into the data branch
+        shell: bash
+        run: |
+          git fetch origin main
+          git merge origin/main --no-edit -X theirs --allow-unrelated-histories || true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run indexer
+        run: node scripts/index-top-wallets.mjs --write
+
+      - name: Commit snapshot to data branch
+        shell: bash
+        run: |
+          set -e
+          git add data/top-wallets.json
+          if git diff --staged --quiet; then
+            echo "No leaderboard changes."
+            exit 0
+          fi
+          git commit -m "Top wallets index $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push origin HEAD:data
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
