@@ -54,13 +54,12 @@ const HOLDERS_MAX_PAGES = 12;
 const REQUEST_DELAY_MS = 700;
 const RPC_URL = process.env.BASE_RPC_URL || "https://mainnet.base.org";
 
-// On-chain refinement is opt-in via env var. The public Base RPC
-// rate-limits hard enough that refining 800 wallets sequentially
-// takes longer than the workflow timeout. Default OFF — Tenero
-// balances alone (top-N per pool) give a 95% accurate leaderboard
-// in 5x less time. Set ENABLE_ONCHAIN_REFINEMENT=1 to opt in (only
-// useful with a paid RPC).
-const ENABLE_ONCHAIN_REFINEMENT = process.env.ENABLE_ONCHAIN_REFINEMENT === "1";
+// On-chain refinement is now ON by default — the new flat
+// balanceOfBatch reader does 25 wallets × 72 tokens per single
+// eth_call, so refining 500 wallets is 20 RPC calls (vs the
+// previous 1000-call per-wallet approach that timed out). Set
+// ENABLE_ONCHAIN_REFINEMENT=0 to fall back to Tenero-only.
+const ENABLE_ONCHAIN_REFINEMENT = process.env.ENABLE_ONCHAIN_REFINEMENT !== "0";
 const REFINE_TOP_N = 500;
 
 // Roster of NFL token IDs (must match src/lib/data/roster.ts).
@@ -172,28 +171,26 @@ async function rpc(method, params, attempt = 0) {
   }
 }
 
-// ABI-encode balanceOfBatch(address[], uint256[]). Sport.fun's ERC1155.
-// We call this per-wallet (N addresses === N copies of the same wallet,
-// paired with each tokenId), returning balances for all 72 tokens in a
-// single eth_call.
-function encodeBalanceOfBatch(wallet, tokenIds) {
-  // selector("balanceOfBatch(address[],uint256[])") = 0x4e1273f4
-  const selector = "4e1273f4";
-  const n = tokenIds.length;
+const pad32 = (h) => h.replace(/^0x/, "").padStart(64, "0");
 
-  // Offsets are relative to the start of the args region (after selector).
-  // Layout: [offsetA=0x40][offsetB=0x40+arrA.bytes][arrA: len, items...][arrB: len, items...]
-  const offsetA = 64; // 0x40 — two 32-byte words for the two offsets
+// ABI-encode balanceOfBatch(address[], uint256[]) where the two
+// arrays have equal length N. Each (wallets[i], tokenIds[i]) pair is
+// queried independently, so we can flat-pack 25 wallets × 72 tokens
+// into a single eth_call (1800 entries, ~58KB response) — far more
+// efficient than per-wallet calls.
+function encodeBalanceOfBatchFlat(wallets, tokenIds) {
+  if (wallets.length !== tokenIds.length) throw new Error("array length mismatch");
+  const n = wallets.length;
+  const selector = "4e1273f4"; // balanceOfBatch(address[],uint256[])
+  const offsetA = 64;          // 0x40 — two 32-byte offset words
   const arrABytes = 32 + n * 32; // len + items
   const offsetB = offsetA + arrABytes;
 
-  const pad32 = (h) => h.replace(/^0x/, "").padStart(64, "0");
   const enc = [];
   enc.push(pad32(offsetA.toString(16)));
   enc.push(pad32(offsetB.toString(16)));
   enc.push(pad32(n.toString(16)));
-  const addrLow = wallet.toLowerCase().replace(/^0x/, "");
-  for (let i = 0; i < n; i++) enc.push(pad32(addrLow));
+  for (const w of wallets) enc.push(pad32(w.toLowerCase().replace(/^0x/, "")));
   enc.push(pad32(n.toString(16)));
   for (const id of tokenIds) enc.push(pad32(id.toString(16)));
 
@@ -214,19 +211,44 @@ function decodeUint256Array(hex) {
   return out;
 }
 
-async function readWalletNflBalances(wallet) {
-  try {
-    const data = encodeBalanceOfBatch(wallet, TOKEN_ID_BIG);
-    const raw = await rpc("eth_call", [{ to: FOOTBALLFUN_CONTRACT, data }, "latest"]);
-    if (!raw || raw === "0x") return null;
-    const arr = decodeUint256Array(raw);
-    return arr.map((b) => Number(b) / Number(SHARE_SCALE));
-  } catch {
-    // Don't kill the whole wallet's refinement just because the RPC
-    // hiccuped on this one call — the wallet will fall back to the
-    // Tenero-aggregated data (less accurate but still useful).
-    return null;
+// Read balances for a chunk of wallets (each × every NFL token) in a
+// single eth_call via the ERC1155 flat balanceOfBatch. Returns a Map
+// addr (lowercase) -> array of per-token balances (decimal-adjusted),
+// or null for that wallet if the chunk failed.
+const ONCHAIN_CHUNK = 25;
+async function readChunkBalances(walletChunk) {
+  const tokenCount = TOKEN_ID_BIG.length;
+  const flatWallets = [];
+  const flatTokens = [];
+  for (const w of walletChunk) {
+    for (let k = 0; k < tokenCount; k++) {
+      flatWallets.push(w);
+      flatTokens.push(TOKEN_ID_BIG[k]);
+    }
   }
+  const out = new Map();
+  try {
+    const data = encodeBalanceOfBatchFlat(flatWallets, flatTokens);
+    const raw = await rpc("eth_call", [{ to: FOOTBALLFUN_CONTRACT, data }, "latest"]);
+    if (!raw || raw === "0x") {
+      for (const w of walletChunk) out.set(w.toLowerCase(), null);
+      return out;
+    }
+    const arr = decodeUint256Array(raw);
+    // Slice the flat result back per wallet.
+    for (let j = 0; j < walletChunk.length; j++) {
+      const offset = j * tokenCount;
+      const balances = [];
+      for (let k = 0; k < tokenCount; k++) {
+        const bal = arr[offset + k] ?? 0n;
+        balances.push(Number(bal) / Number(SHARE_SCALE));
+      }
+      out.set(walletChunk[j].toLowerCase(), balances);
+    }
+  } catch {
+    for (const w of walletChunk) out.set(w.toLowerCase(), null);
+  }
+  return out;
 }
 
 async function readFunBalance(wallet) {
@@ -329,23 +351,50 @@ async function main() {
   // remaining ~5% with deep tail positions get slightly understated.
   let refined;
   if (ENABLE_ONCHAIN_REFINEMENT) {
-    if (verbose) console.error(`[3/3] On-chain refinement (concurrency=3, retry on rate-limit)…`);
-    const refineFns = candidates.map((c) => async () => {
-      const [onchainBalances, funBalance] = await Promise.all([
-        readWalletNflBalances(c.address),
-        readFunBalance(c.address),
-      ]);
+    if (verbose) console.error(`[3/3] On-chain refinement: chunks of ${ONCHAIN_CHUNK} wallets per eth_call…`);
+
+    // Step 3a: chunked balanceOfBatch — each chunk is ONE eth_call
+    // returning 25×72 = 1800 balances. ~20 RPC calls total for the
+    // top-500 leaderboard.
+    const onchainByAddr = new Map();
+    for (let i = 0; i < candidates.length; i += ONCHAIN_CHUNK) {
+      const slice = candidates.slice(i, i + ONCHAIN_CHUNK).map((c) => c.address);
+      const chunkResult = await readChunkBalances(slice);
+      for (const [addr, balances] of chunkResult) onchainByAddr.set(addr, balances);
+      if (verbose) {
+        const okCount = [...chunkResult.values()].filter(Boolean).length;
+        console.error(`  chunk ${i}..${i + slice.length - 1}: ${okCount}/${slice.length} ok`);
+      }
+    }
+
+    // Step 3b: $FUN balances — separate sequential walk, much smaller
+    // payload per call (32 bytes). Concurrency=4 with retry inside
+    // rpc() keeps us under the rate limit. If a wallet's $FUN read
+    // fails we just record 0 — doesn't affect ranking.
+    const funByAddr = new Map();
+    const funFns = candidates.map((c) => async () => {
+      const balance = await readFunBalance(c.address);
+      funByAddr.set(c.address.toLowerCase(), balance);
+    });
+    await chunked(funFns, 4);
+
+    refined = candidates.map((c) => {
+      const addrLc = c.address.toLowerCase();
+      const onchain = onchainByAddr.get(addrLc);
+      const funBalance = funByAddr.get(addrLc) ?? 0;
       const balanceBySuffix = {};
       let positions = 0;
-      if (onchainBalances) {
+      if (onchain) {
+        // Canonical on-chain balances.
         for (let i = 0; i < TOKEN_ID_SUFFIXES.length; i++) {
-          const b = onchainBalances[i];
+          const b = onchain[i];
           if (b > 0) {
             balanceBySuffix[TOKEN_ID_SUFFIXES[i]] = +b.toFixed(6);
             positions += 1;
           }
         }
       } else {
+        // Chunk failed — fall back to Tenero's per-pool balances.
         for (const [suffix, b] of Object.entries(c.teneroBalances)) {
           if (b > 0) {
             balanceBySuffix[suffix] = +b.toFixed(6);
@@ -362,8 +411,7 @@ async function main() {
         lastActiveAt: c.lastActiveAt,
         positions,
       };
-    });
-    refined = (await chunked(refineFns, 3)).filter(Boolean);
+    }).filter(Boolean);
   } else {
     refined = candidates.map((c) => {
       const balanceBySuffix = {};
