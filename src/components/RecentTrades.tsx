@@ -199,7 +199,7 @@ function FlowBadge({ flow }: { flow: TradeFlow }) {
     "buy":      { glyph: "↘", label: "BUY",      cls: "border-[color-mix(in_oklab,var(--color-turf)_40%,transparent)] bg-[color-mix(in_oklab,var(--color-turf)_12%,transparent)] text-[var(--color-turf)]",          title: "Buy · Gold/USDC → player share (3% fee)" },
     "sell":     { glyph: "↗", label: "SELL",     cls: "border-[color-mix(in_oklab,var(--color-penalty)_40%,transparent)] bg-[color-mix(in_oklab,var(--color-penalty)_12%,transparent)] text-[var(--color-penalty)]", title: "Sell · player share → Gold/USDC (3% fee)" },
     "swap-in":  { glyph: "↘", label: "SWAP IN",  cls: "border-[#a8d62b66] bg-[#a8d62b1a] text-[#bce04f]",                                                                                                            title: "Swap in · received this player share in a player ↔ player swap (5% fee). Chartreuse to distinguish from a straight Buy." },
-    "swap-out": { glyph: "↗", label: "SWAP OUT", cls: "border-[#ff8a3d66] bg-[#ff8a3d1a] text-[#ff8a3d]",                                                                                                            title: "Swap out · gave up this player share in a player ↔ player swap (5% fee). Orange-red to distinguish from a straight Sell." },
+    "swap-out": { glyph: "↗", label: "SWAP OUT", cls: "border-[#FF450066] bg-[#FF45001a] text-[#FF4500]",                                                                                                            title: "Swap out · gave up this player share in a player ↔ player swap (5% fee). Orange-red to distinguish from a straight Sell." },
   };
   const m = map[flow];
   return (
