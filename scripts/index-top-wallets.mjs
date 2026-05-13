@@ -40,7 +40,9 @@ import { fileURLToPath } from "node:url";
 
 const FOOTBALLFUN_CONTRACT = "0x2EeF466e802Ab2835aB81BE63eEbc55167d35b56";
 const SWAP_ROUTER_LC = FOOTBALLFUN_CONTRACT.toLowerCase();
-const FUN_TOKEN = "0xf8B65d9eEfcaDB3c2C04E89D1f8e2D3F1c3D6cFa"; // Sport.fun $FUN, Base
+// Sport.fun $FUN ERC-20 on Base. Mirror of FUN_TOKEN_ADDRESS in
+// src/lib/data/onchain-client.ts — keep in sync if it ever changes.
+const FUN_TOKEN = "0x16ee7ecac70d1028e7712751e2ee6ba808a7dd92";
 const UPSTREAM = "https://api.tenero.io/v1/sportsfun";
 const HOLDERS_PAGE_LIMIT = 50;
 const HOLDERS_MAX_PAGES = 5; // 250 holders per pool — enough for top-N aggregation
@@ -124,19 +126,43 @@ async function scanPoolHolders(tokenAddress) {
 
 // ---- On-chain helpers ----
 
+// Retry on transient failures (rate limits, connection drops, occasional
+// 5xx from public Base RPC). Exponential backoff with jitter. Without
+// this, refinement concurrency would wipe out most wallets when the
+// public RPC throttles us.
 let rpcId = 0;
-async function rpc(method, params) {
+const RPC_MAX_ATTEMPTS = 6;
+async function rpc(method, params, attempt = 0) {
   const body = JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params });
-  const res = await fetch(RPC_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body,
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`RPC ${method} HTTP ${res.status}`);
-  const j = await res.json();
-  if (j.error) throw new Error(`RPC ${method} error: ${j.error.message}`);
-  return j.result;
+  try {
+    const res = await fetch(RPC_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+      cache: "no-store",
+    });
+    if (res.status === 429 || res.status >= 500) {
+      throw new Error(`RPC HTTP ${res.status}`);
+    }
+    if (!res.ok) throw new Error(`RPC ${method} HTTP ${res.status}`);
+    const j = await res.json();
+    if (j.error) {
+      // -32005 "limit exceeded", -32603 "internal" sometimes mean retry.
+      if (attempt < RPC_MAX_ATTEMPTS - 1 && (j.error.code === -32005 || j.error.code === -32603)) {
+        throw new Error(j.error.message);
+      }
+      throw new Error(`RPC ${method} error: ${j.error.message}`);
+    }
+    return j.result;
+  } catch (err) {
+    if (attempt < RPC_MAX_ATTEMPTS - 1) {
+      const baseMs = 300 * Math.pow(2, attempt);
+      const jitter = Math.random() * baseMs;
+      await sleep(baseMs + jitter);
+      return rpc(method, params, attempt + 1);
+    }
+    throw err;
+  }
 }
 
 // ABI-encode balanceOfBatch(address[], uint256[]). Sport.fun's ERC1155.
@@ -182,12 +208,18 @@ function decodeUint256Array(hex) {
 }
 
 async function readWalletNflBalances(wallet) {
-  const data = encodeBalanceOfBatch(wallet, TOKEN_ID_BIG);
-  const raw = await rpc("eth_call", [{ to: FOOTBALLFUN_CONTRACT, data }, "latest"]);
-  if (!raw || raw === "0x") return null;
-  const arr = decodeUint256Array(raw);
-  // Decimal-adjust to user-facing units.
-  return arr.map((b) => Number(b) / Number(SHARE_SCALE));
+  try {
+    const data = encodeBalanceOfBatch(wallet, TOKEN_ID_BIG);
+    const raw = await rpc("eth_call", [{ to: FOOTBALLFUN_CONTRACT, data }, "latest"]);
+    if (!raw || raw === "0x") return null;
+    const arr = decodeUint256Array(raw);
+    return arr.map((b) => Number(b) / Number(SHARE_SCALE));
+  } catch {
+    // Don't kill the whole wallet's refinement just because the RPC
+    // hiccuped on this one call — the wallet will fall back to the
+    // Tenero-aggregated data (less accurate but still useful).
+    return null;
+  }
 }
 
 async function readFunBalance(wallet) {
@@ -214,18 +246,14 @@ function aggregateCandidates(pools) {
         rawTotal: 0,
         firstHeldAt: 0,
         lastActiveAt: 0,
-        positions: 0,
-        _suffixSeen: new Set(),
+        teneroBalances: {}, // suffix -> balance (used as fallback if on-chain refinement fails)
       };
       cur.rawTotal += r.balance;
       if (r.startHoldingAt && (cur.firstHeldAt === 0 || r.startHoldingAt < cur.firstHeldAt)) {
         cur.firstHeldAt = r.startHoldingAt;
       }
       if (r.lastActiveAt > cur.lastActiveAt) cur.lastActiveAt = r.lastActiveAt;
-      if (!cur._suffixSeen.has(suffix)) {
-        cur.positions += 1;
-        cur._suffixSeen.add(suffix);
-      }
+      cur.teneroBalances[suffix] = (cur.teneroBalances[suffix] ?? 0) + r.balance;
       byAddr.set(r.address, cur);
     }
   }
@@ -235,7 +263,7 @@ function aggregateCandidates(pools) {
       rawTotal: v.rawTotal,
       firstHeldAt: v.firstHeldAt,
       lastActiveAt: v.lastActiveAt,
-      positions: v.positions,
+      teneroBalances: v.teneroBalances,
     }))
     .sort((a, b) => b.rawTotal - a.rawTotal);
 }
@@ -286,23 +314,42 @@ async function main() {
   }
 
   // Phase 3: on-chain refinement — balanceOfBatch per wallet (one
-  // eth_call per wallet returns all 72 token balances). Concurrent
-  // 8 at a time to stay polite to the public Base RPC.
+  // eth_call per wallet returns all 72 token balances). Concurrency
+  // dropped to 3 + per-call retry/backoff inside rpc() — public Base
+  // RPC rate-limits aggressively and a too-greedy fan-out wiped out
+  // 798/800 refinements in the first cron run. If on-chain fails for
+  // a wallet, we fall back to the Tenero-aggregated balances rather
+  // than dropping the wallet entirely.
   const refineFns = candidates.map((c) => async () => {
-    const [balances, funBalance] = await Promise.all([
+    const [onchainBalances, funBalance] = await Promise.all([
       readWalletNflBalances(c.address),
       readFunBalance(c.address),
     ]);
-    if (!balances) return null;
     const balanceBySuffix = {};
     let positions = 0;
-    for (let i = 0; i < TOKEN_ID_SUFFIXES.length; i++) {
-      const b = balances[i];
-      if (b > 0) {
-        balanceBySuffix[TOKEN_ID_SUFFIXES[i]] = +b.toFixed(6);
-        positions += 1;
+    if (onchainBalances) {
+      // On-chain: canonical. Catches positions Tenero's top-K misses
+      // (wallets ranked outside any single pool's perPool window).
+      for (let i = 0; i < TOKEN_ID_SUFFIXES.length; i++) {
+        const b = onchainBalances[i];
+        if (b > 0) {
+          balanceBySuffix[TOKEN_ID_SUFFIXES[i]] = +b.toFixed(6);
+          positions += 1;
+        }
+      }
+    } else {
+      // Fallback: trust Tenero's per-pool balances we already
+      // gathered in Phase 1. Less complete (top-K only) but still
+      // useful — keeps the wallet on the leaderboard instead of
+      // dropping it.
+      for (const [suffix, b] of Object.entries(c.teneroBalances)) {
+        if (b > 0) {
+          balanceBySuffix[suffix] = +b.toFixed(6);
+          positions += 1;
+        }
       }
     }
+    if (positions === 0) return null;
     return {
       address: c.address,
       balances: balanceBySuffix,
@@ -312,7 +359,7 @@ async function main() {
       positions,
     };
   });
-  const refined = (await chunked(refineFns, 8)).filter(Boolean);
+  const refined = (await chunked(refineFns, 3)).filter(Boolean);
 
   // Drop platform-side custodians (FDF Marketplace, bonding-curve
   // contract). They appear as huge holders but aren't real traders.
