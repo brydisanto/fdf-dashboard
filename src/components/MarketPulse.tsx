@@ -83,8 +83,13 @@ export function MarketPulse({
                 Daily, last {sortedVolume.length} days · sum of every NFL pool
               </div>
             </div>
-            <div className="tabular text-base font-semibold">
-              {fmtUsd(today, { compact: true })}
+            <div className="text-right leading-tight">
+              <div className="mono-eyebrow" style={{ fontSize: "9.5px" }}>
+                Today
+              </div>
+              <div className="tabular text-base font-semibold">
+                {fmtUsd(today, { compact: true })}
+              </div>
             </div>
           </div>
           <div className="h-[200px]">
