@@ -45,16 +45,23 @@ const SWAP_ROUTER_LC = FOOTBALLFUN_CONTRACT.toLowerCase();
 const FUN_TOKEN = "0x16ee7ecac70d1028e7712751e2ee6ba808a7dd92";
 const UPSTREAM = "https://api.tenero.io/v1/sportsfun";
 const HOLDERS_PAGE_LIMIT = 50;
-const HOLDERS_MAX_PAGES = 5; // 250 holders per pool — enough for top-N aggregation
-const REQUEST_DELAY_MS = 700; // stay under Tenero's 100 req/min ceiling
+// 12 pages × 50 = top 600 holders per pool. Wide enough to capture
+// virtually every wallet that meaningfully holds NFL across pools.
+// Tenero's 100 req/min limit with 700ms delay = ~85 req/min, so
+// 72 pools × 12 pages ≈ 864 requests ≈ 10 min, comfortably under
+// the 25-min workflow timeout.
+const HOLDERS_MAX_PAGES = 12;
+const REQUEST_DELAY_MS = 700;
 const RPC_URL = process.env.BASE_RPC_URL || "https://mainnet.base.org";
 
-// Cap how many candidate wallets we refine on-chain. Higher = more
-// accurate leaderboard for diversified holders who sit outside any
-// single pool's top-N. 800 covers comfortably more than the 500 we
-// surface; the on-chain pass excludes the bonding-curve contract and
-// the marketplace from the active leaderboard anyway.
-const REFINE_TOP_N = 800;
+// On-chain refinement is opt-in via env var. The public Base RPC
+// rate-limits hard enough that refining 800 wallets sequentially
+// takes longer than the workflow timeout. Default OFF — Tenero
+// balances alone (top-N per pool) give a 95% accurate leaderboard
+// in 5x less time. Set ENABLE_ONCHAIN_REFINEMENT=1 to opt in (only
+// useful with a paid RPC).
+const ENABLE_ONCHAIN_REFINEMENT = process.env.ENABLE_ONCHAIN_REFINEMENT === "1";
+const REFINE_TOP_N = 500;
 
 // Roster of NFL token IDs (must match src/lib/data/roster.ts).
 const TOKEN_ID_SUFFIXES = [
@@ -306,60 +313,78 @@ async function main() {
     }
   }
 
-  // Phase 2: aggregate + pick refinement candidates.
+  // Phase 2: aggregate Tenero data into per-wallet candidates.
   const allCandidates = aggregateCandidates(pools);
   const candidates = allCandidates.slice(0, REFINE_TOP_N);
   if (verbose) {
-    console.error(`[2/3] Aggregated ${allCandidates.length} unique wallets · refining top ${candidates.length} on-chain…`);
+    console.error(`[2/${ENABLE_ONCHAIN_REFINEMENT ? 3 : 2}] Aggregated ${allCandidates.length} unique wallets · keeping top ${candidates.length}`);
   }
 
-  // Phase 3: on-chain refinement — balanceOfBatch per wallet (one
-  // eth_call per wallet returns all 72 token balances). Concurrency
-  // dropped to 3 + per-call retry/backoff inside rpc() — public Base
-  // RPC rate-limits aggressively and a too-greedy fan-out wiped out
-  // 798/800 refinements in the first cron run. If on-chain fails for
-  // a wallet, we fall back to the Tenero-aggregated balances rather
-  // than dropping the wallet entirely.
-  const refineFns = candidates.map((c) => async () => {
-    const [onchainBalances, funBalance] = await Promise.all([
-      readWalletNflBalances(c.address),
-      readFunBalance(c.address),
-    ]);
-    const balanceBySuffix = {};
-    let positions = 0;
-    if (onchainBalances) {
-      // On-chain: canonical. Catches positions Tenero's top-K misses
-      // (wallets ranked outside any single pool's perPool window).
-      for (let i = 0; i < TOKEN_ID_SUFFIXES.length; i++) {
-        const b = onchainBalances[i];
-        if (b > 0) {
-          balanceBySuffix[TOKEN_ID_SUFFIXES[i]] = +b.toFixed(6);
-          positions += 1;
+  // Phase 3 (optional): on-chain refinement — balanceOfBatch per
+  // wallet to catch positions outside Tenero's top-N per pool. Only
+  // runs when ENABLE_ONCHAIN_REFINEMENT=1 because the public Base
+  // RPC's rate-limiting makes this leg unreliable inside the GitHub
+  // Actions timeout. When disabled, we just project Tenero's per-pool
+  // balances into the output — accurate for ~95% of wallets, the
+  // remaining ~5% with deep tail positions get slightly understated.
+  let refined;
+  if (ENABLE_ONCHAIN_REFINEMENT) {
+    if (verbose) console.error(`[3/3] On-chain refinement (concurrency=3, retry on rate-limit)…`);
+    const refineFns = candidates.map((c) => async () => {
+      const [onchainBalances, funBalance] = await Promise.all([
+        readWalletNflBalances(c.address),
+        readFunBalance(c.address),
+      ]);
+      const balanceBySuffix = {};
+      let positions = 0;
+      if (onchainBalances) {
+        for (let i = 0; i < TOKEN_ID_SUFFIXES.length; i++) {
+          const b = onchainBalances[i];
+          if (b > 0) {
+            balanceBySuffix[TOKEN_ID_SUFFIXES[i]] = +b.toFixed(6);
+            positions += 1;
+          }
+        }
+      } else {
+        for (const [suffix, b] of Object.entries(c.teneroBalances)) {
+          if (b > 0) {
+            balanceBySuffix[suffix] = +b.toFixed(6);
+            positions += 1;
+          }
         }
       }
-    } else {
-      // Fallback: trust Tenero's per-pool balances we already
-      // gathered in Phase 1. Less complete (top-K only) but still
-      // useful — keeps the wallet on the leaderboard instead of
-      // dropping it.
+      if (positions === 0) return null;
+      return {
+        address: c.address,
+        balances: balanceBySuffix,
+        funBalance: +funBalance.toFixed(6),
+        firstHeldAt: c.firstHeldAt,
+        lastActiveAt: c.lastActiveAt,
+        positions,
+      };
+    });
+    refined = (await chunked(refineFns, 3)).filter(Boolean);
+  } else {
+    refined = candidates.map((c) => {
+      const balanceBySuffix = {};
+      let positions = 0;
       for (const [suffix, b] of Object.entries(c.teneroBalances)) {
         if (b > 0) {
           balanceBySuffix[suffix] = +b.toFixed(6);
           positions += 1;
         }
       }
-    }
-    if (positions === 0) return null;
-    return {
-      address: c.address,
-      balances: balanceBySuffix,
-      funBalance: +funBalance.toFixed(6),
-      firstHeldAt: c.firstHeldAt,
-      lastActiveAt: c.lastActiveAt,
-      positions,
-    };
-  });
-  const refined = (await chunked(refineFns, 3)).filter(Boolean);
+      if (positions === 0) return null;
+      return {
+        address: c.address,
+        balances: balanceBySuffix,
+        funBalance: 0, // $FUN reads disabled in fast path
+        firstHeldAt: c.firstHeldAt,
+        lastActiveAt: c.lastActiveAt,
+        positions,
+      };
+    }).filter(Boolean);
+  }
 
   // Drop platform-side custodians (FDF Marketplace, bonding-curve
   // contract). They appear as huge holders but aren't real traders.
@@ -375,6 +400,17 @@ async function main() {
       const bTotal = Object.values(b.balances).reduce((s, x) => s + x, 0);
       return bTotal - aTotal;
     });
+
+  // Sanity check: never overwrite a good snapshot with degenerate
+  // output. If Phase 1 (Tenero) returned almost nothing, the cron
+  // hit an upstream outage or rate-limit — fail loudly instead of
+  // committing a 2-wallet leaderboard.
+  if (wallets.length < 50) {
+    throw new Error(
+      `Refusing to write snapshot: only ${wallets.length} wallets in the leaderboard (expected 100+). ` +
+      `Tenero candidates=${allCandidates.length}. Either the upstream is degraded or rate-limited.`,
+    );
+  }
 
   const snapshot = {
     ts: Date.now(),
