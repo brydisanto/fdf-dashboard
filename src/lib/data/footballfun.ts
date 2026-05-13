@@ -507,26 +507,30 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
   // each bucket, the same trades are picked as the historical anchor
   // — eliminates "the boundary just crossed an old trade" jitter as
   // `nowMs - 7d` drifts continuously between renders.
-  // Single source of truth for % deltas: the price-snapshot history
-  // file (written by .github/workflows/index-prices.yml every 15 min,
-  // committed to the data branch, served via raw.githubusercontent.com).
-  // Each entry is the on-chain mid spot at that timestamp — directly
-  // comparable to today's spot, no fee bias, no implied-price math.
+  // Delta anchors come from two sources, in priority order:
   //
-  // If the snapshot doesn't yet have a data point at-or-before the
-  // requested window, the delta stays at the buildPlayerSummary 0%
-  // default. We deliberately do NOT fall back to anything else (trade
-  // indexer's implied price, Tenero's price_*_ago, OHLC) — those are
-  // all sources we've trusted before, and each one introduced a
-  // different class of phantom moves. Better to show 0% honestly
-  // while the snapshot fills out than to show a confidently wrong
-  // number from a different source.
+  //   1. PRICE-SNAPSHOT HISTORY — on-chain mid spot captured every
+  //      15 min. Directly comparable to today's spot, no fee bias.
+  //      Started 2026-05-12 02:22 UTC; coverage grows hourly.
   //
-  // Snapshot started 2026-05-12 02:22 UTC (switch to on-chain
-  // pricing). Coverage grows hourly; full 7-day history available
-  // 7 days after that switch. 5-min bucketing keeps anchors stable
-  // within each ISR regeneration window.
-  const priceHistory = await readPriceHistory();
+  //   2. TRADE INDEXER (fee-adjusted) — for windows the snapshot
+  //      can't reach yet (24H and 7D are mostly null until the
+  //      snapshot accumulates more history). The implied price
+  //      from each trade (usdAmount/shareAmount) is the AVG
+  //      execution price including fee + slippage, so we adjust:
+  //        buy:  anchor = implied / (1 + buy_fee)
+  //        sell: anchor = implied × (1 + sell_fee)
+  //      That approximates the post-trade mid spot. Swap legs are
+  //      skipped (their usdAmount is 0).
+  //
+  // Once the snapshot fully spans 7 days (around 2026-05-19), the
+  // fallback will rarely fire — but until then it's the only way
+  // the dashboard can show real 24H / 7D %s on active tokens.
+  const [priceHistory, tradeStore] = await Promise.all([
+    readPriceHistory(),
+    readTradeHistory(),
+  ]);
+  const tradesByToken = buildTradesByTokenIndex(tradeStore?.trades ?? []);
   const BUCKET_MS = 5 * 60 * 1000;
   const bucketedNow = Math.floor(Date.now() / BUCKET_MS) * BUCKET_MS;
   const enrichers = summaries.map((summary) => async () => {
@@ -535,10 +539,23 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
     const row = map.get(roster.tokenAddress);
     if (!row) return;
     const spot = Number(row.price?.current_price ?? 0);
-    if (spot <= 0 || !priceHistory) return;
+    if (spot <= 0) return;
 
-    const anchorFor = (windowMs: number): number | null =>
-      priceAt(priceHistory, roster.tokenIdSuffix, bucketedNow - windowMs);
+    const tokenTrades = tradesByToken.get(roster.tokenIdSuffix) ?? [];
+
+    const anchorFor = (windowMs: number): number | null => {
+      const target = bucketedNow - windowMs;
+      // 1. Try snapshot first.
+      if (priceHistory) {
+        const fromSnap = priceAt(priceHistory, roster.tokenIdSuffix, target);
+        if (fromSnap != null) return fromSnap;
+      }
+      // 2. Fee-adjusted trade indexer.
+      if (tokenTrades.length > 0) {
+        return feeAdjustedTradeAnchor(tokenTrades, target);
+      }
+      return null;
+    };
 
     const a1h  = anchorFor(3600_000);
     const a6h  = anchorFor(6 * 3600_000);
@@ -577,9 +594,9 @@ export async function getPlayers(): Promise<PlayerSummary[]> {
 }
 
 // Group every indexed trade by tokenIdSuffix, sorted ascending by
-// blockTime. Used downstream by priceAtFromTrades for binary-search
-// historical price lookups. Computed once per render and shared across
-// all 72 tokens.
+// blockTime. Used by feeAdjustedTradeAnchor for binary-search
+// historical price lookups when the price snapshot doesn't yet
+// cover the window. Computed once per render, shared across tokens.
 function buildTradesByTokenIndex(trades: IndexedTrade[]): Map<string, IndexedTrade[]> {
   const out = new Map<string, IndexedTrade[]>();
   for (const t of trades) {
@@ -589,6 +606,52 @@ function buildTradesByTokenIndex(trades: IndexedTrade[]): Map<string, IndexedTra
   }
   for (const arr of out.values()) arr.sort((a, b) => a.blockTime - b.blockTime);
   return out;
+}
+
+// Fee-adjusted post-trade mid spot from the most recent buy/sell
+// at-or-before `targetMs`. The trade indexer stores implied price
+// = usdAmount / shareAmount, which is the AVG execution price
+// (gross of fee + slippage). Adjust by the trade's side so the
+// anchor approximates the post-trade mid spot:
+//   buy:  anchor = implied / (1 + buy_fee)   [≈ post-trade mid]
+//   sell: anchor = implied × (1 + sell_fee)
+// Without this adjustment, every buy-only token would show a
+// phantom -3% (today's mid vs yesterday's gross-of-fee execution).
+//
+// Skips swap legs (their usdAmount is 0 — no paired USDC Transfer
+// for token-for-token swaps). Returns null only if NO buy/sell
+// exists at-or-before targetMs.
+const BUY_FEE = 0.03;
+const SELL_FEE = 0.03;
+function feeAdjustedTradeAnchor(
+  trades: IndexedTrade[],     // sorted ASC by blockTime
+  targetMs: number,
+): number | null {
+  if (trades.length === 0) return null;
+  // Binary-search the upper bound (latest trade ≤ targetMs).
+  let lo = 0;
+  let hi = trades.length - 1;
+  let idx = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (trades[mid].blockTime <= targetMs) {
+      idx = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  if (idx < 0) return null;
+  // Walk backward to the first buy/sell with positive usdAmount.
+  for (let i = idx; i >= 0; i--) {
+    const t = trades[i];
+    if (t.shareAmount <= 0 || t.usdAmount <= 0) continue;
+    const implied = t.usdAmount / t.shareAmount;
+    if (t.side === "buy") return implied / (1 + BUY_FEE);
+    if (t.side === "sell") return implied * (1 + SELL_FEE);
+    return implied;  // shouldn't reach (swaps filtered above)
+  }
+  return null;
 }
 
 // (Removed: trade-indexer delta helpers.) The trade indexer stores
@@ -780,26 +843,41 @@ export async function getPlayer(id: string): Promise<PlayerSummary | null> {
     }
     const summary = buildPlayerSummary(player, data);
     summary.sparkline7d = tinySparkline(data);
-    // Single source of truth for deltas: price-snapshot history. Same
-    // strategy as getPlayers — see comment there for the rationale.
+    // Same delta strategy as getPlayers: snapshot primary, fee-
+    // adjusted trade indexer fallback for windows the snapshot
+    // can't reach yet. See getPlayers for full rationale.
     const spot = Number(data?.price?.current_price ?? 0);
     if (spot > 0) {
-      const priceHistory = await readPriceHistory();
-      if (priceHistory) {
-        const BUCKET_MS = 5 * 60 * 1000;
-        const bucketedNow = Math.floor(Date.now() / BUCKET_MS) * BUCKET_MS;
-        const anchorFor = (windowMs: number): number | null =>
-          priceAt(priceHistory, player.tokenIdSuffix, bucketedNow - windowMs);
+      const [priceHistory, tradeStore] = await Promise.all([
+        readPriceHistory(),
+        readTradeHistory(),
+      ]);
+      const BUCKET_MS = 5 * 60 * 1000;
+      const bucketedNow = Math.floor(Date.now() / BUCKET_MS) * BUCKET_MS;
+      const tokenTrades = (tradeStore?.trades ?? [])
+        .filter((t) => t.tokenIdSuffix === player.tokenIdSuffix)
+        .sort((a, b) => a.blockTime - b.blockTime);
 
-        const a1h  = anchorFor(3600_000);
-        const a6h  = anchorFor(6 * 3600_000);
-        const a24h = anchorFor(86_400_000);
-        const a7d  = anchorFor(7 * 86_400_000);
-        if (a1h != null) summary.change1h = +(((spot - a1h) / a1h) * 100).toFixed(2);
-        if (a6h != null) summary.change6h = +(((spot - a6h) / a6h) * 100).toFixed(2);
-        if (a24h != null) summary.change24h = +(((spot - a24h) / a24h) * 100).toFixed(2);
-        if (a7d != null) summary.change7d = +(((spot - a7d) / a7d) * 100).toFixed(2);
-      }
+      const anchorFor = (windowMs: number): number | null => {
+        const target = bucketedNow - windowMs;
+        if (priceHistory) {
+          const fromSnap = priceAt(priceHistory, player.tokenIdSuffix, target);
+          if (fromSnap != null) return fromSnap;
+        }
+        if (tokenTrades.length > 0) {
+          return feeAdjustedTradeAnchor(tokenTrades, target);
+        }
+        return null;
+      };
+
+      const a1h  = anchorFor(3600_000);
+      const a6h  = anchorFor(6 * 3600_000);
+      const a24h = anchorFor(86_400_000);
+      const a7d  = anchorFor(7 * 86_400_000);
+      if (a1h != null) summary.change1h = +(((spot - a1h) / a1h) * 100).toFixed(2);
+      if (a6h != null) summary.change6h = +(((spot - a6h) / a6h) * 100).toFixed(2);
+      if (a24h != null) summary.change24h = +(((spot - a24h) / a24h) * 100).toFixed(2);
+      if (a7d != null) summary.change7d = +(((spot - a7d) / a7d) * 100).toFixed(2);
     }
     // Apply the same Active Shares definition as getPlayers — total
     // supply minus what the platform-side wallets hold.
