@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import { Geist, Big_Shoulders, JetBrains_Mono } from "next/font/google";
 import Link from "next/link";
 import { Flame } from "lucide-react";
+import { Suspense } from "react";
 import { MobileNav } from "@/components/MobileNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { TickerStrip } from "@/components/TickerStrip";
 import "./globals.css";
 
 // Runs in <head> before any paint so the stored theme is applied
@@ -54,6 +56,12 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex flex-col">
         <SiteHeader />
+        {/* Global live ticker — rolls movers + "THIS IS REAL FOOTBALL™"
+            on every page. Suspense fallback is null so a cold ticker
+            fetch never blocks page content from streaming in. */}
+        <Suspense fallback={null}>
+          <TickerStrip />
+        </Suspense>
         <main className="flex-1">{children}</main>
         <SiteFooter />
       </body>
