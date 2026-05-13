@@ -1722,7 +1722,37 @@ export interface TopNflWallet {
   funBalance: number;       // raw $FUN token count, decimal-adjusted
   funValueUsd: number;      // funBalance × current $FUN spot price
 }
+// Module-level memo for the leaderboard. Without this, every cold
+// worker instance rebuilds the entire ranking from scratch — ~18k
+// Tenero holder fetches (cached at the Next-fetch layer but still
+// CPU-aggregated per render) and ~36k on-chain balanceOfBatch reads
+// via Multicall for the top-500 refinement. That's the source of
+// the "Top Wallets is slow" feedback.
+//
+// 3 minutes balances freshness against rebuild cost. The leaderboard
+// moves slowly (new whales emerge over days, not minutes) so even
+// 5-10 min would be safe. Keyed by `${limit}:${perPool}` because the
+// function takes parameters; in practice only (500, 250) is used.
+const topWalletsCache = new Map<string, { ts: number; promise: Promise<TopNflWallet[]> }>();
+const TOP_WALLETS_CACHE_TTL_MS = 3 * 60_000;
+
 export async function getTopNflWallets(limit = 100, perPool = 100): Promise<TopNflWallet[]> {
+  const key = `${limit}:${perPool}`;
+  const now = Date.now();
+  const cached = topWalletsCache.get(key);
+  if (cached && now - cached.ts < TOP_WALLETS_CACHE_TTL_MS) {
+    return cached.promise;
+  }
+  const promise = computeTopNflWallets(limit, perPool).catch((err) => {
+    // Don't poison the cache on error.
+    if (topWalletsCache.get(key)?.promise === promise) topWalletsCache.delete(key);
+    throw err;
+  });
+  topWalletsCache.set(key, { ts: now, promise });
+  return promise;
+}
+
+async function computeTopNflWallets(limit: number, perPool: number): Promise<TopNflWallet[]> {
   const players = await getPlayers();
   // Pull top-K holders for each pool in parallel (chunked).
   const fns = players.map((p) => async () => {
@@ -1889,7 +1919,29 @@ export async function getPoolStats(id: string, player?: PlayerSummary): Promise<
   };
 }
 
+// Module-level memo. getMarketOverview is heavy: getPlayers + the
+// 30-day market-cap series reconstruction (sample 240 timestamps ×
+// walk trades backward across 72 tokens). The mcap series in
+// particular is pure CPU work that we don't want to repeat on every
+// concurrent Suspense child that needs `overview`. 30s aligns with
+// the playersCache TTL.
+let marketOverviewCache: { ts: number; promise: Promise<MarketOverview> } | null = null;
+const MARKET_OVERVIEW_CACHE_TTL_MS = 30_000;
+
 export async function getMarketOverview(): Promise<MarketOverview> {
+  const now = Date.now();
+  if (marketOverviewCache && now - marketOverviewCache.ts < MARKET_OVERVIEW_CACHE_TTL_MS) {
+    return marketOverviewCache.promise;
+  }
+  const promise = computeMarketOverview().catch((err) => {
+    if (marketOverviewCache?.promise === promise) marketOverviewCache = null;
+    throw err;
+  });
+  marketOverviewCache = { ts: now, promise };
+  return promise;
+}
+
+async function computeMarketOverview(): Promise<MarketOverview> {
   const [players, fun] = await Promise.all([getPlayers(), getFunPriceInfo()]);
 
   const totalMarketCap = players.reduce((a, p) => a + p.marketCap, 0);
