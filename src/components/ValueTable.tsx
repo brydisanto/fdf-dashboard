@@ -156,14 +156,15 @@ export function ValueTable({
                     borderBottom: "1px solid var(--color-line)",
                   }}
                 >
-                  <Cell>
-                    <Link href={`/player/${p.id}`} className="flex items-center gap-2.5 group">
+                  <Cell className="text-left">
+                    <Link href={`/player/${p.id}`} className="flex w-full items-center gap-2.5 text-left group">
                       <PlayerAvatar player={p} size="sm" />
-                      <div className="min-w-0">
-                        <div className="truncate text-[13px] font-semibold group-hover:text-[var(--accent-soft)]">
+                      <div className="min-w-0 flex-1 text-left">
+                        <div className="truncate text-[13px] font-semibold text-left group-hover:text-[var(--accent-soft)]">
                           {p.firstName} {p.lastName}
                         </div>
                         <div
+                          className="text-left"
                           style={{
                             fontFamily: "var(--font-mono)",
                             fontSize: "10px",

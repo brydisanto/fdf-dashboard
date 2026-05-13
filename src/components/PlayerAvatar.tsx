@@ -3,14 +3,19 @@ import { TEAM_COLORS } from "@/lib/data/players";
 import type { Player } from "@/lib/types";
 
 // Per design system v0.2: round avatar with team-color rim via inset
-// box-shadow (so the press-surface bg fills edge-to-edge). Initials
-// in display 900 with 0.04em letter-spacing.
+// box-shadow (so the press-surface bg fills edge-to-edge). Jersey
+// number in display 900 with 0.02em letter-spacing — disambiguates
+// duplicate-initial pairs (e.g. JH = Herbert and Hurts) and ties
+// the visual into the team's actual roster identity.
 const SIZES = {
-  xs: { px: 22, fs: 9,    ringPx: 1.5 },
-  sm: { px: 30, fs: 10.5, ringPx: 2 },
-  md: { px: 44, fs: 14,   ringPx: 2 },
-  lg: { px: 64, fs: 20,   ringPx: 2 },
-  xl: { px: 80, fs: 24,   ringPx: 2.5 },
+  // Slightly larger font sizes than the old initials build because
+  // jersey numbers are 1–2 digits with no descenders, so we can push
+  // them visually.
+  xs: { px: 22, fs: 10,   ringPx: 1.5 },
+  sm: { px: 30, fs: 12,   ringPx: 2 },
+  md: { px: 44, fs: 16,   ringPx: 2 },
+  lg: { px: 64, fs: 24,   ringPx: 2 },
+  xl: { px: 80, fs: 30,   ringPx: 2.5 },
 } as const;
 
 export function PlayerAvatar({
@@ -22,7 +27,11 @@ export function PlayerAvatar({
   size?: keyof typeof SIZES;
   className?: string;
 }) {
-  const initials = `${player.firstName[0] ?? ""}${player.lastName[0] ?? ""}`;
+  // Fall back to initials only if jersey is missing/zero (data hole).
+  const jersey =
+    typeof player.jerseyNumber === "number" && player.jerseyNumber > 0
+      ? String(player.jerseyNumber)
+      : `${player.firstName[0] ?? ""}${player.lastName[0] ?? ""}`;
   const teamColor = TEAM_COLORS[player.team] ?? "var(--color-line)";
   const cfg = SIZES[size];
   return (
@@ -37,12 +46,16 @@ export function PlayerAvatar({
         fontSize: `${cfg.fs}px`,
         fontFamily: "var(--font-display)",
         fontWeight: 900,
-        letterSpacing: "0.04em",
+        // Numbers want tighter tracking than letters (otherwise "11"
+        // looks like "1 1"); also tabular-nums so 10, 11, 13 all
+        // sit on the same metrics.
+        letterSpacing: "0.01em",
+        fontVariantNumeric: "tabular-nums",
         boxShadow: `inset 0 0 0 ${cfg.ringPx}px ${teamColor}`,
       }}
       aria-hidden="true"
     >
-      {initials}
+      {jersey}
     </div>
   );
 }
