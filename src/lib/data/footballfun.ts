@@ -21,6 +21,7 @@ import { POOL_FEE_RATE, FEE_RATE_BUY, FEE_RATE_SELL, FEE_RATE_SWAP } from "../co
 import { readManyFunBalances, readManyWalletsNflBalances, readWalletNflBalances, readFunBalance, readOnchainTokenState } from "./onchain-client";
 import { priceAt, readPriceHistory } from "./price-indexer";
 import { readTradeHistory, type IndexedTrade } from "./trade-indexer";
+import { readTopWalletsIndex, type TopWalletIndex } from "./top-wallets-indexer";
 
 export { POOL_FEE_RATE, FEE_RATE_BUY, FEE_RATE_SELL, FEE_RATE_SWAP };
 
@@ -38,7 +39,13 @@ const API_BASE = "https://api.tenero.io/v1/sportsfun";
 // every market cap calculation so it's the shortest-lived; heavier
 // per-pool endpoints (OHLC, holders, wallet snapshots) live longer.
 const REVALIDATE = {
-  list:    15,        // /tokens list — drives mcap, prices, supplies
+  list:    60,        // /tokens list — drives mcap, prices, supplies.
+                      // Was 15s, but the home page streams ~6 Suspense
+                      // sections all needing this data on cold cache,
+                      // and 15s TTL meant most worker instances paid
+                      // a full Tenero roundtrip per render. 60s aligns
+                      // with the playersCache + staleTimes.dynamic = 30s
+                      // client cache.
   detail:  300,       // 5 min — single-token Tenero detail. The on-chain
                       // override replaces price/supply/TVL on every render,
                       // so Tenero's role here is metadata (name, image)
@@ -468,7 +475,36 @@ function tinySparkline(row: TeneroTokenRow): number[] {
 
 // ---------- Public API ----------
 
+// Module-level memo for getPlayers. Without this, a single home-page
+// render runs getPlayers() at least twice (once via getMarketOverview
+// → getPlayers, once via the loadPlayers React.cache wrapper used by
+// the All Players + Movers + Trade Feed sections). Each call does the
+// 72-player delta + sparkline enrichment, on-chain non-active balance
+// read, etc. — heavy CPU and network. 30s TTL keeps prices fresh and
+// is comfortably under the staleTimes.dynamic = 30s client cache.
+//
+// In-flight dedup: when multiple concurrent callers race to compute,
+// they all wait on the SAME promise instead of each starting their
+// own build. Critical for streaming pages where every Suspense child
+// fires its data fetch simultaneously.
+let playersCache: { ts: number; promise: Promise<PlayerSummary[]> } | null = null;
+const PLAYERS_CACHE_TTL_MS = 30_000;
+
 export async function getPlayers(): Promise<PlayerSummary[]> {
+  const now = Date.now();
+  if (playersCache && now - playersCache.ts < PLAYERS_CACHE_TTL_MS) {
+    return playersCache.promise;
+  }
+  const promise = computePlayers().catch((err) => {
+    // Don't poison the cache on error — let the next call retry.
+    if (playersCache?.promise === promise) playersCache = null;
+    throw err;
+  });
+  playersCache = { ts: now, promise };
+  return promise;
+}
+
+async function computePlayers(): Promise<PlayerSummary[]> {
   const map = await fetchNflTokenMap();
   const summaries = ROSTER.map((player) => {
     const row = map.get(player.tokenAddress);
@@ -1687,7 +1723,102 @@ export interface TopNflWallet {
   funBalance: number;       // raw $FUN token count, decimal-adjusted
   funValueUsd: number;      // funBalance × current $FUN spot price
 }
+// Module-level memo for the leaderboard. Without this, every cold
+// worker instance rebuilds the entire ranking from scratch — ~18k
+// Tenero holder fetches (cached at the Next-fetch layer but still
+// CPU-aggregated per render) and ~36k on-chain balanceOfBatch reads
+// via Multicall for the top-500 refinement. That's the source of
+// the "Top Wallets is slow" feedback.
+//
+// 3 minutes balances freshness against rebuild cost. The leaderboard
+// moves slowly (new whales emerge over days, not minutes) so even
+// 5-10 min would be safe. Keyed by `${limit}:${perPool}` because the
+// function takes parameters; in practice only (500, 250) is used.
+const topWalletsCache = new Map<string, { ts: number; promise: Promise<TopNflWallet[]> }>();
+const TOP_WALLETS_CACHE_TTL_MS = 3 * 60_000;
+
 export async function getTopNflWallets(limit = 100, perPool = 100): Promise<TopNflWallet[]> {
+  const key = `${limit}:${perPool}`;
+  const now = Date.now();
+  const cached = topWalletsCache.get(key);
+  if (cached && now - cached.ts < TOP_WALLETS_CACHE_TTL_MS) {
+    return cached.promise;
+  }
+  // Prefer the cron-precomputed leaderboard if available — that path
+  // is near-instant. Falls back to the live aggregation only when the
+  // indexer JSON is missing/unreadable (e.g. before the first cron
+  // run after deploy, or a transient GitHub raw outage).
+  const promise = computeFromIndexerOrLive(limit, perPool).catch((err) => {
+    if (topWalletsCache.get(key)?.promise === promise) topWalletsCache.delete(key);
+    throw err;
+  });
+  topWalletsCache.set(key, { ts: now, promise });
+  return promise;
+}
+
+async function computeFromIndexerOrLive(limit: number, perPool: number): Promise<TopNflWallet[]> {
+  const index = await readTopWalletsIndex();
+  if (index && index.wallets.length > 0) {
+    return computeFromIndex(index, limit);
+  }
+  return computeTopNflWallets(limit, perPool);
+}
+
+// Multiply each indexed wallet's per-token balances by the current
+// spot price to derive NFL portfolio value. Pure CPU — no network
+// or RPC calls. This is the path the deployed app should hit ~100%
+// of the time once the cron has populated top-wallets.json.
+async function computeFromIndex(index: TopWalletIndex, limit: number): Promise<TopNflWallet[]> {
+  const players = await getPlayers();
+  const priceBySuffix = new Map<string, number>();
+  const playerIdBySuffix = new Map<string, string>();
+  for (const p of players) {
+    const roster = ROSTER_BY_ID.get(p.id);
+    if (!roster) continue;
+    priceBySuffix.set(roster.tokenIdSuffix, p.priceUsd);
+    playerIdBySuffix.set(roster.tokenIdSuffix, p.id);
+  }
+  const funInfo = await getFunPriceInfo();
+  const funPrice = funInfo.priceUsd;
+
+  const out: TopNflWallet[] = [];
+  for (const w of index.wallets) {
+    let nflValueUsd = 0;
+    let topPositionUsd = 0;
+    let topPositionPlayerId: string | null = null;
+    let positions = 0;
+    for (const [suffix, balance] of Object.entries(w.balances)) {
+      const price = priceBySuffix.get(suffix);
+      if (!price || price <= 0) continue;
+      const value = balance * price;
+      if (value <= 0) continue;
+      nflValueUsd += value;
+      positions += 1;
+      if (value > topPositionUsd) {
+        topPositionUsd = value;
+        topPositionPlayerId = playerIdBySuffix.get(suffix) ?? null;
+      }
+    }
+    if (nflValueUsd <= 0) continue;
+    const funValueUsd = +(w.funBalance * funPrice).toFixed(2);
+    out.push({
+      address: w.address,
+      nflValueUsd: +nflValueUsd.toFixed(2),
+      positions,
+      topPositionPlayerId,
+      topPositionUsd: +topPositionUsd.toFixed(2),
+      firstHeldAt: w.firstHeldAt,
+      lastActiveAt: w.lastActiveAt,
+      tier: tierForValue(nflValueUsd),
+      funBalance: w.funBalance,
+      funValueUsd,
+    });
+  }
+  out.sort((a, b) => b.nflValueUsd - a.nflValueUsd);
+  return out.slice(0, limit);
+}
+
+async function computeTopNflWallets(limit: number, perPool: number): Promise<TopNflWallet[]> {
   const players = await getPlayers();
   // Pull top-K holders for each pool in parallel (chunked).
   const fns = players.map((p) => async () => {
@@ -1854,7 +1985,29 @@ export async function getPoolStats(id: string, player?: PlayerSummary): Promise<
   };
 }
 
+// Module-level memo. getMarketOverview is heavy: getPlayers + the
+// 30-day market-cap series reconstruction (sample 240 timestamps ×
+// walk trades backward across 72 tokens). The mcap series in
+// particular is pure CPU work that we don't want to repeat on every
+// concurrent Suspense child that needs `overview`. 30s aligns with
+// the playersCache TTL.
+let marketOverviewCache: { ts: number; promise: Promise<MarketOverview> } | null = null;
+const MARKET_OVERVIEW_CACHE_TTL_MS = 30_000;
+
 export async function getMarketOverview(): Promise<MarketOverview> {
+  const now = Date.now();
+  if (marketOverviewCache && now - marketOverviewCache.ts < MARKET_OVERVIEW_CACHE_TTL_MS) {
+    return marketOverviewCache.promise;
+  }
+  const promise = computeMarketOverview().catch((err) => {
+    if (marketOverviewCache?.promise === promise) marketOverviewCache = null;
+    throw err;
+  });
+  marketOverviewCache = { ts: now, promise };
+  return promise;
+}
+
+async function computeMarketOverview(): Promise<MarketOverview> {
   const [players, fun] = await Promise.all([getPlayers(), getFunPriceInfo()]);
 
   const totalMarketCap = players.reduce((a, p) => a + p.marketCap, 0);

@@ -1,8 +1,10 @@
+import { Suspense, cache } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getTopNflWallets } from "@/lib/data";
 import { Card, Pill } from "@/components/ui";
 import { TopWalletsTable } from "@/components/TopWalletsTable";
+import { Sk, SkBlock } from "@/components/PageSkeleton";
 import { fmtNum, fmtUsd } from "@/lib/format";
 
 export const metadata = {
@@ -20,23 +22,10 @@ export const dynamic = "force-dynamic";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
-export default async function WalletsPage() {
-  // Reach for top 500 globally with up to 250 holders per pool.
-  // The aggregation already runs once per cache window, so deeper
-  // per-pool sampling is "free" within the same render and surfaces
-  // wallets that only appear mid-pack in any single pool but hold
-  // across many.
-  const wallets = await getTopNflWallets(500, 250);
-
-  // Headline stats — derived once, server-side.
-  const total = wallets.length;
-  const totalValue = wallets.reduce((a, w) => a + w.nflValueUsd, 0);
-  const topValue = wallets[0]?.nflValueUsd ?? 0;
-  const now = Date.now();
-  const active24h = wallets.filter((w) => w.lastActiveAt > 0 && now - w.lastActiveAt < ONE_DAY_MS).length;
-  const whales = wallets.filter((w) => w.tier === "whale").length;
-  const sharks = wallets.filter((w) => w.tier === "shark").length;
-
+// Synchronous shell — renders immediately on every navigation. The
+// stats + leaderboard table are wrapped in <Suspense> below so the
+// hero appears instantly while the heavy aggregation streams in.
+export default function WalletsPage() {
   return (
     <div className="mx-auto max-w-[var(--max-w)] px-5 sm:px-8 py-6 sm:py-8">
       <Link
@@ -48,7 +37,7 @@ export default async function WalletsPage() {
         Back to market
       </Link>
 
-      {/* Hero */}
+      {/* Hero — fully static so it paints on the very first frame. */}
       <div
         className="mt-3 relative rounded-[var(--r-14)] border border-[var(--color-line)]"
         style={{ background: "linear-gradient(135deg, var(--color-bench) 0%, var(--color-press) 100%)" }}
@@ -78,9 +67,9 @@ export default async function WalletsPage() {
         <div className="relative flex flex-col gap-6" style={{ padding: "32px 32px 28px" }}>
           <div className="flex flex-wrap items-center gap-2">
             <Pill tone="brand">Wallet Leaderboard</Pill>
-            <Pill tone="info">
-              {whales} {whales === 1 ? "Whale" : "Whales"} · {sharks} {sharks === 1 ? "Shark" : "Sharks"}
-            </Pill>
+            <Suspense fallback={<Sk w={130} h={22} className="rounded-full" />}>
+              <WhalesSharksPill />
+            </Suspense>
           </div>
           <h1
             className="m-0 text-[var(--color-text)]"
@@ -102,26 +91,49 @@ export default async function WalletsPage() {
         </div>
       </div>
 
-      {/* Stat strip */}
+      {/* Stats + leaderboard stream in together (they share one fetch).
+          Both fall back to inline skeletons so the page never looks
+          frozen while the multicall + Tenero aggregation runs. */}
+      <Suspense fallback={<StatsAndTableSkeleton />}>
+        <StatsAndTable />
+      </Suspense>
+    </div>
+  );
+}
+
+// React.cache dedupes calls within the same request, so the pill
+// and the stats+table share ONE fetch even though they're separate
+// async server components.
+const loadWallets = cache(() => getTopNflWallets(500, 250));
+
+async function WhalesSharksPill() {
+  const wallets = await loadWallets();
+  const whales = wallets.filter((w) => w.tier === "whale").length;
+  const sharks = wallets.filter((w) => w.tier === "shark").length;
+  return (
+    <Pill tone="info">
+      {whales} {whales === 1 ? "Whale" : "Whales"} · {sharks} {sharks === 1 ? "Shark" : "Sharks"}
+    </Pill>
+  );
+}
+
+async function StatsAndTable() {
+  const wallets = await loadWallets();
+  const total = wallets.length;
+  const totalValue = wallets.reduce((a, w) => a + w.nflValueUsd, 0);
+  const topValue = wallets[0]?.nflValueUsd ?? 0;
+  const now = Date.now();
+  const active24h = wallets.filter((w) => w.lastActiveAt > 0 && now - w.lastActiveAt < ONE_DAY_MS).length;
+
+  return (
+    <>
       <div
         className="stat-strip mt-4 grid"
         style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}
       >
-        <StatCell
-          label="Wallets Ranked"
-          value={fmtNum(total)}
-          sub={`Top ${total}`}
-        />
-        <StatCell
-          label="Total NFL Value"
-          value={fmtUsd(totalValue, { compact: true })}
-          sub="Across leaderboard"
-        />
-        <StatCell
-          label="Top Wallet"
-          value={fmtUsd(topValue, { compact: true })}
-          sub="Highest NFL position"
-        />
+        <StatCell label="Wallets Ranked" value={fmtNum(total)} sub={`Top ${total}`} />
+        <StatCell label="Total NFL Value" value={fmtUsd(totalValue, { compact: true })} sub="Across leaderboard" />
+        <StatCell label="Top Wallet" value={fmtUsd(topValue, { compact: true })} sub="Highest NFL position" />
         <StatCell
           label="Active 24h"
           value={fmtNum(active24h)}
@@ -129,7 +141,6 @@ export default async function WalletsPage() {
         />
       </div>
 
-      {/* Leaderboard table */}
       <div className="mt-4">
         <SectionHead
           title="Top Wallets · NFL Portfolio Value"
@@ -140,8 +151,42 @@ export default async function WalletsPage() {
           <TopWalletsTable wallets={wallets} />
         </Card>
       </div>
+    </>
+  );
+}
 
-    </div>
+function StatsAndTableSkeleton() {
+  return (
+    <>
+      <div
+        className="mt-4 grid gap-[1px] rounded-[var(--r-14)] overflow-hidden border border-[var(--color-line-strong)]"
+        style={{
+          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+          background: "var(--color-line-strong)",
+        }}
+      >
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div
+            key={i}
+            className="flex flex-col gap-2"
+            style={{
+              padding: "16px 18px",
+              background: "color-mix(in oklab, var(--color-text) 6%, transparent)",
+            }}
+          >
+            <Sk w={90} h={10} />
+            <Sk w={130} h={26} />
+            <Sk w={70} h={10} />
+          </div>
+        ))}
+      </div>
+      <div className="mt-4">
+        <Sk w={300} h={22} />
+        <div className="mt-4">
+          <SkBlock h={520} />
+        </div>
+      </div>
+    </>
   );
 }
 
