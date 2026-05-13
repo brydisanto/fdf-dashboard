@@ -52,7 +52,9 @@ async function readSnapshotFromDisk(): Promise<PriceStore | null> {
   return null;
 }
 
-const REMOTE_URL = process.env.GRIDIRON_PRICE_SNAPSHOT_URL;
+// Default to the project's own data branch — works without env var config.
+const REMOTE_URL = process.env.GRIDIRON_PRICE_SNAPSHOT_URL
+  ?? "https://raw.githubusercontent.com/brydisanto/fdf-dashboard/data/data/price-history.json";
 let remoteCache: { fetchedAt: number; store: PriceStore } | null = null;
 // Snapshots refresh every 15 minutes upstream — match that cadence
 // so we pick up the freshest snapshot exactly once per cycle.

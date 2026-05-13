@@ -87,7 +87,9 @@ async function readSnapshotFromDisk(): Promise<HolderStore> {
   return { current: null, history: [] };
 }
 
-const REMOTE_URL = process.env.GRIDIRON_HOLDER_SNAPSHOT_URL;
+// Default to the project's own data branch — works without env var config.
+const REMOTE_URL = process.env.GRIDIRON_HOLDER_SNAPSHOT_URL
+  ?? "https://raw.githubusercontent.com/brydisanto/fdf-dashboard/data/data/unique-holders.json";
 let remoteCache: { fetchedAt: number; store: HolderStore } | null = null;
 const REMOTE_TTL_MS = 5 * 60 * 1000;
 
