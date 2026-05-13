@@ -850,6 +850,21 @@ function buildMarketCapSeriesFromSnapshots(
     }
     if (total > 0) series.push({ t, price: Math.round(total), volume: 0 });
   }
+  // Boundary-artifact guard: when the first sample lands exactly on
+  // the oldest trade's blockTime, the chunky launch trade's implied
+  // price (avg execution across a wide curve range) can sit well
+  // above the post-trade spot the curve actually settles into. Drop
+  // leading samples that deviate > 5% from the next stable point so
+  // the chart doesn't open with a phantom spike.
+  while (series.length >= 2) {
+    const a = series[0].price;
+    const b = series[1].price;
+    if (b > 0 && Math.abs(a - b) / b > 0.05) {
+      series.shift();
+    } else {
+      break;
+    }
+  }
   // Pin the rightmost point at "now" with the live total so the
   // chart's endpoint matches the headline mcap stat.
   if (series.length === 0 || series[series.length - 1].t !== now) {

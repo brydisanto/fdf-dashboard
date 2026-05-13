@@ -71,6 +71,14 @@ const BACKFILL_TARGET_MS = HISTORY_LIMIT_MS;
 // but 10k is the safe ceiling.
 const LOGS_CHUNK_BLOCKS = 10_000;
 
+// Head-of-chain safety lag. Public Base RPC log indexing can lag the
+// chain tip by a few blocks — if we scan up to `latestBlock` and the
+// RPC hasn't indexed the most-recent logs yet, we silently miss
+// trades AND advance `lastIndexedBlock` past them, losing them
+// forever. Stop short of the tip and let the NEXT run pick them up.
+// 15 blocks ≈ 30s at 2s/block.
+const SAFETY_LAG_BLOCKS = 15;
+
 // Roster of NFL token suffixes — must match src/lib/data/roster.ts.
 const TOKEN_ID_SUFFIXES = [
   "67997479","769476837","401615555","79420307","1886297532","833812969",
@@ -192,16 +200,20 @@ async function main() {
 
   const latestHex = await rpc("eth_blockNumber", []);
   const latestBlock = hexToNum(latestHex);
+  // Block we'll actually scan up to (and later persist as the new
+  // lastIndexedBlock). Holding back from the tip avoids missing
+  // logs that the RPC hasn't indexed yet.
+  const safeLatestBlock = Math.max(0, latestBlock - SAFETY_LAG_BLOCKS);
 
   // Detect whether we need to backfill older history. If the file's
   // earliest trade is younger than the retention window (e.g. cold-
   // started at 7 days but we now want 30), scan from (now - 30d)
   // back to the existing earliest block. Otherwise normal incremental.
   let fromBlock;
-  let toBlock = latestBlock;
+  let toBlock = safeLatestBlock;
   let isBackfill = false;
   if (existing.lastIndexedBlock <= 0) {
-    fromBlock = Math.max(0, latestBlock - COLD_START_LOOKBACK_BLOCKS);
+    fromBlock = Math.max(0, safeLatestBlock - COLD_START_LOOKBACK_BLOCKS);
   } else {
     const earliestTrade = existing.trades.length > 0
       ? Math.min(...existing.trades.map((t) => t.blockTime))
@@ -213,7 +225,7 @@ async function main() {
     if (earliestTrade > targetEarliest) {
       // Backfill: scan the older gap that's not yet covered.
       isBackfill = true;
-      fromBlock = Math.max(0, latestBlock - Math.floor(BACKFILL_TARGET_MS / 2000));
+      fromBlock = Math.max(0, safeLatestBlock - Math.floor(BACKFILL_TARGET_MS / 2000));
       toBlock = earliestBlock - 1;
       console.error(`Backfill mode: file earliest trade is ${new Date(earliestTrade).toISOString()}, target is ${new Date(targetEarliest).toISOString()}`);
     } else {
@@ -362,9 +374,12 @@ async function main() {
 
   // During backfill we scan older blocks but the file's tip is still
   // at the existing lastIndexedBlock. Don't regress that pointer.
+  // Note: we advance only to safeLatestBlock (not latestBlock) — the
+  // SAFETY_LAG_BLOCKS tail will be picked up by the next run, after
+  // the RPC has had time to index those logs.
   const newLastIndexed = isBackfill
-    ? Math.max(existing.lastIndexedBlock, latestBlock)
-    : latestBlock;
+    ? Math.max(existing.lastIndexedBlock, safeLatestBlock)
+    : safeLatestBlock;
   const store = { lastIndexedBlock: newLastIndexed, trades };
   const json = JSON.stringify(store, null, 2) + "\n";
   const durationMs = Date.now() - startWall;
@@ -373,7 +388,7 @@ async function main() {
   if (write) {
     await fs.mkdir(path.dirname(outPath), { recursive: true });
     await fs.writeFile(outPath, json, "utf8");
-    console.error(`Wrote ${trades.length} trades (latest block ${latestBlock}) in ${durationMs}ms`);
+    console.error(`Wrote ${trades.length} trades (chain tip ${latestBlock}, indexed through ${safeLatestBlock}) in ${durationMs}ms`);
   } else {
     console.log(JSON.stringify({
       lastIndexedBlock: newLastIndexed,
