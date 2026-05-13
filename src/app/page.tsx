@@ -19,14 +19,22 @@ import { FreshnessIndicator } from "@/components/FreshnessIndicator";
 import { UniqueHoldersCard, UniqueHoldersCardSkeleton } from "@/components/UniqueHoldersCard";
 import { fmtUsd } from "@/lib/format";
 
-// 60s ISR — Next.js serves cached HTML and regenerates in the
-// background. Navigations feel instant because the rendered page is
-// served from the edge cache rather than a full server render. The
-// underlying upstream fetches are already cached at their own
-// revalidate intervals (REVALIDATE.list/trades/etc.), so any data
-// that needs to be fresher than 60s still updates within its own
-// cache window.
-export const revalidate = 60;
+// Force dynamic rendering. ISR (the previous `revalidate = 60`
+// setup) caused 7h+ stale Live Trade Feeds during low-traffic
+// periods: with stale-while-revalidate, the first visit after a
+// long gap renders the OLD cached HTML and only triggers a
+// background regen, so the visitor sees whatever was cached when
+// the page was last touched. That's wrong for a "live" feed.
+//
+// Each render is fast because the underlying data layer caches
+// aggressively at the module level:
+//   - readOnchainTokenState: 5min
+//   - readTradeHistory remote: 5min (+ 30s tail-scan cache)
+//   - readPriceHistory remote: 5min
+//   - Tenero list/detail: 15s / 5min via Next fetch cache
+// So a steady-state warm render is ~200ms; only the very first
+// cold render per worker pays the full cost.
+export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const [overview, players, feedAndFlow, dailyVolume] = await Promise.all([
@@ -111,16 +119,16 @@ export default async function Home() {
 
         <section className="mt-6 grid gap-4 lg:grid-cols-3">
           <Card>
+            <CardHeader title="Who's Hot" hint="24h volume leaders" right={<Pill tone="brand">Trending</Pill>} />
+            <MoversList players={players} variant="trending" />
+          </Card>
+          <Card>
             <CardHeader title="Top Gainers" hint="24h price change" right={<Pill tone="gain">24H</Pill>} />
             <MoversList players={players} variant="gainers" />
           </Card>
           <Card>
             <CardHeader title="Top Losers" hint="24h price change" right={<Pill tone="loss">24H</Pill>} />
             <MoversList players={players} variant="losers" />
-          </Card>
-          <Card>
-            <CardHeader title="Most Traded" hint="24h volume leaders" right={<Pill tone="brand">Trending</Pill>} />
-            <MoversList players={players} variant="trending" />
           </Card>
         </section>
 

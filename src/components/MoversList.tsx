@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { PlayerAvatar } from "./PlayerAvatar";
 import { Delta } from "./ui";
-import { fmtPrice } from "@/lib/format";
+import { fmtPrice, fmtUsd } from "@/lib/format";
 import { TEAM_NAMES } from "@/lib/data/players";
 import type { PlayerSummary } from "@/lib/types";
 
@@ -79,7 +79,21 @@ export function MoversList({
             >
               {fmtPrice(p.priceUsd)}
             </span>
-            <Delta value={p.change24h} />
+            {variant === "trending" ? (
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  color: "var(--color-text)",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {fmtUsd(p.volume24h, { compact: true })}
+              </span>
+            ) : (
+              <Delta value={p.change24h} />
+            )}
           </Link>
         </li>
       ))}

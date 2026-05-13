@@ -14,10 +14,11 @@ export const metadata = {
     "Top NFL player tokens ranked by trading volume across 6h, 24h, and 7d. Sort by any window to find what's heating up.",
 };
 
-// 60s revalidate matches the rest of the dashboard. Underlying OHLC
-// fetches are cached for 5min by tget, so subsequent renders inside
-// the same OHLC window are basically free.
-export const revalidate = 60;
+// 30s revalidate — the on-chain spot cache underneath refreshes every
+// 60s so a 30s page TTL ensures the next request always sees a fresh
+// underlying read. The underlying OHLC fetches are cached for 5 min
+// by tget (volume windows don't move faster than that anyway).
+export const revalidate = 30;
 
 export default async function OnFirePage() {
   const players = await getNflHotPlayers();
