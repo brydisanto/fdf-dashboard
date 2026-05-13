@@ -56,11 +56,16 @@ const ERC20_TRANSFER =
 
 const RPC_URL = process.env.BASE_RPC_URL || "https://mainnet.base.org";
 
-// Cold-start: 7 days × 24h × 1800 blocks/h (2s/block) = 302,400 blocks.
-// Tighter than full history but plenty for the Live Trade Feed +
-// per-wallet "recent trades" use cases.
-const COLD_START_LOOKBACK_BLOCKS = 7 * 24 * 1800;
+// Cold-start: 30 days × 24h × 1800 blocks/h (2s/block) = 1,296,000 blocks.
+// Matches HISTORY_LIMIT_MS so the cold-start fills the full retention
+// window. Big initial scan but only runs once.
+const COLD_START_LOOKBACK_BLOCKS = 30 * 24 * 1800;
 const HISTORY_LIMIT_MS = 30 * 24 * 3600 * 1000; // keep last 30 days
+
+// If the existing file's earliest trade isn't 30 days old yet, treat
+// this run as a backfill — scan from (now - 30d) back to the existing
+// earliest block and merge. Subsequent runs are normal incremental.
+const BACKFILL_TARGET_MS = HISTORY_LIMIT_MS;
 
 // eth_getLogs max range on public Base RPC. Some endpoints accept more,
 // but 10k is the safe ceiling.
@@ -187,16 +192,42 @@ async function main() {
 
   const latestHex = await rpc("eth_blockNumber", []);
   const latestBlock = hexToNum(latestHex);
-  const fromBlock = existing.lastIndexedBlock > 0
-    ? existing.lastIndexedBlock + 1
-    : Math.max(0, latestBlock - COLD_START_LOOKBACK_BLOCKS);
 
-  console.error(`Scanning blocks ${fromBlock} → ${latestBlock} (${latestBlock - fromBlock + 1} blocks)`);
+  // Detect whether we need to backfill older history. If the file's
+  // earliest trade is younger than the retention window (e.g. cold-
+  // started at 7 days but we now want 30), scan from (now - 30d)
+  // back to the existing earliest block. Otherwise normal incremental.
+  let fromBlock;
+  let toBlock = latestBlock;
+  let isBackfill = false;
+  if (existing.lastIndexedBlock <= 0) {
+    fromBlock = Math.max(0, latestBlock - COLD_START_LOOKBACK_BLOCKS);
+  } else {
+    const earliestTrade = existing.trades.length > 0
+      ? Math.min(...existing.trades.map((t) => t.blockTime))
+      : Date.now();
+    const targetEarliest = Date.now() - BACKFILL_TARGET_MS;
+    const earliestBlock = existing.trades.length > 0
+      ? Math.min(...existing.trades.map((t) => t.blockNumber))
+      : existing.lastIndexedBlock;
+    if (earliestTrade > targetEarliest) {
+      // Backfill: scan the older gap that's not yet covered.
+      isBackfill = true;
+      fromBlock = Math.max(0, latestBlock - Math.floor(BACKFILL_TARGET_MS / 2000));
+      toBlock = earliestBlock - 1;
+      console.error(`Backfill mode: file earliest trade is ${new Date(earliestTrade).toISOString()}, target is ${new Date(targetEarliest).toISOString()}`);
+    } else {
+      // Normal incremental.
+      fromBlock = existing.lastIndexedBlock + 1;
+    }
+  }
+
+  console.error(`Scanning blocks ${fromBlock} → ${toBlock} (${toBlock - fromBlock + 1} blocks)${isBackfill ? " [BACKFILL]" : ""}`);
 
   // Step 1: collect all TransferSingle logs from the player share contract.
   const allLogs = [];
-  for (let cursor = fromBlock; cursor <= latestBlock; cursor += LOGS_CHUNK_BLOCKS) {
-    const end = Math.min(cursor + LOGS_CHUNK_BLOCKS - 1, latestBlock);
+  for (let cursor = fromBlock; cursor <= toBlock; cursor += LOGS_CHUNK_BLOCKS) {
+    const end = Math.min(cursor + LOGS_CHUNK_BLOCKS - 1, toBlock);
     const logs = await fetchTransferLogs(cursor, end);
     allLogs.push(...logs);
     if (process.env.GRIDIRON_VERBOSE) {
@@ -329,7 +360,12 @@ async function main() {
   }
   const trades = Array.from(merged.values()).sort((a, b) => b.blockTime - a.blockTime);
 
-  const store = { lastIndexedBlock: latestBlock, trades };
+  // During backfill we scan older blocks but the file's tip is still
+  // at the existing lastIndexedBlock. Don't regress that pointer.
+  const newLastIndexed = isBackfill
+    ? Math.max(existing.lastIndexedBlock, latestBlock)
+    : latestBlock;
+  const store = { lastIndexedBlock: newLastIndexed, trades };
   const json = JSON.stringify(store, null, 2) + "\n";
   const durationMs = Date.now() - startWall;
 
@@ -340,7 +376,7 @@ async function main() {
     console.error(`Wrote ${trades.length} trades (latest block ${latestBlock}) in ${durationMs}ms`);
   } else {
     console.log(JSON.stringify({
-      lastIndexedBlock: latestBlock,
+      lastIndexedBlock: newLastIndexed,
       newTrades: newTrades.length,
       totalTrades: trades.length,
       durationMs,
