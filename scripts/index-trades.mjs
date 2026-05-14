@@ -235,42 +235,53 @@ async function main() {
   // logs that the RPC hasn't indexed yet.
   const safeLatestBlock = Math.max(0, latestBlock - SAFETY_LAG_BLOCKS);
 
-  // Detect whether we need to backfill older history. If the file's
-  // earliest trade is younger than the retention window (e.g. cold-
-  // started at 7 days but we now want 30), scan from (now - 30d)
-  // back to the existing earliest block. Otherwise normal incremental.
-  let fromBlock;
-  let toBlock = safeLatestBlock;
-  let isBackfill = false;
+  // We now scan TWO ranges per run, additively:
+  //   1. INCREMENTAL forward scan from lastIndexedBlock+1 to chain
+  //      tip — this is the recent activity that must NOT be skipped.
+  //   2. BACKFILL older scan into the 30-day window — only if the
+  //      file's earliest trade hasn't reached the target window yet.
+  //
+  // Both ranges are scanned; lastIndexedBlock is only advanced by the
+  // forward scan. The previous logic was XOR (either backfill OR
+  // incremental), which meant whenever the file's earliestTrade
+  // happened to drift past the target as old trades aged out, the
+  // backfill branch fired, scanned pre-Sport.fun blocks, found
+  // nothing, and STILL advanced lastIndexedBlock to chain tip —
+  // silently skipping every new block since the previous run. That
+  // was the "trade feed missing recent transactions" bug.
+  const ranges = [];
+
+  // Forward / incremental range (mandatory on every run).
+  let forwardFrom;
   if (existing.lastIndexedBlock <= 0) {
-    fromBlock = Math.max(0, safeLatestBlock - COLD_START_LOOKBACK_BLOCKS);
+    forwardFrom = Math.max(0, safeLatestBlock - COLD_START_LOOKBACK_BLOCKS);
   } else {
-    const earliestTrade = existing.trades.length > 0
-      ? Math.min(...existing.trades.map((t) => t.blockTime))
-      : Date.now();
+    forwardFrom = existing.lastIndexedBlock + 1;
+  }
+  if (forwardFrom <= safeLatestBlock) {
+    ranges.push({ kind: "forward", from: forwardFrom, to: safeLatestBlock });
+  }
+
+  // Backfill range (only when the file doesn't yet span the retention window).
+  if (existing.trades.length > 0) {
+    const earliestTrade = Math.min(...existing.trades.map((t) => t.blockTime));
     const targetEarliest = Date.now() - BACKFILL_TARGET_MS;
-    const earliestBlock = existing.trades.length > 0
-      ? Math.min(...existing.trades.map((t) => t.blockNumber))
-      : existing.lastIndexedBlock;
     if (earliestTrade > targetEarliest) {
-      // Backfill: scan the older gap that's not yet covered.
-      isBackfill = true;
-      fromBlock = Math.max(0, safeLatestBlock - Math.floor(BACKFILL_TARGET_MS / 2000));
-      toBlock = earliestBlock - 1;
-      console.error(`Backfill mode: file earliest trade is ${new Date(earliestTrade).toISOString()}, target is ${new Date(targetEarliest).toISOString()}`);
-    } else {
-      // Normal incremental.
-      fromBlock = existing.lastIndexedBlock + 1;
+      const earliestBlock = Math.min(...existing.trades.map((t) => t.blockNumber));
+      const backfillFrom = Math.max(0, safeLatestBlock - Math.floor(BACKFILL_TARGET_MS / 2000));
+      const backfillTo = earliestBlock - 1;
+      if (backfillFrom <= backfillTo) {
+        ranges.push({ kind: "backfill", from: backfillFrom, to: backfillTo });
+        console.error(`Backfill needed: file earliest ${new Date(earliestTrade).toISOString()}, target ${new Date(targetEarliest).toISOString()}`);
+      }
     }
   }
 
-  // --rescan-blocks N (or env GRIDIRON_RESCAN_BLOCKS=N) forces the
-  // run to re-scan the most recent N blocks regardless of where
-  // lastIndexedBlock sits. Used to recover from past truncation —
-  // e.g. when the RPC silently dropped events the original run
-  // would have caught. Existing trades in that range are deduped
-  // by (txId, logIndex) in the merge step, so a rescan is safe to
-  // run any time.
+  // --rescan-blocks N (env GRIDIRON_RESCAN_BLOCKS=N) re-scans the
+  // most recent N blocks regardless. Used to recover from past
+  // truncation (RPC silently dropped logs). Dedup by (txId,
+  // logIndex) makes this safe any time. Adds to the range set so
+  // the forward incremental still runs alongside.
   const rescanArg = process.argv.find((a) => a.startsWith("--rescan-blocks="));
   const rescanBlocks = rescanArg
     ? parseInt(rescanArg.slice("--rescan-blocks=".length), 10)
@@ -278,22 +289,31 @@ async function main() {
     ? parseInt(process.env.GRIDIRON_RESCAN_BLOCKS, 10)
     : 0;
   if (Number.isFinite(rescanBlocks) && rescanBlocks > 0) {
-    fromBlock = Math.max(0, safeLatestBlock - rescanBlocks);
-    toBlock = safeLatestBlock;
-    isBackfill = true;
-    console.error(`Rescan mode: re-scanning last ${rescanBlocks} blocks (${fromBlock}..${toBlock})`);
+    ranges.push({
+      kind: "rescan",
+      from: Math.max(0, safeLatestBlock - rescanBlocks),
+      to: safeLatestBlock,
+    });
+    console.error(`Rescan mode: re-scanning last ${rescanBlocks} blocks`);
   }
 
-  console.error(`Scanning blocks ${fromBlock} → ${toBlock} (${toBlock - fromBlock + 1} blocks)${isBackfill ? " [BACKFILL]" : ""}`);
+  if (ranges.length === 0) {
+    console.error(`Nothing to scan: chain tip at ${safeLatestBlock}, lastIndexedBlock at ${existing.lastIndexedBlock}, file is current.`);
+  }
+  for (const r of ranges) {
+    console.error(`Scanning blocks ${r.from} → ${r.to} (${r.to - r.from + 1} blocks) [${r.kind.toUpperCase()}]`);
+  }
 
   // Step 1: collect all TransferSingle logs from the player share contract.
   const allLogs = [];
-  for (let cursor = fromBlock; cursor <= toBlock; cursor += LOGS_CHUNK_BLOCKS) {
-    const end = Math.min(cursor + LOGS_CHUNK_BLOCKS - 1, toBlock);
-    const logs = await fetchTransferLogs(cursor, end);
-    allLogs.push(...logs);
-    if (process.env.GRIDIRON_VERBOSE) {
-      console.error(`  ${cursor}..${end}: +${logs.length} logs (total ${allLogs.length})`);
+  for (const range of ranges) {
+    for (let cursor = range.from; cursor <= range.to; cursor += LOGS_CHUNK_BLOCKS) {
+      const end = Math.min(cursor + LOGS_CHUNK_BLOCKS - 1, range.to);
+      const logs = await fetchTransferLogs(cursor, end);
+      allLogs.push(...logs);
+      if (process.env.GRIDIRON_VERBOSE) {
+        console.error(`  [${range.kind}] ${cursor}..${end}: +${logs.length} logs (total ${allLogs.length})`);
+      }
     }
   }
   console.error(`Found ${allLogs.length} TransferSingle logs`);
@@ -422,14 +442,15 @@ async function main() {
   }
   const trades = Array.from(merged.values()).sort((a, b) => b.blockTime - a.blockTime);
 
-  // During backfill we scan older blocks but the file's tip is still
-  // at the existing lastIndexedBlock. Don't regress that pointer.
-  // Note: we advance only to safeLatestBlock (not latestBlock) — the
-  // SAFETY_LAG_BLOCKS tail will be picked up by the next run, after
-  // the RPC has had time to index those logs.
-  const newLastIndexed = isBackfill
-    ? Math.max(existing.lastIndexedBlock, safeLatestBlock)
-    : safeLatestBlock;
+  // Advance the indexed-through pointer to whichever forward
+  // boundary we actually scanned. If only backfill+rescan happened
+  // (no forward range), preserve the existing pointer instead of
+  // advancing — never claim coverage we didn't actually scan.
+  // Cap at safeLatestBlock so the SAFETY_LAG_BLOCKS tail gets
+  // picked up by the next run after the RPC indexes those logs.
+  const forwardRange = ranges.find((r) => r.kind === "forward");
+  const scannedForwardTo = forwardRange ? forwardRange.to : 0;
+  const newLastIndexed = Math.max(existing.lastIndexedBlock, scannedForwardTo);
   const store = { lastIndexedBlock: newLastIndexed, trades };
   const json = JSON.stringify(store, null, 2) + "\n";
   const durationMs = Date.now() - startWall;
