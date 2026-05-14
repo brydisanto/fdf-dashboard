@@ -8,6 +8,15 @@ import type { WalletHolding } from "../types";
 export const FUN_TOKEN_ADDRESS = "0x16ee7ecac70d1028e7712751e2ee6ba808a7dd92";
 export const FUN_TOKEN_DECIMALS = 18;
 
+// Soccer.fun's ERC-1155 — Sport.fun's soccer player shares. Same ABI
+// as FOOTBALLFUN_CONTRACT (ERC-1155 with balanceOfBatch); different
+// contract, different token ID set. We discovered it via Tenero's
+// /tokens endpoint while debugging wallets whose Soccer portfolio
+// showed up as empty in the UI — the upstream /wallets/.../holdings
+// path returns 0 rows for many wallets despite them clearly holding
+// positions. Reading on-chain bypasses that gap entirely.
+export const SOCCERFUN_CONTRACT = "0x71c8b0c5148edb0399d1edf9bf0c8c81dea16918";
+
 // Direct Base RPC reads. Used to bypass the upstream API for things it
 // either doesn't expose well (full wallet NFL portfolio) or rate-limits
 // (high-volume reads). One batched eth_call returns all 72 NFL balances
@@ -185,6 +194,71 @@ export async function readWalletNflBalances(
       // back to those. For balances that ONLY exist on-chain (not in
       // the upstream's top-50 holdings response), we leave blank.
       startHoldingAt: 0,
+      lastActiveAt: now,
+    });
+  }
+  out.sort((a, b) => b.balanceValueUsd - a.balanceValueUsd);
+  return out;
+}
+
+/**
+ * Same on-chain balance pattern as readWalletNflBalances, but
+ * against the SoccerFun ERC-1155 contract and against a dynamic
+ * token universe (Sport.fun keeps adding soccer players, so we
+ * can't hardcode the list like we do for the 72 NFL roster).
+ *
+ * Caller supplies the token list (typically the result of
+ * getSoccerTokenUniverse() in footballfun.ts) which has the token
+ * metadata + current price. We do ONE batched eth_call across all
+ * supplied tokens and return only positions with balance > 0.
+ *
+ * Returns null on RPC failure so callers can distinguish "wallet
+ * has no soccer" from "we couldn't ask" and fall back gracefully.
+ */
+export interface SoccerTokenMeta {
+  tokenAddress: string;     // "{SOCCERFUN_CONTRACT}:{tokenIdSuffix}"
+  tokenIdSuffix: string;
+  name: string;
+  symbol: string;
+  imageUrl?: string;
+  priceUsd: number;
+}
+export async function readWalletSoccerBalances(
+  address: string,
+  tokens: SoccerTokenMeta[],
+): Promise<WalletHolding[] | null> {
+  if (tokens.length === 0) return [];
+  const wallet = address as Address;
+  const wallets = tokens.map(() => wallet);
+  const tokenIds = tokens.map((t) => BigInt(t.tokenIdSuffix));
+  let raw: readonly bigint[];
+  try {
+    raw = await client.readContract({
+      address: SOCCERFUN_CONTRACT as Address,
+      abi: ERC1155_ABI,
+      functionName: "balanceOfBatch",
+      args: [wallets, tokenIds],
+    });
+  } catch {
+    return null;
+  }
+
+  const out: WalletHolding[] = [];
+  const now = Date.now();
+  for (let i = 0; i < tokens.length; i++) {
+    const balanceRaw = raw[i] ?? 0n;
+    if (balanceRaw === 0n) continue;
+    const t = tokens[i];
+    const balance = Number(balanceRaw) / 10 ** SHARE_DECIMALS;
+    out.push({
+      tokenAddress: t.tokenAddress,
+      symbol: t.symbol,
+      name: t.name,
+      imageUrl: t.imageUrl,
+      priceUsd: t.priceUsd,
+      balance,
+      balanceValueUsd: +(balance * t.priceUsd).toFixed(2),
+      startHoldingAt: 0,   // no on-chain timestamps without log replay
       lastActiveAt: now,
     });
   }
