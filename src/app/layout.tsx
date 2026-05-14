@@ -101,6 +101,7 @@ function SiteHeader() {
           <NavLink href="/on-fire" icon={<Flame className="h-3.5 w-3.5" strokeWidth={2} />}>
             On Fire
           </NavLink>
+          <NavLink href="/tournament-matrix">Matrix</NavLink>
           <NavLinkHighlighted href="/value">Value Plays</NavLinkHighlighted>
           <span className="mx-1 h-5 w-px bg-[var(--color-line)]" aria-hidden />
           <ThemeToggle />
