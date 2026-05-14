@@ -197,7 +197,7 @@ function LeaderCell({
           style={{
             fontFamily: "var(--font-mono)",
             fontWeight: 700,
-            fontSize: 28,
+            fontSize: 24,
             letterSpacing: "-0.03em",
             color: "var(--color-text)",
             fontVariantNumeric: "tabular-nums",
