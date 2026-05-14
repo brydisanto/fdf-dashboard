@@ -113,11 +113,16 @@ function normalizePlayer(raw, weeksOrdered) {
   const weeklyPlacements = raw.weeklyPlacements ?? {};
   const weeks = weeksOrdered.map((w) => {
     const entry = weeklyPlacements[String(w)] ?? weeklyPlacements[w];
-    if (!entry) return { week: w, rank: null, points: null };
+    if (!entry) return { week: w, rank: null, points: null, earnedTP: false };
     return {
       week: w,
       rank: Number.isFinite(entry.rank) ? entry.rank : null,
       points: Number.isFinite(entry.fantasyPoints) ? +Number(entry.fantasyPoints).toFixed(2) : null,
+      // FDF's tournament platform marks each weekly placement with
+      // whether the player "earned TP" — top-3 for QB/TE, top-5 for
+      // RB/WR. We pull this directly so our TP RATE column matches
+      // FDF's rules exactly (rather than recomputing from rank).
+      earnedTP: !!entry.earnedTP,
     };
   });
 
@@ -125,25 +130,26 @@ function normalizePlayer(raw, weeksOrdered) {
   const played = weeks.filter((w) => w.rank != null);
   const ranks = played.map((w) => w.rank);
   const points = played.map((w) => w.points);
-  const counts = { firsts: 0, seconds: 0, thirds: 0, fourths: 0, fifths: 0, top12: 0 };
-  for (const r of ranks) {
-    if (r === 1) counts.firsts++;
-    if (r === 2) counts.seconds++;
-    if (r === 3) counts.thirds++;
-    if (r === 4) counts.fourths++;
-    if (r === 5) counts.fifths++;
-    if (r <= 12) counts.top12++;
+  const counts = { firsts: 0, seconds: 0, thirds: 0, fourths: 0, fifths: 0 };
+  let tpCount = 0;
+  for (const w of played) {
+    if (w.rank === 1) counts.firsts++;
+    if (w.rank === 2) counts.seconds++;
+    if (w.rank === 3) counts.thirds++;
+    if (w.rank === 4) counts.fourths++;
+    if (w.rank === 5) counts.fifths++;
+    if (w.earnedTP) tpCount++;
   }
   const avg = ranks.length ? +(ranks.reduce((a, x) => a + x, 0) / ranks.length).toFixed(2) : null;
   const best = ranks.length ? Math.min(...ranks) : null;
   const avgPoints = points.length ? +(points.reduce((a, x) => a + x, 0) / points.length).toFixed(2) : null;
-  const tpRate = ranks.length ? +(counts.top12 / ranks.length).toFixed(3) : null;
+  const tpRate = ranks.length ? +(tpCount / ranks.length).toFixed(3) : null;
 
   return {
     displayName: raw.playerName,
     team: raw.team,
     weeks,
-    stats: { played: played.length, avg, best, avgPoints, tpRate, ...counts },
+    stats: { played: played.length, avg, best, avgPoints, tpRate, tpCount, ...counts },
   };
 }
 

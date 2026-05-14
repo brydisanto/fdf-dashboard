@@ -11,6 +11,11 @@ export interface WeekFinish {
   week: number;
   rank: number | null;
   points: number | null;
+  // True when the player's weekly placement earned Tournament
+  // Points under FDF's rules: top-3 for QB/TE, top-5 for RB/WR.
+  // Sourced directly from the upstream `earnedTP` field — we
+  // never recompute this from rank so we always match FDF.
+  earnedTP: boolean;
 }
 
 export interface PlayerSeason {
@@ -23,13 +28,13 @@ export interface PlayerSeason {
     avg: number | null;
     best: number | null;
     avgPoints: number | null;
-    tpRate: number | null;        // % of weeks finishing top-12
+    tpRate: number | null;   // % of played weeks that earned TP
+    tpCount: number;          // # of TP-earning weeks
     firsts: number;
     seconds: number;
     thirds: number;
     fourths: number;
     fifths: number;
-    top12: number;
   };
 }
 

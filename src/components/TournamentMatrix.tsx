@@ -13,40 +13,80 @@ type SortKey =
 
 const POSITIONS: Position[] = ["QB", "RB", "WR", "TE"];
 
-// Rank → cell foreground/background tint. Bright green for the
-// elite finishes, fading to amber/red for tail. Returns inline
-// styles so we don't have to predeclare every rank as a class.
-function rankTone(rank: number | null): { fg: string; bg: string; ring: string } {
+// FDF's tournament rules: top-3 finishers earn TP at QB/TE,
+// top-5 at RB/WR. Cells color along that threshold (green tint
+// inside TP, neutral/amber outside) AND escalate by magnitude
+// inside it (1st brightest, 5th softest within the RB/WR band).
+function tpThreshold(pos: Position): number {
+  return pos === "QB" || pos === "TE" ? 3 : 5;
+}
+
+function rankTone(rank: number | null, pos: Position, earnedTP: boolean): { fg: string; bg: string; ring: string } {
   if (rank == null) return {
     fg: "var(--color-text-dim)",
     bg: "transparent",
     ring: "transparent",
   };
-  // Bright lime green for 1-3
-  if (rank <= 3) return {
-    fg: "oklch(0.84 0.18 145)",
-    bg: "color-mix(in oklab, oklch(0.74 0.18 145) 14%, transparent)",
-    ring: "color-mix(in oklab, oklch(0.74 0.18 145) 35%, transparent)",
-  };
-  if (rank <= 6) return {
-    fg: "oklch(0.78 0.13 145)",
-    bg: "color-mix(in oklab, oklch(0.74 0.18 145) 8%, transparent)",
-    ring: "color-mix(in oklab, oklch(0.74 0.18 145) 20%, transparent)",
-  };
-  if (rank <= 12) return {
-    fg: "oklch(0.80 0.14 85)",  // amber
-    bg: "color-mix(in oklab, oklch(0.74 0.16 85) 8%, transparent)",
-    ring: "color-mix(in oklab, oklch(0.74 0.16 85) 18%, transparent)",
-  };
-  if (rank <= 24) return {
-    fg: "var(--color-text-muted)",
-    bg: "transparent",
-    ring: "color-mix(in oklab, var(--color-text) 8%, transparent)",
-  };
+
+  // INSIDE TP — green ramp where 1st is brightest, then dimming
+  // by rank. Trust the upstream `earnedTP` flag rather than
+  // recomputing from rank so we exactly match FDF's rules even
+  // if they change.
+  if (earnedTP) {
+    if (rank === 1) return {
+      // Brightest — gold-leaning lime to set #1 visually apart.
+      fg: "oklch(0.88 0.18 130)",
+      bg: "color-mix(in oklab, oklch(0.80 0.20 130) 22%, transparent)",
+      ring: "color-mix(in oklab, oklch(0.80 0.20 130) 55%, transparent)",
+    };
+    if (rank === 2) return {
+      fg: "oklch(0.84 0.17 145)",
+      bg: "color-mix(in oklab, oklch(0.74 0.18 145) 16%, transparent)",
+      ring: "color-mix(in oklab, oklch(0.74 0.18 145) 42%, transparent)",
+    };
+    if (rank === 3) return {
+      fg: "oklch(0.80 0.15 145)",
+      bg: "color-mix(in oklab, oklch(0.74 0.18 145) 11%, transparent)",
+      ring: "color-mix(in oklab, oklch(0.74 0.18 145) 32%, transparent)",
+    };
+    // 4th / 5th only reach here for RB/WR (TP threshold = 5).
+    if (rank === 4) return {
+      fg: "oklch(0.74 0.12 145)",
+      bg: "color-mix(in oklab, oklch(0.74 0.18 145) 7%, transparent)",
+      ring: "color-mix(in oklab, oklch(0.74 0.18 145) 22%, transparent)",
+    };
+    return {
+      fg: "oklch(0.70 0.10 145)",
+      bg: "color-mix(in oklab, oklch(0.74 0.18 145) 4%, transparent)",
+      ring: "color-mix(in oklab, oklch(0.74 0.18 145) 16%, transparent)",
+    };
+  }
+
+  // OUTSIDE TP — neutral / amber / dim red by distance from
+  // the position's threshold.
+  const threshold = tpThreshold(pos);
+  const beyond = rank - threshold; // 1 = just-missed, larger = far off
+  if (beyond <= 3) {
+    // Just missed — soft amber, no fill.
+    return {
+      fg: "oklch(0.80 0.14 85)",
+      bg: "transparent",
+      ring: "color-mix(in oklab, oklch(0.74 0.16 85) 15%, transparent)",
+    };
+  }
+  if (beyond <= 8) {
+    // Mid-tail — muted text, faint outline.
+    return {
+      fg: "var(--color-text-muted)",
+      bg: "transparent",
+      ring: "color-mix(in oklab, var(--color-text) 8%, transparent)",
+    };
+  }
+  // Deep tail — dim red, no fill.
   return {
-    fg: "oklch(0.68 0.18 22)", // dim red
+    fg: "oklch(0.62 0.16 22)",
     bg: "transparent",
-    ring: "color-mix(in oklab, oklch(0.68 0.18 22) 18%, transparent)",
+    ring: "color-mix(in oklab, oklch(0.62 0.16 22) 14%, transparent)",
   };
 }
 
@@ -205,7 +245,13 @@ export function TournamentMatrix({
 
                   {/* Weekly cells */}
                   {p.weeks.map((w) => (
-                    <WeekCell key={w.week} rank={w.rank} points={w.points} />
+                    <WeekCell
+                      key={w.week}
+                      rank={w.rank}
+                      points={w.points}
+                      earnedTP={w.earnedTP}
+                      pos={pos}
+                    />
                   ))}
                   <TdDivider />
 
@@ -239,8 +285,18 @@ export function TournamentMatrix({
 
 // ── Cell components ─────────────────────────────────────────────
 
-function WeekCell({ rank, points }: { rank: number | null; points: number | null }) {
-  const tone = rankTone(rank);
+function WeekCell({
+  rank,
+  points,
+  earnedTP,
+  pos,
+}: {
+  rank: number | null;
+  points: number | null;
+  earnedTP: boolean;
+  pos: Position;
+}) {
+  const tone = rankTone(rank, pos, earnedTP);
   if (rank == null) {
     return (
       <td
@@ -259,6 +315,7 @@ function WeekCell({ rank, points }: { rank: number | null; points: number | null
       </td>
     );
   }
+  const tpLabel = earnedTP ? " · earned TP" : "";
   return (
     <td
       className="text-center"
@@ -269,7 +326,7 @@ function WeekCell({ rank, points }: { rank: number | null; points: number | null
         boxShadow: `inset 0 0 0 1px ${tone.ring}`,
         verticalAlign: "middle",
       }}
-      title={`Rank ${rank} · ${points?.toFixed(1) ?? "—"} pts`}
+      title={`Rank ${rank} · ${points?.toFixed(1) ?? "—"} pts${tpLabel}`}
     >
       <div className="flex flex-col items-center justify-center leading-tight">
         <span

@@ -26,16 +26,16 @@ export default function TournamentMatrixPage() {
     data.byPosition.WR.length +
     data.byPosition.TE.length;
   let totalFirsts = 0;
-  let totalTop12 = 0;
+  let totalTpCount = 0;
   let totalPlayed = 0;
   for (const pos of ["QB","RB","WR","TE"] as const) {
     for (const p of data.byPosition[pos]) {
       totalFirsts += p.stats.firsts;
-      totalTop12 += p.stats.top12;
+      totalTpCount += p.stats.tpCount;
       totalPlayed += p.stats.played;
     }
   }
-  const aggregateTpRate = totalPlayed ? (totalTop12 / totalPlayed) : 0;
+  const aggregateTpRate = totalPlayed ? (totalTpCount / totalPlayed) : 0;
 
   return (
     <div className="mx-auto max-w-[var(--max-w)] px-5 sm:px-8 py-6 sm:py-8">
@@ -108,7 +108,7 @@ export default function TournamentMatrixPage() {
       >
         <StatCell label="Players Tracked" value={totalRoster.toString()} sub="QB · RB · WR · TE" />
         <StatCell label="Weeks Indexed"  value={data.weeks.toString()} sub={`Regular season ${data.season}`} />
-        <StatCell label="Aggregate Top-12 Rate" value={`${Math.round(aggregateTpRate * 100)}%`} sub="Across roster" />
+        <StatCell label="Aggregate TP Rate" value={`${Math.round(aggregateTpRate * 100)}%`} sub="Top-3 QB/TE · Top-5 RB/WR" />
         <StatCell label="#1 Finishes"  value={totalFirsts.toString()} sub="Across roster" />
       </div>
 
