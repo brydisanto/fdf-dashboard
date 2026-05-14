@@ -21,7 +21,9 @@ const POSITIONS: (Position | "ALL")[] = ["ALL", "QB", "RB", "WR", "TE"];
 export function PlayersTable({ players }: { players: PlayerSummary[] }) {
   const [query, setQuery] = useState("");
   const [pos, setPos] = useState<Position | "ALL">("ALL");
-  const [sortKey, setSortKey] = useState<SortKey>("marketCap");
+  // Default to Price desc — most-expensive-on-top is what people
+  // expect when scanning a "top players" board.
+  const [sortKey, setSortKey] = useState<SortKey>("priceUsd");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const rows = useMemo(() => {
