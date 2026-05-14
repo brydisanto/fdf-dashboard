@@ -43,14 +43,18 @@ export function Sk({
 export function SkBlock({
   h = 200,
   className,
+  label = "Loading",
+  showLabel = true,
 }: {
   h?: number | string;
   className?: string;
+  label?: string;
+  showLabel?: boolean;
 }) {
   return (
     <div
       className={clsx(
-        "animate-pulse rounded-[var(--r-14)] border border-[var(--color-line-strong)]",
+        "relative animate-pulse rounded-[var(--r-14)] border border-[var(--color-line-strong)] overflow-hidden",
         className,
       )}
       style={{
@@ -59,7 +63,40 @@ export function SkBlock({
         // without overwhelming on white.
         background: "color-mix(in oklab, var(--color-text) 10%, transparent)",
       }}
-    />
+    >
+      {showLabel ? (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <LoadingTag label={label} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// Centered loading chip with three animated dots. Mono-eyebrow
+// styled so it reads as a system message, not a UI element. Lives
+// inside SkBlock; can also be used standalone over any container
+// that hasn't received its data yet.
+export function LoadingTag({ label = "Loading" }: { label?: string }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line)] bg-[color-mix(in_oklab,var(--color-text)_3%,transparent)] px-3 py-1"
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: "10.5px",
+        fontWeight: 700,
+        letterSpacing: "0.18em",
+        textTransform: "uppercase",
+        color: "var(--color-text-muted)",
+      }}
+    >
+      {label}
+      <span className="loading-dots" aria-hidden>
+        <span>.</span>
+        <span>.</span>
+        <span>.</span>
+      </span>
+    </span>
   );
 }
 
