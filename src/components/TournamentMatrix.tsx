@@ -93,12 +93,10 @@ function rankTone(rank: number | null, pos: Position, earnedTP: boolean): { fg: 
 export function TournamentMatrix({
   byPosition,
   weeksOrdered,
-  source,
   season,
 }: {
   byPosition: Record<Position, PlayerSeason[]>;
   weeksOrdered: number[];
-  source: string;
   season: number;
 }) {
   const [pos, setPos] = useState<Position>("RB");
@@ -167,12 +165,6 @@ export function TournamentMatrix({
             else if (v === "1STS") onSort("firsts", "desc");
           }}
         />
-        <span
-          className="ml-auto mono-eyebrow"
-          style={{ fontSize: "10px" }}
-        >
-          {season} SEASON · {rows.length} {pos === "QB" ? "QBs" : pos === "RB" ? "RBs" : pos === "WR" ? "WRs" : "TEs"} · source: {source}
-        </span>
       </div>
 
       {/* Matrix */}
@@ -366,9 +358,14 @@ function StickyCell({
   sticky: "player";
   align?: "left" | "right" | "center";
 }) {
+  // Both background states must be FULLY OPAQUE — the sticky cell
+  // sits above the horizontally-scrolling week cells, and any
+  // transparency lets the scroll content bleed through. Stadium is
+  // the resting bg; bench is the next step up the surface stack
+  // for the hovered state.
   return (
     <td
-      className="bg-[var(--color-stadium)] group-hover:bg-[color-mix(in_oklab,var(--color-press)_50%,transparent)]"
+      className="bg-[var(--color-stadium)] group-hover:bg-[var(--color-bench)]"
       style={{
         position: "sticky",
         left: 0,
@@ -473,8 +470,14 @@ function Th({
         textAlign: align,
         position: sticky ? "sticky" : undefined,
         left: stickyLeft,
-        background: "color-mix(in oklab, var(--color-press) 50%, transparent)",
-        backdropFilter: "blur(6px)",
+        // Sticky headers must be opaque so the horizontally-scrolling
+        // week cells underneath don't bleed through. Non-sticky
+        // headers scroll with the body and can keep the lighter
+        // press-tinted treatment.
+        background: sticky
+          ? "var(--color-press)"
+          : "color-mix(in oklab, var(--color-press) 50%, transparent)",
+        backdropFilter: sticky ? undefined : "blur(6px)",
         zIndex: sticky ? 2 : undefined,
         borderBottom: "1px solid var(--color-line)",
         borderRight: sticky === "player" ? "1px solid var(--color-line)" : undefined,

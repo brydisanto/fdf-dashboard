@@ -19,23 +19,38 @@ export default function TournamentMatrixPage() {
   const weeksOrdered = (data as { weeksOrdered?: number[] }).weeksOrdered
     ?? Array.from({ length: data.weeks }, (_, i) => i + 1);
 
-  // Totals for the hero stat strip.
+  // Season leaders for the stat strip. Require at least 8 games
+  // played for rate-based stats (TP rate, avg points) so a single
+  // hot week from an injured player can't claim the title. Counting
+  // stats (#1 finishes) have no minimum since they're already
+  // accumulation-based and self-limiting.
+  const MIN_GAMES_FOR_RATE = 8;
+  const allPlayers = (["QB","RB","WR","TE"] as const).flatMap((p) => data.byPosition[p]);
+  const topTpRate = allPlayers
+    .filter((p) => p.stats.tpRate != null && p.stats.played >= MIN_GAMES_FOR_RATE)
+    .sort((a, b) => (b.stats.tpRate ?? 0) - (a.stats.tpRate ?? 0))[0];
+  const topFirsts = allPlayers
+    .slice()
+    .sort((a, b) => b.stats.firsts - a.stats.firsts)[0];
+  const topAvgPoints = allPlayers
+    .filter((p) => p.stats.avgPoints != null && p.stats.played >= MIN_GAMES_FOR_RATE)
+    .sort((a, b) => (b.stats.avgPoints ?? 0) - (a.stats.avgPoints ?? 0))[0];
+
+  // "Christian McCaffrey" -> "C. McCaffrey". Strips Jr/Sr/II/III
+  // suffixes since they don't add information in this compact form.
+  function abbreviateName(full: string): string {
+    if (!full) return "";
+    const cleaned = full.replace(/\s+(Jr|Sr|II|III|IV|V)\.?$/i, "").trim();
+    const parts = cleaned.split(/\s+/);
+    if (parts.length === 1) return parts[0];
+    return `${parts[0][0]}. ${parts.slice(1).join(" ")}`;
+  }
+
   const totalRoster =
     data.byPosition.QB.length +
     data.byPosition.RB.length +
     data.byPosition.WR.length +
     data.byPosition.TE.length;
-  let totalFirsts = 0;
-  let totalTpCount = 0;
-  let totalPlayed = 0;
-  for (const pos of ["QB","RB","WR","TE"] as const) {
-    for (const p of data.byPosition[pos]) {
-      totalFirsts += p.stats.firsts;
-      totalTpCount += p.stats.tpCount;
-      totalPlayed += p.stats.played;
-    }
-  }
-  const aggregateTpRate = totalPlayed ? (totalTpCount / totalPlayed) : 0;
 
   return (
     <div className="mx-auto max-w-[var(--max-w)] px-5 sm:px-8 py-6 sm:py-8">
@@ -94,22 +109,38 @@ export default function TournamentMatrixPage() {
             {data.season} FDF Rankings Matrix
           </h1>
           <p className="m-0 max-w-[80ch] text-[var(--color-text-muted)]" style={{ fontSize: "15px" }}>
-            Weekly position finishes for every FDF roster player during the {data.season} NFL regular season.
-            Each cell shows the player&apos;s rank within their position that week, with fantasy points in parens.
+            Contains weekly stats and tournament rankings from the {data.season} NFL regular season.
+            Each cell shows the player&apos;s rank within their position that week, with fantasy points scored underneath.
             Switch positions or sort by season-long aggregates to compare consistency.
           </p>
         </div>
       </div>
 
-      {/* Stat strip */}
+      {/* Stat strip: roster size + 3 season-leader cells */}
       <div
         className="stat-strip mt-4 grid"
         style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}
       >
-        <StatCell label="Players Tracked" value={totalRoster.toString()} sub="QB · RB · WR · TE" />
-        <StatCell label="Weeks Indexed"  value={data.weeks.toString()} sub={`Regular season ${data.season}`} />
-        <StatCell label="Aggregate TP Rate" value={`${Math.round(aggregateTpRate * 100)}%`} sub="Top-3 QB/TE · Top-5 RB/WR" />
-        <StatCell label="#1 Finishes"  value={totalFirsts.toString()} sub="Across roster" />
+        <StatCell
+          label="Players Ranked"
+          value={totalRoster.toString()}
+          sub="QB · RB · WR · TE"
+        />
+        <LeaderCell
+          label="Highest TP Rate"
+          value={topTpRate ? `${Math.round((topTpRate.stats.tpRate ?? 0) * 100)}%` : "—"}
+          leader={abbreviateName(topTpRate?.displayName ?? "")}
+        />
+        <LeaderCell
+          label="Most #1 Finishes"
+          value={topFirsts && topFirsts.stats.firsts > 0 ? topFirsts.stats.firsts.toString() : "—"}
+          leader={topFirsts && topFirsts.stats.firsts > 0 ? abbreviateName(topFirsts.displayName) : ""}
+        />
+        <LeaderCell
+          label="Highest Avg Points"
+          value={topAvgPoints?.stats.avgPoints != null ? topAvgPoints.stats.avgPoints.toFixed(1) : "—"}
+          leader={abbreviateName(topAvgPoints?.displayName ?? "")}
+        />
       </div>
 
       {/* Matrix */}
@@ -118,7 +149,6 @@ export default function TournamentMatrixPage() {
           <TournamentMatrix
             byPosition={data.byPosition}
             weeksOrdered={weeksOrdered}
-            source={data.source}
             season={data.season}
           />
         </Card>
@@ -127,6 +157,83 @@ export default function TournamentMatrixPage() {
       <p className="mt-4 text-[11px] text-[var(--color-text-dim)]" style={{ fontFamily: "var(--font-mono)", letterSpacing: "0.08em" }}>
         Snapshot generated {data.generatedAt}. Scoring: {data.scoring.toUpperCase()}. Source: {data.source}.
       </p>
+    </div>
+  );
+}
+
+// LeaderCell renders a label, then the metric value and the leader's
+// name on the same row. Used for the season-leader stats where the
+// player name carries as much information as the number — we don't
+// want it hiding as tiny mono sub-text.
+function LeaderCell({
+  label,
+  value,
+  leader,
+}: {
+  label: string;
+  value: React.ReactNode;
+  leader: string;
+}) {
+  return (
+    <div className="stat-cell">
+      <div className="flex items-center gap-2">
+        <span className="block h-px w-4 bg-[var(--accent)]" />
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.18em",
+            textTransform: "uppercase",
+            color: "var(--color-text-muted)",
+          }}
+        >
+          {label}
+        </span>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span
+          className="leading-none"
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontWeight: 700,
+            fontSize: 24,
+            letterSpacing: "-0.03em",
+            color: "var(--color-text)",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {value}
+        </span>
+        {leader ? (
+          <>
+            <span
+              aria-hidden
+              style={{
+                display: "inline-block",
+                width: 1,
+                height: 22,
+                background: "var(--color-line-strong)",
+              }}
+            />
+            <span
+              className="truncate leading-tight"
+              style={{
+                fontFamily: "var(--font-display)",
+                fontWeight: 800,
+                fontSize: 19,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                color: "var(--color-text)",
+                maxWidth: "100%",
+              }}
+              title={leader}
+            >
+              {leader}
+            </span>
+          </>
+        ) : null}
+      </div>
     </div>
   );
 }
