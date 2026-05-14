@@ -16,8 +16,8 @@ const LINKS: Array<{ href: string; label: string; highlight?: boolean; icon?: Re
   { href: "/#players", label: "Players" },
   { href: "/#trades", label: "Live Feed" },
   { href: "/wallets", label: "Top Wallets" },
+  { href: "/tournament-matrix", label: "2025 Data" },
   { href: "/on-fire", label: "On Fire", icon: <Flame className="h-3.5 w-3.5" strokeWidth={2} /> },
-  { href: "/tournament-matrix", label: "Matrix" },
   { href: "/value", label: "Value Plays", highlight: true },
 ];
 

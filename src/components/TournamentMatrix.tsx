@@ -140,18 +140,20 @@ export function TournamentMatrix({
         <table className="text-[13px]" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
           <thead>
             <tr>
-              {/* Sticky left: Player + Team */}
+              {/* Single sticky-left column with player + team. Two
+                  separate sticky columns previously misaligned at
+                  certain scroll positions because the Player cell
+                  auto-sized wider than its sticky left offset. */}
               <Th
                 onClick={() => onSort("name", "asc")}
                 active={sortKey === "name"}
                 dir={sortDir}
                 align="left"
                 sticky="player"
-                width={220}
+                width={240}
               >
                 Player
               </Th>
-              <Th align="left" sticky="team" width={64}>Team</Th>
               {/* Week columns */}
               {weeksOrdered.map((w) => (
                 <Th key={`w-${w}`} width={64}>W{w}</Th>
@@ -182,21 +184,23 @@ export function TournamentMatrix({
                   <StickyCell sticky="player" align="left">
                     <Link href={`/player/${p.playerId}`} className="flex items-center gap-2 hover:text-[var(--accent-soft)]">
                       {meta ? <PlayerAvatar player={meta} size="xs" /> : null}
-                      <span className="truncate font-medium">{p.displayName}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium leading-tight">{p.displayName}</div>
+                        <div
+                          className="truncate leading-tight"
+                          style={{
+                            fontFamily: "var(--font-mono)",
+                            fontSize: "10px",
+                            letterSpacing: "0.08em",
+                            textTransform: "uppercase",
+                            color: "var(--color-text-dim)",
+                            marginTop: 2,
+                          }}
+                        >
+                          {p.team}
+                        </div>
+                      </div>
                     </Link>
-                  </StickyCell>
-                  <StickyCell sticky="team" align="left">
-                    <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: "10.5px",
-                        letterSpacing: "0.08em",
-                        textTransform: "uppercase",
-                        color: "var(--color-text-muted)",
-                      }}
-                    >
-                      {p.team}
-                    </span>
                   </StickyCell>
 
                   {/* Weekly cells */}
@@ -221,7 +225,7 @@ export function TournamentMatrix({
             })}
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={weeksOrdered.length + 12} className="px-5 py-12 text-center text-sm text-[var(--color-text-muted)]">
+                <td colSpan={weeksOrdered.length + 11} className="px-5 py-12 text-center text-sm text-[var(--color-text-muted)]">
                   No {pos} data for {season}.
                 </td>
               </tr>
@@ -302,20 +306,22 @@ function StickyCell({
   align = "left",
 }: {
   children: React.ReactNode;
-  sticky: "player" | "team";
+  sticky: "player";
   align?: "left" | "right" | "center";
 }) {
-  const left = sticky === "player" ? 0 : 220;
   return (
     <td
       className="bg-[var(--color-stadium)] group-hover:bg-[color-mix(in_oklab,var(--color-press)_50%,transparent)]"
       style={{
         position: "sticky",
-        left,
+        left: 0,
         zIndex: 1,
         padding: "8px 12px",
         textAlign: align,
-        borderRight: sticky === "team" ? "1px solid var(--color-line)" : undefined,
+        width: 240,
+        minWidth: 240,
+        maxWidth: 240,
+        borderRight: "1px solid var(--color-line)",
       }}
     >
       {children}
@@ -388,10 +394,10 @@ function Th({
   onClick?: () => void;
   active?: boolean;
   dir?: "asc" | "desc";
-  sticky?: "player" | "team";
+  sticky?: "player";
   width?: number;
 }) {
-  const stickyLeft = sticky === "player" ? 0 : sticky === "team" ? 220 : undefined;
+  const stickyLeft = sticky === "player" ? 0 : undefined;
   return (
     <th
       className={clsx(
@@ -414,7 +420,7 @@ function Th({
         backdropFilter: "blur(6px)",
         zIndex: sticky ? 2 : undefined,
         borderBottom: "1px solid var(--color-line)",
-        borderRight: sticky === "team" ? "1px solid var(--color-line)" : undefined,
+        borderRight: sticky === "player" ? "1px solid var(--color-line)" : undefined,
         width,
         whiteSpace: "nowrap",
       }}

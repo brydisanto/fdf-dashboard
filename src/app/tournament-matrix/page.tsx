@@ -91,10 +91,10 @@ export default function TournamentMatrixPage() {
               textTransform: "uppercase",
             }}
           >
-            Tournament Matrix
+            {data.season} FDF Rankings Matrix
           </h1>
           <p className="m-0 max-w-[80ch] text-[var(--color-text-muted)]" style={{ fontSize: "15px" }}>
-            Weekly position finishes for every FDF roster player across the {data.season} NFL regular season.
+            Weekly position finishes for every FDF roster player during the {data.season} NFL regular season.
             Each cell shows the player&apos;s rank within their position that week, with fantasy points in parens.
             Switch positions or sort by season-long aggregates to compare consistency.
           </p>
