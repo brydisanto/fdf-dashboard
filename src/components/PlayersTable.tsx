@@ -62,10 +62,12 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
     return list;
   }, [players, query, pos, sortKey, sortDir]);
 
-  const ranked = useMemo(() => {
-    const byMc = players.slice().sort((a, b) => b.marketCap - a.marketCap);
-    return new Map(byMc.map((p, i) => [p.id, i + 1]));
-  }, [players]);
+  // The "#" column shows the row's position within the current
+  // sorted view (1-indexed) — so when the table is sorted by Price
+  // the #1 row is the most expensive player, #2 second-most, etc.
+  // No useMemo needed since we just use the loop index inside the
+  // tbody.map below. The "rank" sortKey still sorts by marketCap
+  // (clicking the # header gives you the canonical mcap ranking).
 
   const onSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -122,7 +124,7 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((p) => {
+            {rows.map((p, i) => {
               return (
                 <tr
                   key={p.id}
@@ -135,7 +137,7 @@ export function PlayersTable({ players }: { players: PlayerSummary[] }) {
                     className="pl-5 pr-2"
                     style={{ padding: "var(--row-pad-y) 8px var(--row-pad-y) 20px", fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--color-text-dim)", fontSize: "11px", textAlign: "left" }}
                   >
-                    {ranked.get(p.id)}
+                    {i + 1}
                   </td>
                   <td className="px-3 text-left" style={{ padding: "var(--row-pad-y) 12px" }}>
                     <Link href={`/player/${p.id}`} className="flex w-full items-center gap-2.5 text-left">
