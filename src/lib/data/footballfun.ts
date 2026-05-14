@@ -2206,24 +2206,42 @@ export async function getWalletPortfolio(
       REVALIDATE.detail,
     );
     rows = data?.rows ?? [];
-    // Tenero's wallet-holdings cursor pagination is currently flaky (500s
-    // mid-stream for many wallets). Try to continue, but if it fails, just
-    // ship what we have — the first 50 are sorted by value desc anyway.
+    // Tenero's wallet-holdings cursor pagination is flaky (500s
+    // mid-stream for many wallets). We have to be resilient here
+    // because Soccer holdings come EXCLUSIVELY through this endpoint
+    // (NFL gets supplemented on-chain a few lines down, but we have
+    // no on-chain enumeration for Soccer tokens). If we gave up on
+    // the first failure, a wallet with 50+ Soccer positions would
+    // see its portfolio truncated, which is exactly the underrepresentation
+    // bug users have been flagging.
+    //
+    // Retry each cursor up to 3 times with exponential backoff, and
+    // raise the page budget from 6 to 20 so wallets with 1000+
+    // holdings actually get paged through (Tenero's typical max
+    // useful response is ~500–1000 rows per wallet).
     let cursor = data?.next ?? null;
     let safety = 0;
-    while (cursor && safety < 6) {
-      try {
-        const next = await tget<{ rows: TeneroHoldingRow[]; next: string | null }>(
-          `/wallets/${encodeURIComponent(queryAddress)}/holdings?limit=50&cursor=${encodeURIComponent(cursor)}`,
-          REVALIDATE.detail,
-        );
-        if (!next?.rows?.length) break;
-        rows = rows.concat(next.rows);
-        cursor = next.next ?? null;
-        safety++;
-      } catch {
-        break;
+    while (cursor && safety < 20) {
+      let attempt = 0;
+      let advanced = false;
+      while (attempt < 3) {
+        try {
+          const page: { rows: TeneroHoldingRow[]; next: string | null } = await tget(
+            `/wallets/${encodeURIComponent(queryAddress)}/holdings?limit=50&cursor=${encodeURIComponent(cursor!)}`,
+            REVALIDATE.detail,
+          );
+          if (!page?.rows?.length) { cursor = null; advanced = true; break; }
+          rows = rows.concat(page.rows);
+          cursor = page.next ?? null;
+          advanced = true;
+          break;
+        } catch {
+          attempt++;
+          if (attempt < 3) await new Promise((r) => setTimeout(r, 400 * attempt));
+        }
       }
+      if (!advanced) break; // 3 attempts on this cursor all failed — give up
+      safety++;
     }
     if (opts.nflOnly) {
       const wanted = new Set(ROSTER.map((p) => p.tokenAddress));
