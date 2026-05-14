@@ -118,7 +118,6 @@ export default function TournamentMatrixPage() {
           <TournamentMatrix
             byPosition={data.byPosition}
             weeksOrdered={weeksOrdered}
-            source={data.source}
             season={data.season}
           />
         </Card>

@@ -93,12 +93,10 @@ function rankTone(rank: number | null, pos: Position, earnedTP: boolean): { fg: 
 export function TournamentMatrix({
   byPosition,
   weeksOrdered,
-  source,
   season,
 }: {
   byPosition: Record<Position, PlayerSeason[]>;
   weeksOrdered: number[];
-  source: string;
   season: number;
 }) {
   const [pos, setPos] = useState<Position>("RB");
@@ -167,12 +165,6 @@ export function TournamentMatrix({
             else if (v === "1STS") onSort("firsts", "desc");
           }}
         />
-        <span
-          className="ml-auto mono-eyebrow"
-          style={{ fontSize: "10px" }}
-        >
-          {season} SEASON · {rows.length} {pos === "QB" ? "QBs" : pos === "RB" ? "RBs" : pos === "WR" ? "WRs" : "TEs"} · source: {source}
-        </span>
       </div>
 
       {/* Matrix */}
