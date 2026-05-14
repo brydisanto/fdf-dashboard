@@ -18,7 +18,16 @@ import type {
 } from "../types";
 import { ROSTER, ROSTER_BY_ID, ROSTER_BY_TOKEN, FOOTBALLFUN_CONTRACT, type NflPlayer } from "./roster";
 import { POOL_FEE_RATE, FEE_RATE_BUY, FEE_RATE_SELL, FEE_RATE_SWAP } from "../constants";
-import { readManyFunBalances, readManyWalletsNflBalances, readWalletNflBalances, readFunBalance, readOnchainTokenState } from "./onchain-client";
+import {
+  readManyFunBalances,
+  readManyWalletsNflBalances,
+  readWalletNflBalances,
+  readWalletSoccerBalances,
+  readFunBalance,
+  readOnchainTokenState,
+  SOCCERFUN_CONTRACT,
+  type SoccerTokenMeta,
+} from "./onchain-client";
 import { priceAt, readPriceHistory } from "./price-indexer";
 import { readTradeHistory, type IndexedTrade } from "./trade-indexer";
 import { readTopWalletsIndex, type TopWalletIndex } from "./top-wallets-indexer";
@@ -349,6 +358,53 @@ async function fetchAllTokens(): Promise<TeneroTokenRow[]> {
   }
   return out;
 }
+
+// ---------- Soccer token universe ----------
+//
+// Unlike NFL (fixed 72-player roster baked into src/lib/data/roster.ts),
+// the Soccer set is dynamic — Sport.fun keeps adding players. We
+// enumerate the soccer universe at runtime from Tenero's /tokens
+// list (which has both NFL and Soccer tokens) and cache the result
+// at module level. The list is then handed to readWalletSoccerBalances
+// for on-chain balanceOfBatch reads.
+//
+// Cache is 1 hour: the token set grows slowly (new players appear at
+// most a few times a week) and tokens never disappear, so generous
+// caching is safe. The PRICE inside each token entry is also cached
+// for that window — slightly stale prices on Soccer holdings are
+// acceptable since the wallet detail page shows them as a secondary
+// view alongside the canonical NFL data.
+
+const SOCCERFUN_LC = SOCCERFUN_CONTRACT.toLowerCase();
+let soccerUniverseCache: { ts: number; tokens: SoccerTokenMeta[] } | null = null;
+const SOCCER_UNIVERSE_TTL_MS = 60 * 60_000; // 1h
+
+async function getSoccerTokenUniverse(): Promise<SoccerTokenMeta[]> {
+  const now = Date.now();
+  if (soccerUniverseCache && now - soccerUniverseCache.ts < SOCCER_UNIVERSE_TTL_MS) {
+    return soccerUniverseCache.tokens;
+  }
+  const all = await fetchAllTokens();
+  const tokens: SoccerTokenMeta[] = [];
+  for (const r of all) {
+    const addr = String(r.address ?? "");
+    if (!addr.includes(":")) continue;
+    const [contract, suffix] = addr.split(":");
+    if (!contract || !suffix) continue;
+    if (contract.toLowerCase() !== SOCCERFUN_LC) continue;
+    tokens.push({
+      tokenAddress: addr,
+      tokenIdSuffix: suffix,
+      name: r.name ?? "",
+      symbol: r.symbol ?? "",
+      imageUrl: r.image_url ?? undefined,
+      priceUsd: Number(r.price?.current_price ?? r.price_usd ?? 0),
+    });
+  }
+  soccerUniverseCache = { ts: now, tokens };
+  return tokens;
+}
+
 
 async function fetchNflTokenMap(): Promise<Map<string, TeneroTokenRow>> {
   // Phase 1 of the on-chain migration: read price + supply + reserves
@@ -2272,7 +2328,22 @@ export async function getWalletPortfolio(
       ROSTER.find((r) => r.id === p.id)!.tokenAddress,
       p.priceUsd,
     ]));
-    const onchainNfl = await readWalletNflBalances(address, priceByToken);
+
+    // Read BOTH NFL and Soccer balances on-chain in parallel. The
+    // upstream /wallets/.../holdings endpoint is unreliable: it
+    // returns 0 rows for many wallets even when they clearly hold
+    // positions (we hit this on 0xeacbba9a..., among others). The
+    // on-chain paths bypass that gap entirely.
+    //
+    // Soccer's token universe is dynamic (no fixed roster), so we
+    // first enumerate it via Tenero's /tokens list (cached 1h), then
+    // hand the list to readWalletSoccerBalances for a single batched
+    // eth_call against SOCCERFUN_CONTRACT.
+    const soccerUniverse = await getSoccerTokenUniverse();
+    const [onchainNfl, onchainSoccer] = await Promise.all([
+      readWalletNflBalances(address, priceByToken),
+      readWalletSoccerBalances(address, soccerUniverse),
+    ]);
 
     const upstreamNflRows = upstreamHoldings.filter((h) =>
       ROSTER_BY_TOKEN.has(h.tokenAddress),
@@ -2281,9 +2352,9 @@ export async function getWalletPortfolio(
       upstreamNflRows.map((h) => [h.tokenAddress, h]),
     );
 
-    // Merge: on-chain wins for balance/value (it's the source of
-    // truth); upstream contributes start/last-active timestamps. If
-    // the on-chain RPC failed entirely (null), fall back to the
+    // Merge NFL: on-chain wins for balance/value (it's the source
+    // of truth); upstream contributes start/last-active timestamps.
+    // If the on-chain RPC failed entirely (null), fall back to the
     // upstream NFL rows so we don't misrepresent a holder as $0.
     const mergedNfl: WalletHolding[] =
       onchainNfl != null
@@ -2297,13 +2368,29 @@ export async function getWalletPortfolio(
           })
         : upstreamNflRows;
 
-    // Non-NFL holdings still come from the upstream — we have no
-    // on-chain enumeration of soccer pools.
-    const otherHoldings = upstreamHoldings.filter(
+    // Soccer: same merge pattern. On-chain is canonical; upstream
+    // provides timestamps where present. If on-chain failed, fall
+    // back to whatever Tenero returned (likely incomplete, but
+    // better than nothing).
+    const upstreamSoccerRows = upstreamHoldings.filter(
       (h) => !ROSTER_BY_TOKEN.has(h.tokenAddress),
     );
+    const upstreamSoccerByToken = new Map(
+      upstreamSoccerRows.map((h) => [h.tokenAddress, h]),
+    );
+    const mergedSoccer: WalletHolding[] =
+      onchainSoccer != null
+        ? onchainSoccer.map((onchain) => {
+            const u = upstreamSoccerByToken.get(onchain.tokenAddress);
+            return {
+              ...onchain,
+              startHoldingAt: u?.startHoldingAt ?? 0,
+              lastActiveAt: u?.lastActiveAt ?? onchain.lastActiveAt,
+            };
+          })
+        : upstreamSoccerRows;
 
-    const holdings: WalletHolding[] = [...mergedNfl, ...otherHoldings];
+    const holdings: WalletHolding[] = [...mergedNfl, ...mergedSoccer];
     holdings.sort((a, b) => b.balanceValueUsd - a.balanceValueUsd);
 
     const totalValueUsd = holdings.reduce((a, h) => a + h.balanceValueUsd, 0);
