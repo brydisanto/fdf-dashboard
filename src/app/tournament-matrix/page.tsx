@@ -181,7 +181,7 @@ function LeaderCell({
           {label}
         </span>
       </div>
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span
           className="leading-none"
           style={{
@@ -196,20 +196,32 @@ function LeaderCell({
           {value}
         </span>
         {leader ? (
-          <span
-            className="truncate leading-tight"
-            style={{
-              fontFamily: "var(--font-display)",
-              fontWeight: 800,
-              fontSize: 19,
-              letterSpacing: "0.005em",
-              color: "var(--accent-soft)",
-              maxWidth: "100%",
-            }}
-            title={leader}
-          >
-            {leader}
-          </span>
+          <>
+            <span
+              aria-hidden
+              style={{
+                display: "inline-block",
+                width: 1,
+                height: 22,
+                background: "var(--color-line-strong)",
+              }}
+            />
+            <span
+              className="truncate leading-tight"
+              style={{
+                fontFamily: "var(--font-display)",
+                fontWeight: 800,
+                fontSize: 19,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                color: "var(--color-text)",
+                maxWidth: "100%",
+              }}
+              title={leader}
+            >
+              {leader}
+            </span>
+          </>
         ) : null}
       </div>
     </div>
