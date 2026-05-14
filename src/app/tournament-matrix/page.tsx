@@ -36,6 +36,16 @@ export default function TournamentMatrixPage() {
     .filter((p) => p.stats.avgPoints != null && p.stats.played >= MIN_GAMES_FOR_RATE)
     .sort((a, b) => (b.stats.avgPoints ?? 0) - (a.stats.avgPoints ?? 0))[0];
 
+  // "Christian McCaffrey" -> "C. McCaffrey". Strips Jr/Sr/II/III
+  // suffixes since they don't add information in this compact form.
+  function abbreviateName(full: string): string {
+    if (!full) return "";
+    const cleaned = full.replace(/\s+(Jr|Sr|II|III|IV|V)\.?$/i, "").trim();
+    const parts = cleaned.split(/\s+/);
+    if (parts.length === 1) return parts[0];
+    return `${parts[0][0]}. ${parts.slice(1).join(" ")}`;
+  }
+
   const totalRoster =
     data.byPosition.QB.length +
     data.byPosition.RB.length +
@@ -119,17 +129,17 @@ export default function TournamentMatrixPage() {
         <LeaderCell
           label="Highest TP Rate"
           value={topTpRate ? `${Math.round((topTpRate.stats.tpRate ?? 0) * 100)}%` : "—"}
-          leader={topTpRate?.displayName ?? ""}
+          leader={abbreviateName(topTpRate?.displayName ?? "")}
         />
         <LeaderCell
           label="Most #1 Finishes"
           value={topFirsts && topFirsts.stats.firsts > 0 ? topFirsts.stats.firsts.toString() : "—"}
-          leader={topFirsts && topFirsts.stats.firsts > 0 ? topFirsts.displayName : ""}
+          leader={topFirsts && topFirsts.stats.firsts > 0 ? abbreviateName(topFirsts.displayName) : ""}
         />
         <LeaderCell
           label="Highest Avg Points"
           value={topAvgPoints?.stats.avgPoints != null ? topAvgPoints.stats.avgPoints.toFixed(1) : "—"}
-          leader={topAvgPoints?.displayName ?? ""}
+          leader={abbreviateName(topAvgPoints?.displayName ?? "")}
         />
       </div>
 
