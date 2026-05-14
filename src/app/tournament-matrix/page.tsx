@@ -19,23 +19,28 @@ export default function TournamentMatrixPage() {
   const weeksOrdered = (data as { weeksOrdered?: number[] }).weeksOrdered
     ?? Array.from({ length: data.weeks }, (_, i) => i + 1);
 
-  // Totals for the hero stat strip.
+  // Season leaders for the stat strip. Require at least 8 games
+  // played for rate-based stats (TP rate, avg points) so a single
+  // hot week from an injured player can't claim the title. Counting
+  // stats (#1 finishes) have no minimum since they're already
+  // accumulation-based and self-limiting.
+  const MIN_GAMES_FOR_RATE = 8;
+  const allPlayers = (["QB","RB","WR","TE"] as const).flatMap((p) => data.byPosition[p]);
+  const topTpRate = allPlayers
+    .filter((p) => p.stats.tpRate != null && p.stats.played >= MIN_GAMES_FOR_RATE)
+    .sort((a, b) => (b.stats.tpRate ?? 0) - (a.stats.tpRate ?? 0))[0];
+  const topFirsts = allPlayers
+    .slice()
+    .sort((a, b) => b.stats.firsts - a.stats.firsts)[0];
+  const topAvgPoints = allPlayers
+    .filter((p) => p.stats.avgPoints != null && p.stats.played >= MIN_GAMES_FOR_RATE)
+    .sort((a, b) => (b.stats.avgPoints ?? 0) - (a.stats.avgPoints ?? 0))[0];
+
   const totalRoster =
     data.byPosition.QB.length +
     data.byPosition.RB.length +
     data.byPosition.WR.length +
     data.byPosition.TE.length;
-  let totalFirsts = 0;
-  let totalTpCount = 0;
-  let totalPlayed = 0;
-  for (const pos of ["QB","RB","WR","TE"] as const) {
-    for (const p of data.byPosition[pos]) {
-      totalFirsts += p.stats.firsts;
-      totalTpCount += p.stats.tpCount;
-      totalPlayed += p.stats.played;
-    }
-  }
-  const aggregateTpRate = totalPlayed ? (totalTpCount / totalPlayed) : 0;
 
   return (
     <div className="mx-auto max-w-[var(--max-w)] px-5 sm:px-8 py-6 sm:py-8">
@@ -101,15 +106,26 @@ export default function TournamentMatrixPage() {
         </div>
       </div>
 
-      {/* Stat strip */}
+      {/* Stat strip — season leaders */}
       <div
         className="stat-strip mt-4 grid"
-        style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}
+        style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}
       >
-        <StatCell label="Players Tracked" value={totalRoster.toString()} sub="QB · RB · WR · TE" />
-        <StatCell label="Weeks Indexed"  value={data.weeks.toString()} sub={`Regular season ${data.season}`} />
-        <StatCell label="Aggregate TP Rate" value={`${Math.round(aggregateTpRate * 100)}%`} sub="Top-3 QB/TE · Top-5 RB/WR" />
-        <StatCell label="#1 Finishes"  value={totalFirsts.toString()} sub="Across roster" />
+        <StatCell
+          label="Highest TP Rate"
+          value={topTpRate ? `${Math.round((topTpRate.stats.tpRate ?? 0) * 100)}%` : "—"}
+          sub={topTpRate?.displayName ?? ""}
+        />
+        <StatCell
+          label="Most #1 Finishes"
+          value={topFirsts && topFirsts.stats.firsts > 0 ? topFirsts.stats.firsts.toString() : "—"}
+          sub={topFirsts && topFirsts.stats.firsts > 0 ? topFirsts.displayName : ""}
+        />
+        <StatCell
+          label="Highest Avg Points"
+          value={topAvgPoints?.stats.avgPoints != null ? topAvgPoints.stats.avgPoints.toFixed(1) : "—"}
+          sub={topAvgPoints?.displayName ?? ""}
+        />
       </div>
 
       {/* Matrix */}
