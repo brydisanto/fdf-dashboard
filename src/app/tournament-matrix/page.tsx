@@ -106,25 +106,30 @@ export default function TournamentMatrixPage() {
         </div>
       </div>
 
-      {/* Stat strip — season leaders */}
+      {/* Stat strip: roster size + 3 season-leader cells */}
       <div
         className="stat-strip mt-4 grid"
-        style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}
+        style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}
       >
         <StatCell
+          label="Players Ranked"
+          value={totalRoster.toString()}
+          sub="QB · RB · WR · TE"
+        />
+        <LeaderCell
           label="Highest TP Rate"
           value={topTpRate ? `${Math.round((topTpRate.stats.tpRate ?? 0) * 100)}%` : "—"}
-          sub={topTpRate?.displayName ?? ""}
+          leader={topTpRate?.displayName ?? ""}
         />
-        <StatCell
+        <LeaderCell
           label="Most #1 Finishes"
           value={topFirsts && topFirsts.stats.firsts > 0 ? topFirsts.stats.firsts.toString() : "—"}
-          sub={topFirsts && topFirsts.stats.firsts > 0 ? topFirsts.displayName : ""}
+          leader={topFirsts && topFirsts.stats.firsts > 0 ? topFirsts.displayName : ""}
         />
-        <StatCell
+        <LeaderCell
           label="Highest Avg Points"
           value={topAvgPoints?.stats.avgPoints != null ? topAvgPoints.stats.avgPoints.toFixed(1) : "—"}
-          sub={topAvgPoints?.displayName ?? ""}
+          leader={topAvgPoints?.displayName ?? ""}
         />
       </div>
 
@@ -142,6 +147,71 @@ export default function TournamentMatrixPage() {
       <p className="mt-4 text-[11px] text-[var(--color-text-dim)]" style={{ fontFamily: "var(--font-mono)", letterSpacing: "0.08em" }}>
         Snapshot generated {data.generatedAt}. Scoring: {data.scoring.toUpperCase()}. Source: {data.source}.
       </p>
+    </div>
+  );
+}
+
+// LeaderCell renders a label, then the metric value and the leader's
+// name on the same row. Used for the season-leader stats where the
+// player name carries as much information as the number — we don't
+// want it hiding as tiny mono sub-text.
+function LeaderCell({
+  label,
+  value,
+  leader,
+}: {
+  label: string;
+  value: React.ReactNode;
+  leader: string;
+}) {
+  return (
+    <div className="stat-cell">
+      <div className="flex items-center gap-2">
+        <span className="block h-px w-4 bg-[var(--accent)]" />
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.18em",
+            textTransform: "uppercase",
+            color: "var(--color-text-muted)",
+          }}
+        >
+          {label}
+        </span>
+      </div>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span
+          className="leading-none"
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontWeight: 700,
+            fontSize: 28,
+            letterSpacing: "-0.03em",
+            color: "var(--color-text)",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {value}
+        </span>
+        {leader ? (
+          <span
+            className="truncate leading-tight"
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 800,
+              fontSize: 19,
+              letterSpacing: "0.005em",
+              color: "var(--accent-soft)",
+              maxWidth: "100%",
+            }}
+            title={leader}
+          >
+            {leader}
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
