@@ -124,7 +124,6 @@ export default function TournamentMatrixPage() {
         <StatCell
           label="Players Ranked"
           value={totalRoster.toString()}
-          sub="QB · RB · WR · TE"
         />
         <LeaderCell
           label="Highest TP Rate"
