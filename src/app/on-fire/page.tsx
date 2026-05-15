@@ -73,8 +73,8 @@ export default async function OnFirePage() {
           />
         </div>
         <div
-          className="relative grid gap-6 items-center"
-          style={{ padding: "32px 32px 28px", gridTemplateColumns: "minmax(0, 1fr) auto" }}
+          className="relative grid gap-5 sm:gap-6 items-center grid-cols-1 sm:[grid-template-columns:minmax(0,1fr)_auto]"
+          style={{ padding: "clamp(20px, 4vw, 32px) clamp(18px, 4vw, 32px) clamp(18px, 4vw, 28px)" }}
         >
           <div className="flex flex-col gap-6 min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -109,10 +109,7 @@ export default async function OnFirePage() {
       </div>
 
       {/* Stat strip */}
-      <div
-        className="stat-strip mt-4 grid"
-        style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}
-      >
+      <div className="stat-strip mt-4 grid grid-cols-1 sm:grid-cols-3">
         <StatCell label="6h Volume" value={fmtUsd(total6h, { compact: true })} sub="Rolling, NFL-wide" />
         <StatCell label="24h Volume" value={fmtUsd(total24h, { compact: true })} sub="Rolling, NFL-wide" />
         <StatCell label="7d Volume" value={fmtUsd(total7d, { compact: true })} sub={`${fmtNum(players.length)} players`} />

@@ -90,7 +90,10 @@ export default function TournamentMatrixPage() {
             }}
           />
         </div>
-        <div className="relative flex flex-col gap-6" style={{ padding: "32px 32px 28px" }}>
+        <div
+          className="relative flex flex-col gap-5 sm:gap-6"
+          style={{ padding: "clamp(20px, 4vw, 32px) clamp(18px, 4vw, 32px) clamp(18px, 4vw, 28px)" }}
+        >
           <div className="flex flex-wrap items-center gap-2">
             <Pill tone="brand">{data.season} Season</Pill>
             <Pill tone="info">{totalRoster} Players · {data.weeks} Weeks</Pill>
@@ -116,15 +119,13 @@ export default function TournamentMatrixPage() {
         </div>
       </div>
 
-      {/* Stat strip: roster size + 3 season-leader cells */}
-      <div
-        className="stat-strip mt-4 grid"
-        style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}
-      >
+      {/* Stat strip: roster size + 3 season-leader cells.
+          Collapses to 1 col on mobile (cells are content-rich, so
+          even 2-col gets crowded), 2 on sm, 4 on lg+. */}
+      <div className="stat-strip mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         <StatCell
           label="Players Ranked"
           value={totalRoster.toString()}
-          sub="QB · RB · WR · TE"
         />
         <LeaderCell
           label="Highest TP Rate"
@@ -138,7 +139,7 @@ export default function TournamentMatrixPage() {
         />
         <LeaderCell
           label="Highest Avg Points"
-          value={topAvgPoints?.stats.avgPoints != null ? topAvgPoints.stats.avgPoints.toFixed(1) : "—"}
+          value={topAvgPoints?.stats.avgPoints != null ? `${topAvgPoints.stats.avgPoints.toFixed(1)}pts` : "—"}
           leader={abbreviateName(topAvgPoints?.displayName ?? "")}
         />
       </div>
@@ -175,8 +176,8 @@ function LeaderCell({
   leader: string;
 }) {
   return (
-    <div className="stat-cell">
-      <div className="flex items-center gap-2">
+    <div className="stat-cell items-center text-center">
+      <div className="flex items-center justify-center gap-2">
         <span className="block h-px w-4 bg-[var(--accent)]" />
         <span
           style={{
@@ -191,37 +192,15 @@ function LeaderCell({
           {label}
         </span>
       </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span
-          className="leading-none"
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontWeight: 700,
-            fontSize: 24,
-            letterSpacing: "-0.03em",
-            color: "var(--color-text)",
-            fontVariantNumeric: "tabular-nums",
-          }}
-        >
-          {value}
-        </span>
+      <div className="flex flex-wrap items-baseline justify-center gap-x-2 gap-y-1">
         {leader ? (
           <>
-            <span
-              aria-hidden
-              style={{
-                display: "inline-block",
-                width: 1,
-                height: 22,
-                background: "var(--color-line-strong)",
-              }}
-            />
             <span
               className="truncate leading-tight"
               style={{
                 fontFamily: "var(--font-display)",
                 fontWeight: 800,
-                fontSize: 19,
+                fontSize: 24,
                 letterSpacing: "0.04em",
                 textTransform: "uppercase",
                 color: "var(--color-text)",
@@ -231,8 +210,35 @@ function LeaderCell({
             >
               {leader}
             </span>
+            <span
+              className="leading-none"
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontWeight: 600,
+                fontSize: 16,
+                letterSpacing: "-0.01em",
+                color: "var(--color-text-muted)",
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              ({value})
+            </span>
           </>
-        ) : null}
+        ) : (
+          <span
+            className="leading-none"
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontWeight: 700,
+              fontSize: 24,
+              letterSpacing: "-0.03em",
+              color: "var(--color-text)",
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {value}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -248,8 +254,8 @@ function StatCell({
   sub?: string;
 }) {
   return (
-    <div className="stat-cell">
-      <div className="flex items-center gap-2">
+    <div className="stat-cell items-center text-center">
+      <div className="flex items-center justify-center gap-2">
         <span className="block h-px w-4 bg-[var(--accent)]" />
         <span
           style={{

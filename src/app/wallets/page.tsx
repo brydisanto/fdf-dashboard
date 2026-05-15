@@ -64,7 +64,10 @@ export default function WalletsPage() {
             }}
           />
         </div>
-        <div className="relative flex flex-col gap-6" style={{ padding: "32px 32px 28px" }}>
+        <div
+          className="relative flex flex-col gap-5 sm:gap-6"
+          style={{ padding: "clamp(20px, 4vw, 32px) clamp(18px, 4vw, 32px) clamp(18px, 4vw, 28px)" }}
+        >
           <div className="flex flex-wrap items-center gap-2">
             <Pill tone="brand">Wallet Leaderboard</Pill>
             <Suspense fallback={<Sk w={130} h={22} className="rounded-full" />}>
@@ -127,10 +130,7 @@ async function StatsAndTable() {
 
   return (
     <>
-      <div
-        className="stat-strip mt-4 grid"
-        style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}
-      >
+      <div className="stat-strip mt-4 grid grid-cols-2 md:grid-cols-4">
         <StatCell label="Wallets Ranked" value={fmtNum(total)} sub={`Top ${total}`} />
         <StatCell label="Total NFL Value" value={fmtUsd(totalValue, { compact: true })} sub="Across leaderboard" />
         <StatCell label="Top Wallet" value={fmtUsd(topValue, { compact: true })} sub="Highest NFL position" />
@@ -159,11 +159,8 @@ function StatsAndTableSkeleton() {
   return (
     <>
       <div
-        className="mt-4 grid gap-[1px] rounded-[var(--r-14)] overflow-hidden border border-[var(--color-line-strong)]"
-        style={{
-          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-          background: "var(--color-line-strong)",
-        }}
+        className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-[1px] rounded-[var(--r-14)] overflow-hidden border border-[var(--color-line-strong)]"
+        style={{ background: "var(--color-line-strong)" }}
       >
         {Array.from({ length: 4 }).map((_, i) => (
           <div

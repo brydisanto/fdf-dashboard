@@ -160,10 +160,7 @@ export default async function PlayerPage(props: PageProps<"/player/[id]">) {
       </div>
 
       {/* Stat strip — 6-cell hairline grid */}
-      <div
-        className="stat-strip mt-4 grid"
-        style={{ gridTemplateColumns: "repeat(6, minmax(0, 1fr))" }}
-      >
+      <div className="stat-strip mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
         <StatCell label="Market Cap" value={fmtUsd(player.marketCap, { compact: true })} sub="Price × supply" />
         <StatCell
           label="24h Volume"

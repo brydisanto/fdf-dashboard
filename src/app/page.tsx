@@ -265,11 +265,8 @@ function Freshness() {
 function MarketStatBarSkeleton() {
   return (
     <div
-      className="grid gap-[1px] rounded-[var(--r-14)] overflow-hidden border border-[var(--color-line-strong)]"
-      style={{
-        gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
-        background: "var(--color-line-strong)",
-      }}
+      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-[1px] rounded-[var(--r-14)] overflow-hidden border border-[var(--color-line-strong)]"
+      style={{ background: "var(--color-line-strong)" }}
     >
       {Array.from({ length: 5 }).map((_, i) => (
         <div
@@ -413,7 +410,10 @@ function Hero() {
           background: "radial-gradient(circle, var(--accent-tint), transparent 70%)",
         }}
       />
-      <div className="relative flex flex-col gap-6" style={{ padding: "40px 40px 36px" }}>
+      <div
+        className="relative flex flex-col gap-5 sm:gap-6"
+        style={{ padding: "clamp(24px, 5vw, 40px) clamp(20px, 5vw, 40px) clamp(20px, 4.5vw, 36px)" }}
+      >
         <div className="flex flex-wrap items-center gap-2">
           <Pill tone="brand">NFL · Base Chain</Pill>
           <Pill tone="muted">Real Football&trade;</Pill>
