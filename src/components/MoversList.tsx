@@ -57,8 +57,15 @@ export function MoversList({
         >
           Player
         </span>
+        {/* The right two columns are "auto" — they grow to fit
+            whatever the widest row's content is (the price + the
+            delta/volume). To align the header text with the right
+            edge of those columns we use justify-self-end on the
+            span, otherwise the span sits at the start of the cell
+            and the visible header text reads as if it's centered
+            in empty space. */}
         <span
-          className="px-2 text-right"
+          className="px-2 justify-self-end"
           style={{
             fontFamily: "var(--font-mono)",
             fontSize: "9.5px",
@@ -71,7 +78,7 @@ export function MoversList({
           Price
         </span>
         <span
-          className="text-right"
+          className="justify-self-end"
           style={{
             fontFamily: "var(--font-mono)",
             fontSize: "9.5px",
