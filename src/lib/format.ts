@@ -64,3 +64,20 @@ export function shortAddr(addr: string, head = 4, tail = 4) {
   if (!addr || addr.length <= head + tail + 2) return addr;
   return `${addr.slice(0, head + 2)}…${addr.slice(-tail)}`;
 }
+
+// Compact display name: first initial of the first given name + any
+// middle tokens + last name. The roster parser collapses everything
+// before the last whitespace into `firstName`, so players whose names
+// have a middle particle (e.g. firstName "Amon-Ra St.", lastName
+// "Brown") would render as "A. Brown" under the naive
+// `${firstName[0]}. ${lastName}` pattern — losing the particle.
+// This helper splits firstName on whitespace, abbreviates just the
+// first token, and keeps middle tokens intact.
+export function shortPlayerName(firstName: string, lastName: string): string {
+  if (!firstName) return lastName ?? "";
+  const parts = firstName.trim().split(/\s+/);
+  const initial = parts[0]?.[0] ? `${parts[0][0]}.` : "";
+  const middle = parts.slice(1).join(" ");
+  const tail = [middle, lastName].filter(Boolean).join(" ");
+  return tail ? `${initial} ${tail}` : initial;
+}

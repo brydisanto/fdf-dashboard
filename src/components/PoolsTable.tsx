@@ -5,7 +5,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { FEE_RATE_BUY, FEE_RATE_SWAP } from "@/lib/constants";
-import { fmtNum, fmtUsd } from "@/lib/format";
+import { fmtNum, fmtUsd, shortPlayerName } from "@/lib/format";
 import type { PlayerSummary } from "@/lib/types";
 
 type SortKey = "tvl" | "volume24h" | "fees24h" | "trades24h" | "holders" | "name";
@@ -62,7 +62,7 @@ export function PoolsTable({ players }: { players: PlayerSummary[] }) {
               <td className="px-3 py-2.5">
                 <Link href={`/player/${p.id}`} className="flex items-center gap-2 hover:text-[var(--color-brand-soft)]">
                   <span className="font-medium">
-                    {p.firstName[0]}. {p.lastName}
+                    {shortPlayerName(p.firstName, p.lastName)}
                   </span>
                   <span className="text-[10px] uppercase tracking-wider text-[var(--color-text-dim)]">
                     {p.position} / {p.team}

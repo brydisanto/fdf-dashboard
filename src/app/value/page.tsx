@@ -12,7 +12,7 @@ import { getRingerRankings, indexRingerByName } from "@/lib/data/ringer";
 import { Pill } from "@/components/ui";
 import { ValuePageBody } from "@/components/ValuePageBody";
 import { type ValueRow } from "@/components/ValueTable";
-import { fmtNum } from "@/lib/format";
+import { fmtNum, shortPlayerName } from "@/lib/format";
 import type { Position } from "@/lib/types";
 
 export const metadata = {
@@ -328,7 +328,7 @@ function ExtremeCard({
             <li key={p.id} className="flex items-baseline justify-between text-sm">
               <Link href={`/player/${p.id}`} className="min-w-0 truncate hover:text-[var(--accent-soft)]">
                 <span className="font-medium">
-                  {p.firstName[0]}. {p.lastName}
+                  {shortPlayerName(p.firstName, p.lastName)}
                 </span>
                 <span
                   className="ml-1.5"

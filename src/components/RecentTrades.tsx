@@ -5,7 +5,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import { Filter } from "lucide-react";
 import { PLAYERS_BY_ID } from "@/lib/data/players";
-import { fmtNum, fmtPrice, fmtTimeAgo, fmtUsd } from "@/lib/format";
+import { fmtNum, fmtPrice, fmtTimeAgo, fmtUsd, shortPlayerName } from "@/lib/format";
 import type { Trade, TradeFlow } from "@/lib/types";
 import { PlayerAvatar } from "./PlayerAvatar";
 import { WalletBadge } from "./WalletBadge";
@@ -130,7 +130,7 @@ export function RecentTrades({
                       <Link href={`/player/${t.playerId}`} className="flex items-center gap-2 hover:text-[var(--accent-soft)]">
                         <PlayerAvatar player={player} size="xs" />
                         <span className="truncate font-medium">
-                          {player.firstName[0]}. {player.lastName}
+                          {shortPlayerName(player.firstName, player.lastName)}
                         </span>
                       </Link>
                     </Cell>
