@@ -227,10 +227,7 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
 
       {/* Stat strip — 4-cell hairline grid (NFL Dominance lives in the
           dedicated card below, so it's not duplicated here). */}
-      <div
-        className="stat-strip mt-4 grid"
-        style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}
-      >
+      <div className="stat-strip mt-4 grid grid-cols-2 md:grid-cols-4">
         <StatCell
           label="Holdings"
           value={fmtNum(profile.holdingsCount)}

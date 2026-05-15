@@ -90,7 +90,10 @@ export default function TournamentMatrixPage() {
             }}
           />
         </div>
-        <div className="relative flex flex-col gap-6" style={{ padding: "32px 32px 28px" }}>
+        <div
+          className="relative flex flex-col gap-5 sm:gap-6"
+          style={{ padding: "clamp(20px, 4vw, 32px) clamp(18px, 4vw, 32px) clamp(18px, 4vw, 28px)" }}
+        >
           <div className="flex flex-wrap items-center gap-2">
             <Pill tone="brand">{data.season} Season</Pill>
             <Pill tone="info">{totalRoster} Players · {data.weeks} Weeks</Pill>
@@ -116,11 +119,10 @@ export default function TournamentMatrixPage() {
         </div>
       </div>
 
-      {/* Stat strip: roster size + 3 season-leader cells */}
-      <div
-        className="stat-strip mt-4 grid"
-        style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}
-      >
+      {/* Stat strip: roster size + 3 season-leader cells.
+          Collapses to 1 col on mobile (cells are content-rich, so
+          even 2-col gets crowded), 2 on sm, 4 on lg+. */}
+      <div className="stat-strip mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         <StatCell
           label="Players Ranked"
           value={totalRoster.toString()}

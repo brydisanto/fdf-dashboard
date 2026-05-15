@@ -283,6 +283,16 @@ table td {
   flex-direction: column;
   gap: 8px;
 }
+/* Tighten stat-cell padding on phones — the 16/18 values are
+   comfortable when a strip has 4 horizontal cells of generous width,
+   but compress hard when the strip collapses to 1-2 columns on a
+   narrow viewport. */
+@media (max-width: 640px) {
+  .stat-strip > .stat-cell {
+    padding: 12px 14px;
+    gap: 6px;
+  }
+}
 
 /* Holdings progress bar (used in NFL Holdings table %-of-NFL column). */
 .holdings-bar {
