@@ -6,14 +6,16 @@ import { TEAM_NAMES } from "@/lib/data/players";
 import type { PlayerSummary } from "@/lib/types";
 
 // Movers row anatomy:
-//   18px rank · 30px avatar · 1fr name stack · 80px price · 76px right
+//   18px rank · 30px avatar · 1fr name stack · 76px price · 56px right
 //
 // FIXED widths on the right two columns (not auto) so every row has
-// the same right-edge column boundary. With auto, rows whose prices
-// happen to be shorter (e.g. "$0.0144") would have a narrower price
-// cell than rows with longer prices ("$0.00431"), and the values
-// wouldn't line up vertically.
-const GRID_COLS = "18px 30px minmax(0, 1fr) 80px 76px";
+// the same right-edge column boundary. Tight to actual content:
+//   76px price = ~58px text ("$0.00857") + ~16px px-2 padding
+//   56px right = ~5-char value ($530, +9.1%) with arrow, right-aligned
+// Trimmed 20px off the right side vs the original 80/76 sizing so
+// the name column has more room — "Ladd McConkey" etc. were
+// truncating mid-word.
+const GRID_COLS = "18px 30px minmax(0, 1fr) 76px 56px";
 
 const HEADER_STYLE: React.CSSProperties = {
   fontFamily: "var(--font-mono)",
