@@ -25,9 +25,74 @@ export function MoversList({
 
   const top = sorted.slice(0, limit);
 
+  // Header label for the right-most column matches the metric we're
+  // sorting on. Keeps the cards self-explanatory at a glance — without
+  // headers, the rightmost number reads as a bare value with no unit.
+  const rightLabel = variant === "trending" ? "24H Vol" : "24H %";
+
   return (
-    <ul className="m-0 flex flex-col p-0">
-      {top.map((p, i) => (
+    <div>
+      {/* Column headers — mono-eyebrow row aligned to the same 5-column
+          grid as the data rows below. Rank + avatar slots are blank;
+          the name column gets "Player", and the two right columns get
+          their unit labels. */}
+      <div
+        className="grid items-center gap-2.5 border-b py-1.5"
+        style={{
+          gridTemplateColumns: "18px 30px 1fr auto auto",
+          borderColor: "color-mix(in oklab, var(--color-line) 50%, transparent)",
+        }}
+      >
+        <span />
+        <span />
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "9.5px",
+            fontWeight: 600,
+            letterSpacing: "0.18em",
+            textTransform: "uppercase",
+            color: "var(--color-text-dim)",
+          }}
+        >
+          Player
+        </span>
+        {/* The right two columns are "auto" — they grow to fit
+            whatever the widest row's content is (the price + the
+            delta/volume). To align the header text with the right
+            edge of those columns we use justify-self-end on the
+            span, otherwise the span sits at the start of the cell
+            and the visible header text reads as if it's centered
+            in empty space. */}
+        <span
+          className="px-2 justify-self-end"
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "9.5px",
+            fontWeight: 600,
+            letterSpacing: "0.18em",
+            textTransform: "uppercase",
+            color: "var(--color-text-dim)",
+          }}
+        >
+          Price
+        </span>
+        <span
+          className="justify-self-end"
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "9.5px",
+            fontWeight: 600,
+            letterSpacing: "0.18em",
+            textTransform: "uppercase",
+            color: "var(--color-text-dim)",
+          }}
+        >
+          {rightLabel}
+        </span>
+      </div>
+      <ul className="m-0 flex flex-col p-0">
+        {top.map((p, i) => (
         <li
           key={p.id}
           className="border-b last:border-b-0"
@@ -97,6 +162,7 @@ export function MoversList({
           </Link>
         </li>
       ))}
-    </ul>
+      </ul>
+    </div>
   );
 }
