@@ -5,10 +5,27 @@ import { fmtPrice, fmtUsd } from "@/lib/format";
 import { TEAM_NAMES } from "@/lib/data/players";
 import type { PlayerSummary } from "@/lib/types";
 
-// Movers row anatomy (per design system):
-//   18px rank · 30px avatar · 1fr name stack · auto price · auto delta
-// Hairline divider at 50% line opacity between rows. Hover lifts the
-// row to a press-tinted bg.
+// Movers row anatomy:
+//   18px rank · 30px avatar · 1fr name stack · 76px price · 56px right
+//
+// FIXED widths on the right two columns (not auto) so every row has
+// the same right-edge column boundary. Tight to actual content:
+//   76px price = ~58px text ("$0.00857") + ~16px px-2 padding
+//   56px right = ~5-char value ($530, +9.1%) with arrow, right-aligned
+// Trimmed 20px off the right side vs the original 80/76 sizing so
+// the name column has more room — "Ladd McConkey" etc. were
+// truncating mid-word.
+const GRID_COLS = "18px 30px minmax(0, 1fr) 76px 56px";
+
+const HEADER_STYLE: React.CSSProperties = {
+  fontFamily: "var(--font-mono)",
+  fontSize: "9.5px",
+  fontWeight: 600,
+  letterSpacing: "0.18em",
+  textTransform: "uppercase",
+  color: "var(--color-text-dim)",
+};
+
 export function MoversList({
   players,
   variant,
@@ -36,60 +53,24 @@ export function MoversList({
           grid as the data rows below. Rank + avatar slots are blank;
           the name column gets "Player", and the two right columns get
           their unit labels. */}
+      {/* Header row. Right two columns use FIXED widths (not auto)
+          so every row — header + data — has the same column right
+          edges. Without fixed widths, each row's auto columns size
+          independently to their own content, and prices of varying
+          widths ("$0.00431" vs "$0.0144") shift the right edge
+          row-to-row. */}
       <div
         className="grid items-center gap-2.5 border-b py-1.5"
         style={{
-          gridTemplateColumns: "18px 30px 1fr auto auto",
+          gridTemplateColumns: GRID_COLS,
           borderColor: "color-mix(in oklab, var(--color-line) 50%, transparent)",
         }}
       >
         <span />
         <span />
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "9.5px",
-            fontWeight: 600,
-            letterSpacing: "0.18em",
-            textTransform: "uppercase",
-            color: "var(--color-text-dim)",
-          }}
-        >
-          Player
-        </span>
-        {/* The right two columns are "auto" — they grow to fit
-            whatever the widest row's content is (the price + the
-            delta/volume). To align the header text with the right
-            edge of those columns we use justify-self-end on the
-            span, otherwise the span sits at the start of the cell
-            and the visible header text reads as if it's centered
-            in empty space. */}
-        <span
-          className="px-2 justify-self-end"
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "9.5px",
-            fontWeight: 600,
-            letterSpacing: "0.18em",
-            textTransform: "uppercase",
-            color: "var(--color-text-dim)",
-          }}
-        >
-          Price
-        </span>
-        <span
-          className="justify-self-end"
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "9.5px",
-            fontWeight: 600,
-            letterSpacing: "0.18em",
-            textTransform: "uppercase",
-            color: "var(--color-text-dim)",
-          }}
-        >
-          {rightLabel}
-        </span>
+        <span style={HEADER_STYLE}>Player</span>
+        <span className="px-2 text-right" style={HEADER_STYLE}>Price</span>
+        <span className="text-right" style={HEADER_STYLE}>{rightLabel}</span>
       </div>
       <ul className="m-0 flex flex-col p-0">
         {top.map((p, i) => (
@@ -101,7 +82,7 @@ export function MoversList({
           <Link
             href={`/player/${p.id}`}
             className="grid items-center gap-2.5 py-2.5 transition-colors hover:bg-[color-mix(in_oklab,var(--color-press)_50%,transparent)]"
-            style={{ gridTemplateColumns: "18px 30px 1fr auto auto" }}
+            style={{ gridTemplateColumns: GRID_COLS }}
           >
             <span
               className="text-right"
@@ -133,7 +114,7 @@ export function MoversList({
               </span>
             </div>
             <span
-              className="px-2"
+              className="px-2 text-right"
               style={{
                 fontFamily: "var(--font-mono)",
                 fontSize: "12px",
@@ -146,6 +127,7 @@ export function MoversList({
             </span>
             {variant === "trending" ? (
               <span
+                className="text-right"
                 style={{
                   fontFamily: "var(--font-mono)",
                   fontSize: "12px",
@@ -157,7 +139,9 @@ export function MoversList({
                 {fmtUsd(p.volume24h, { compact: true })}
               </span>
             ) : (
-              <Delta value={p.change24h} />
+              <span className="flex justify-end">
+                <Delta value={p.change24h} />
+              </span>
             )}
           </Link>
         </li>

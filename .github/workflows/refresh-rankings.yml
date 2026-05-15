@@ -1,0 +1,68 @@
+name: Refresh Industry Rankings
+
+# Weekly cron that re-scrapes The Ringer's preseason / in-season PPR
+# rankings and commits the updated src/lib/data/ringer-rankings.json
+# directly back to main. Other industry sources have constraints:
+#
+#   - FantasyPros: fetched live at runtime via Next.js fetch cache,
+#     no static file to refresh.
+#   - ESPN:        page is JS-rendered. Requires a headless browser
+#                  or interactive Chrome MCP session — not viable
+#                  from a GitHub Actions runner.
+#   - Underdog:    Cloudflare-protected, blocks server-side fetches.
+#                  Same constraint as ESPN.
+#
+# If we ever wire up a headless-browser runner (Playwright on a
+# Vercel/Browserless), the ESPN + Underdog scrapers can join this
+# workflow. For now, Ringer keeps the Value Plays page meaningfully
+# fresh week-to-week.
+
+on:
+  schedule:
+    # Tuesdays at 12:00 UTC (07:00 ET) — after Monday Night Football
+    # so the previous week's results are reflected in updated ranks.
+    - cron: "0 12 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-rankings
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Scrape The Ringer rankings
+        run: node scripts/scrape-ringer.mjs
+
+      - name: Commit if changed
+        shell: bash
+        run: |
+          set -e
+          git config --local user.name  "Gridiron Indexer"
+          git config --local user.email "indexer@users.noreply.github.com"
+          git add src/lib/data/ringer-rankings.json
+          if git diff --staged --quiet; then
+            echo "No ranking changes."
+            exit 0
+          fi
+          # [skip ci] keeps this commit from triggering deploy hooks
+          # that watch main; Vercel will pick it up on its own next
+          # build trigger. If you want immediate deploy, drop the
+          # tag.
+          git commit -m "Refresh Ringer rankings $(date -u +%Y-%m-%d) [skip ci]"
+          git push origin HEAD:main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

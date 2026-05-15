@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
 import { ChevronDown, ChevronUp, Fish } from "lucide-react";
-import { fmtNum, fmtTimeAgo, fmtUsd, shortAddr } from "@/lib/format";
+import { fmtNum, fmtTimeAgo, fmtUsd, shortAddr, shortPlayerName } from "@/lib/format";
 import { TIER_META, tierLabel } from "./WalletBadge";
 import { ROSTER_BY_ID } from "@/lib/data/roster";
 import { getWalletLabel } from "@/lib/data/wallet-labels";
@@ -195,7 +195,7 @@ export function TopWalletsTable({ wallets }: { wallets: TopNflWallet[] }) {
                         className="inline-flex items-center gap-1.5 hover:text-[var(--accent-soft)]"
                       >
                         <span style={{ color: "var(--color-text)" }}>
-                          {topPlayer.firstName[0]}. {topPlayer.lastName}
+                          {shortPlayerName(topPlayer.firstName, topPlayer.lastName)}
                         </span>
                         <span style={{ color: "var(--color-text-dim)" }}>
                           {fmtUsdSmart(w.topPositionUsd)}
