@@ -175,8 +175,8 @@ function LeaderCell({
   leader: string;
 }) {
   return (
-    <div className="stat-cell">
-      <div className="flex items-center gap-2">
+    <div className="stat-cell items-center text-center">
+      <div className="flex items-center justify-center gap-2">
         <span className="block h-px w-4 bg-[var(--accent)]" />
         <span
           style={{
@@ -191,7 +191,7 @@ function LeaderCell({
           {label}
         </span>
       </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
         <span
           className="leading-none"
           style={{
@@ -248,8 +248,8 @@ function StatCell({
   sub?: string;
 }) {
   return (
-    <div className="stat-cell">
-      <div className="flex items-center gap-2">
+    <div className="stat-cell items-center text-center">
+      <div className="flex items-center justify-center gap-2">
         <span className="block h-px w-4 bg-[var(--accent)]" />
         <span
           style={{
