@@ -138,7 +138,7 @@ export default function TournamentMatrixPage() {
         />
         <LeaderCell
           label="Highest Avg Points"
-          value={topAvgPoints?.stats.avgPoints != null ? topAvgPoints.stats.avgPoints.toFixed(1) : "—"}
+          value={topAvgPoints?.stats.avgPoints != null ? `${topAvgPoints.stats.avgPoints.toFixed(1)}pts` : "—"}
           leader={abbreviateName(topAvgPoints?.displayName ?? "")}
         />
       </div>
@@ -191,37 +191,15 @@ function LeaderCell({
           {label}
         </span>
       </div>
-      <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
-        <span
-          className="leading-none"
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontWeight: 700,
-            fontSize: 24,
-            letterSpacing: "-0.03em",
-            color: "var(--color-text)",
-            fontVariantNumeric: "tabular-nums",
-          }}
-        >
-          {value}
-        </span>
+      <div className="flex flex-wrap items-baseline justify-center gap-x-2 gap-y-1">
         {leader ? (
           <>
-            <span
-              aria-hidden
-              style={{
-                display: "inline-block",
-                width: 1,
-                height: 22,
-                background: "var(--color-line-strong)",
-              }}
-            />
             <span
               className="truncate leading-tight"
               style={{
                 fontFamily: "var(--font-display)",
                 fontWeight: 800,
-                fontSize: 19,
+                fontSize: 24,
                 letterSpacing: "0.04em",
                 textTransform: "uppercase",
                 color: "var(--color-text)",
@@ -231,8 +209,35 @@ function LeaderCell({
             >
               {leader}
             </span>
+            <span
+              className="leading-none"
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontWeight: 600,
+                fontSize: 16,
+                letterSpacing: "-0.01em",
+                color: "var(--color-text-muted)",
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              ({value})
+            </span>
           </>
-        ) : null}
+        ) : (
+          <span
+            className="leading-none"
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontWeight: 700,
+              fontSize: 24,
+              letterSpacing: "-0.03em",
+              color: "var(--color-text)",
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {value}
+          </span>
+        )}
       </div>
     </div>
   );
