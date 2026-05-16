@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Big_Shoulders, JetBrains_Mono } from "next/font/google";
+import { GoogleAnalytics } from "@next/third-parties/google";
 import Link from "next/link";
 import { Flame } from "lucide-react";
 import { Suspense } from "react";
@@ -7,6 +8,11 @@ import { MobileNav } from "@/components/MobileNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { TickerStrip } from "@/components/TickerStrip";
 import "./globals.css";
+
+// Google Analytics 4 measurement ID. Loaded via @next/third-parties so
+// the gtag.js script is deferred until after hydration and SPA
+// navigations are tracked automatically via history events.
+const GA_ID = "G-Y16WBKHFJT";
 
 // Runs in <head> before any paint so the stored theme is applied
 // before the first frame. Avoids the dark-flash → light-snap that
@@ -65,6 +71,7 @@ export default function RootLayout({
         <main className="flex-1">{children}</main>
         <SiteFooter />
       </body>
+      <GoogleAnalytics gaId={GA_ID} />
     </html>
   );
 }

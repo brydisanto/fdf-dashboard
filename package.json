@@ -10,6 +10,7 @@
     "index:holders": "node scripts/index-holders.mjs --write"
   },
   "dependencies": {
+    "@next/third-parties": "^16.2.6",
     "clsx": "^2.1.1",
     "lucide-react": "^1.14.0",
     "next": "16.2.6",
