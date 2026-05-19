@@ -146,6 +146,7 @@ export function RecentTrades({
                         totalValueUsd={snap.totalValueUsd}
                         nflValueUsd={snap.nflValueUsd}
                         isNew={snap.isNew}
+                        rotation={snap.rotation}
                       />
                     ) : (
                       <Link

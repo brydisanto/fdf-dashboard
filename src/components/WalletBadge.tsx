@@ -1,6 +1,6 @@
 import Link from "next/link";
 import clsx from "clsx";
-import { Fish, Sparkles } from "lucide-react";
+import { Fish, Repeat, Sparkles } from "lucide-react";
 import { fmtUsd, shortAddr } from "@/lib/format";
 import { getWalletLabel } from "@/lib/data/wallet-labels";
 import type { WalletTier } from "@/lib/types";
@@ -80,6 +80,7 @@ export function WalletBadge({
   totalValueUsd,
   nflValueUsd,
   isNew,
+  rotation,
   compact = false,
 }: {
   address: string;
@@ -89,6 +90,11 @@ export function WalletBadge({
   // total when not provided.
   nflValueUsd?: number;
   isNew: boolean;
+  // 7-day rotation direction. "into-nfl" lights up a small Repeat
+  // icon after the value — flags wallets that are actively funding
+  // NFL buys by selling other-game positions, not just routine NFL
+  // buyers spending fresh USDC.
+  rotation?: "into-nfl" | "out-of-nfl" | "neutral";
   compact?: boolean;
 }) {
   const meta = TIER_META[tier];
@@ -105,10 +111,15 @@ export function WalletBadge({
       : fmtUsd(displayedUsd, { digits: 0 });
   // NEW trumps tier visual.
   const isNewVisual = isNew;
+  const isRotatingIn = rotation === "into-nfl";
+  const tooltip =
+    `${meta.label} · NFL ${fmtUsd(displayedUsd, { compact: true })}` +
+    ` · Total ${fmtUsd(totalValueUsd, { compact: true })}` +
+    (isRotatingIn ? " · Rotating into NFL (7d net inflow)" : "");
   return (
     <Link
       href={`/wallet/${address}`}
-      title={`${meta.label} · NFL ${fmtUsd(displayedUsd, { compact: true })} · Total ${fmtUsd(totalValueUsd, { compact: true })}`}
+      title={tooltip}
       className={clsx(
         "inline-flex items-center gap-1.5 rounded-full border bg-[var(--color-press)] hover:bg-[var(--color-bench)] transition-colors",
         isNewVisual
@@ -160,6 +171,19 @@ export function WalletBadge({
       >
         {isNewVisual ? "NEW" : displayedUsdLabel}
       </span>
+      {/* Rotation marker — sits after the USD value so the badge keeps
+          its existing read pattern (tier · name · value) and the icon
+          only appears when there's something to flag. Turf green to
+          read as positive inflow at a glance, matching the BUY badge. */}
+      {isRotatingIn ? (
+        <Repeat
+          width={10}
+          height={10}
+          strokeWidth={2.5}
+          aria-hidden
+          style={{ color: "var(--color-turf)", marginLeft: 2 }}
+        />
+      ) : null}
     </Link>
   );
 }
