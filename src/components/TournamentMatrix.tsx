@@ -5,6 +5,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import { PLAYERS_BY_ID } from "@/lib/data/players";
 import { PlayerAvatar } from "./PlayerAvatar";
+import { PlayerStatusBadge } from "./PlayerStatusBadge";
 import type { Position, PlayerSeason } from "@/lib/data/tournament-matrix";
 
 type SortKey =
@@ -217,7 +218,10 @@ export function TournamentMatrix({
                     <Link href={`/player/${p.playerId}`} className="flex items-center gap-2 hover:text-[var(--accent-soft)]">
                       {meta ? <PlayerAvatar player={meta} size="xs" /> : null}
                       <div className="min-w-0 flex-1">
-                        <div className="truncate font-medium leading-tight">{p.displayName}</div>
+                        <div className="flex items-center leading-tight">
+                          <span className="truncate font-medium">{p.displayName}</span>
+                          <PlayerStatusBadge playerId={p.playerId} size={11} />
+                        </div>
                         <div
                           className="truncate leading-tight"
                           style={{

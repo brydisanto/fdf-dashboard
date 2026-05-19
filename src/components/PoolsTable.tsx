@@ -7,6 +7,7 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { FEE_RATE_BUY, FEE_RATE_SWAP } from "@/lib/constants";
 import { fmtNum, fmtUsd, shortPlayerName } from "@/lib/format";
 import type { PlayerSummary } from "@/lib/types";
+import { PlayerStatusBadge } from "./PlayerStatusBadge";
 
 type SortKey = "tvl" | "volume24h" | "fees24h" | "trades24h" | "holders" | "name";
 
@@ -64,6 +65,7 @@ export function PoolsTable({ players }: { players: PlayerSummary[] }) {
                   <span className="font-medium">
                     {shortPlayerName(p.firstName, p.lastName)}
                   </span>
+                  <PlayerStatusBadge playerId={p.id} size={11} />
                   <span className="text-[10px] uppercase tracking-wider text-[var(--color-text-dim)]">
                     {p.position} / {p.team}
                   </span>

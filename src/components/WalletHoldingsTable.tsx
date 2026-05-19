@@ -7,6 +7,7 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { ROSTER_BY_TOKEN } from "@/lib/data/roster";
 import { fmtNum, fmtPrice, fmtTimeAgo, fmtUsd } from "@/lib/format";
 import { PlayerAvatar } from "./PlayerAvatar";
+import { PlayerStatusBadge } from "./PlayerStatusBadge";
 import type { WalletHolding } from "@/lib/types";
 
 type SortKey = "name" | "balance" | "priceUsd" | "balanceValueUsd" | "startHoldingAt" | "lastActiveAt";
@@ -82,7 +83,10 @@ export function WalletHoldingsTable({
                       <Link href={`/player/${player.id}`} className="flex w-full items-center gap-2 text-left hover:text-[var(--color-brand-soft)]">
                         <PlayerAvatar player={player} size="sm" />
                         <div className="min-w-0 flex-1 text-left">
-                          <div className="font-medium text-left">{player.firstName} {player.lastName}</div>
+                          <div className="flex items-center text-left">
+                            <span className="font-medium">{player.firstName} {player.lastName}</span>
+                            <PlayerStatusBadge playerId={player.id} size={11} />
+                          </div>
                           <div className="text-[11px] text-left text-[var(--color-text-dim)]">{player.position} · {player.team}</div>
                         </div>
                       </Link>

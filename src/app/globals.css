@@ -342,3 +342,87 @@ table td {
 .loading-dots > span:nth-child(1) { animation-delay: 0s;    }
 .loading-dots > span:nth-child(2) { animation-delay: 0.2s;  }
 .loading-dots > span:nth-child(3) { animation-delay: 0.4s;  }
+
+/* ===== Player status badge (Rashee Rice → In Jail, etc.)
+   Pure CSS hover tooltip — no JS, no portal. The badge wraps a
+   focusable span around the lucide icon; the tooltip is its child,
+   pre-rendered with opacity:0 and pointer-events:none so it doesn't
+   eat clicks. Hover or keyboard focus flips it visible. Per-kind
+   colors come in via the --psb-* custom props the React component
+   sets inline. */
+.player-status-badge {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  margin-left: 4px;
+  color: var(--psb-color, currentColor);
+  outline: none;
+}
+.player-status-badge:focus-visible {
+  /* Ring matches the icon hue rather than the OS default — looks
+     intentional and stays out of the way of the tooltip. */
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--psb-color) 35%, transparent);
+}
+.player-status-badge__tip {
+  /* Positioned BELOW the icon. Above-positioning gets clipped by the
+     overflow-x-auto on the homepage tables (per CSS spec, setting
+     overflow-x to auto silently promotes overflow-y from visible to
+     auto), which would hide the tooltip on the first row of any sort.
+     Below is safer everywhere — table rows have plenty of space
+     beneath them and the tooltip's z-index keeps it on top of the
+     next row's content. */
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-2px);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--psb-tint, var(--color-press));
+  border: 1px solid var(--psb-border, var(--color-line-strong));
+  box-shadow: 0 6px 18px -8px rgb(0 0 0 / 0.55), 0 1px 0 rgb(255 255 255 / 0.02) inset;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease-out, transform 140ms ease-out;
+  z-index: 50;
+}
+.player-status-badge__tip-detail {
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  color: var(--color-text-muted);
+  text-transform: none;
+}
+/* Upward-pointing notch — a rotated square that pokes out of the
+   tooltip's top edge, lined up over the icon. Border on the
+   left+top sides reads as a clean continuation of the container
+   outline once rotated. */
+.player-status-badge__tip::before {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  background: var(--psb-tint, var(--color-press));
+  border-left: 1px solid var(--psb-border, var(--color-line-strong));
+  border-top: 1px solid var(--psb-border, var(--color-line-strong));
+  transform: translate(-50%, 55%) rotate(45deg);
+}
+.player-status-badge:hover .player-status-badge__tip,
+.player-status-badge:focus-visible .player-status-badge__tip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
