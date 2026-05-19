@@ -16,6 +16,7 @@ import { Card, CardHeader, Delta, Pill } from "@/components/ui";
 import { PlayerPriceChart } from "@/components/PlayerPriceChart";
 import { HoldersBreakdown } from "@/components/HoldersBreakdown";
 import { LargestHoldersTable } from "@/components/LargestHoldersTable";
+import { PlayerStatusBadge } from "@/components/PlayerStatusBadge";
 import { RecentTrades } from "@/components/RecentTrades";
 import { TEAM_COLORS, TEAM_NAMES } from "@/lib/data/players";
 import { fmtNum, fmtPrice, fmtUsd } from "@/lib/format";
@@ -119,7 +120,7 @@ export default async function PlayerPage(props: PageProps<"/player/[id]">) {
               <Pill tone="info">{player.team}</Pill>
             </div>
             <h1
-              className="m-0"
+              className="m-0 flex flex-wrap items-center gap-3"
               style={{
                 fontFamily: "var(--font-display)",
                 fontWeight: 900,
@@ -129,7 +130,10 @@ export default async function PlayerPage(props: PageProps<"/player/[id]">) {
                 textTransform: "uppercase",
               }}
             >
-              {player.firstName} {player.lastName}
+              <span>{player.firstName} {player.lastName}</span>
+              {/* Hero size — bump the icon up so it doesn't disappear
+                  next to a 64px display headline. */}
+              <PlayerStatusBadge playerId={player.id} size={28} />
             </h1>
           </div>
 

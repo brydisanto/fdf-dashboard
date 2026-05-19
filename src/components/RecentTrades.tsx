@@ -8,6 +8,7 @@ import { PLAYERS_BY_ID } from "@/lib/data/players";
 import { fmtNum, fmtPrice, fmtTimeAgo, fmtUsd, shortPlayerName } from "@/lib/format";
 import type { Trade, TradeFlow } from "@/lib/types";
 import { PlayerAvatar } from "./PlayerAvatar";
+import { PlayerStatusBadge } from "./PlayerStatusBadge";
 import { WalletBadge } from "./WalletBadge";
 import type { WalletSnapshot } from "@/lib/data";
 
@@ -132,6 +133,7 @@ export function RecentTrades({
                         <span className="truncate font-medium">
                           {shortPlayerName(player.firstName, player.lastName)}
                         </span>
+                        <PlayerStatusBadge playerId={player.id} size={11} />
                       </Link>
                     </Cell>
                   ) : null}

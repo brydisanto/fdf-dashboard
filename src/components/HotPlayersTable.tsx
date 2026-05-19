@@ -5,6 +5,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import { ChevronDown, ChevronUp, Flame, Search } from "lucide-react";
 import { PlayerAvatar } from "./PlayerAvatar";
+import { PlayerStatusBadge } from "./PlayerStatusBadge";
 import { Delta } from "./ui";
 import { fmtPrice, fmtUsd } from "@/lib/format";
 import { TEAM_NAMES } from "@/lib/data/players";
@@ -125,8 +126,11 @@ export function HotPlayersTable({ players }: { players: HotPlayerRow[] }) {
                   <Link href={`/player/${p.id}`} className="flex w-full items-center gap-2.5 text-left">
                     <PlayerAvatar player={p} size="sm" />
                     <div className="min-w-0 flex-1 text-left">
-                      <div className="truncate font-semibold text-[14px] text-left group-hover:text-[var(--accent-soft)]">
-                        {p.firstName} {p.lastName}
+                      <div className="flex items-center text-left">
+                        <span className="truncate font-semibold text-[14px] group-hover:text-[var(--accent-soft)]">
+                          {p.firstName} {p.lastName}
+                        </span>
+                        <PlayerStatusBadge playerId={p.id} />
                       </div>
                       <div
                         className="mt-0.5 truncate text-left"

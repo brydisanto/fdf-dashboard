@@ -5,6 +5,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import { ChevronDown, ChevronUp, Fish } from "lucide-react";
 import { fmtNum, fmtTimeAgo, fmtUsd, shortAddr, shortPlayerName } from "@/lib/format";
+import { PlayerStatusBadge } from "./PlayerStatusBadge";
 import { TIER_META, tierLabel } from "./WalletBadge";
 import { ROSTER_BY_ID } from "@/lib/data/roster";
 import { getWalletLabel } from "@/lib/data/wallet-labels";
@@ -197,6 +198,7 @@ export function TopWalletsTable({ wallets }: { wallets: TopNflWallet[] }) {
                         <span style={{ color: "var(--color-text)" }}>
                           {shortPlayerName(topPlayer.firstName, topPlayer.lastName)}
                         </span>
+                        <PlayerStatusBadge playerId={topPlayer.id} size={11} />
                         <span style={{ color: "var(--color-text-dim)" }}>
                           {fmtUsdSmart(w.topPositionUsd)}
                         </span>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { PlayerAvatar } from "./PlayerAvatar";
+import { PlayerStatusBadge } from "./PlayerStatusBadge";
 import { TEAM_NAMES } from "@/lib/data/players";
 import { deltaTone } from "@/lib/value-tone";
 import type { PlayerSummary, Position } from "@/lib/types";
@@ -160,8 +161,11 @@ export function ValueTable({
                     <Link href={`/player/${p.id}`} className="flex w-full items-center gap-2.5 text-left group">
                       <PlayerAvatar player={p} size="sm" />
                       <div className="min-w-0 flex-1 text-left">
-                        <div className="truncate text-[13px] font-semibold text-left group-hover:text-[var(--accent-soft)]">
-                          {p.firstName} {p.lastName}
+                        <div className="flex items-center text-left">
+                          <span className="truncate text-[13px] font-semibold group-hover:text-[var(--accent-soft)]">
+                            {p.firstName} {p.lastName}
+                          </span>
+                          <PlayerStatusBadge playerId={p.id} />
                         </div>
                         <div
                           className="text-left"

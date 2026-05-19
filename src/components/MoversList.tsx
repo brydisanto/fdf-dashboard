@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PlayerAvatar } from "./PlayerAvatar";
+import { PlayerStatusBadge } from "./PlayerStatusBadge";
 import { Delta } from "./ui";
 import { fmtPrice, fmtUsd } from "@/lib/format";
 import { TEAM_NAMES } from "@/lib/data/players";
@@ -97,8 +98,11 @@ export function MoversList({
             </span>
             <PlayerAvatar player={p} size="sm" />
             <div className="min-w-0 flex flex-col">
-              <span className="truncate text-[13px] font-semibold leading-tight">
-                {p.firstName} {p.lastName}
+              <span className="flex items-center leading-tight">
+                <span className="truncate text-[13px] font-semibold">
+                  {p.firstName} {p.lastName}
+                </span>
+                <PlayerStatusBadge playerId={p.id} size={10} />
               </span>
               <span
                 className="truncate"
