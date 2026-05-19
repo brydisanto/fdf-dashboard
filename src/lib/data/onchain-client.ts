@@ -90,15 +90,19 @@ export async function readFunBalance(address: string): Promise<number> {
  * single Address arg and returns a single uint256, so the multicall
  * decoding is unambiguous and reliable.
  *
- * Returns a Map keyed by lowercase address. Wallets whose individual
- * call failed map to 0 (treated as "no balance" for the leaderboard
- * column — different from null, which we use elsewhere to mean "we
- * couldn't read at all").
+ * Returns a Map keyed by lowercase address. The VALUE is `number | null`:
+ *   - `number` (0 or positive): canonical on-chain balance
+ *   - `null`: this wallet's call failed (rate limit, timeout, RPC drop)
+ *
+ * Callers MUST distinguish those two cases — collapsing both to 0
+ * is what caused the top-wallets leaderboard to show "—" for whales
+ * who actually hold $FUN, because a transient multicall failure was
+ * being persisted as if the wallet had emptied its FUN position.
  */
 export async function readManyFunBalances(
   addresses: string[],
-): Promise<Map<string, number>> {
-  const out = new Map<string, number>();
+): Promise<Map<string, number | null>> {
+  const out = new Map<string, number | null>();
   if (addresses.length === 0) return out;
 
   // 100 wallets per multicall — each inner call returns 32 bytes
@@ -121,7 +125,10 @@ export async function readManyFunBalances(
         allowFailure: true,
       })) as { status: "success" | "failure"; result?: bigint }[];
     } catch {
-      for (const addr of slice) out.set(addr.toLowerCase(), 0);
+      // Whole chunk failed — mark every wallet null so the caller can
+      // fall back to whatever value it has from another source (e.g.
+      // the indexer JSON) rather than misrepresenting them as zero.
+      for (const addr of slice) out.set(addr.toLowerCase(), null);
       continue;
     }
 
@@ -129,7 +136,7 @@ export async function readManyFunBalances(
       const r = results[j];
       const addr = slice[j].toLowerCase();
       if (!r || r.status !== "success" || r.result == null) {
-        out.set(addr, 0);
+        out.set(addr, null);
         continue;
       }
       out.set(addr, Number(r.result) / 10 ** FUN_TOKEN_DECIMALS);

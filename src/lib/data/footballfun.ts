@@ -1821,9 +1821,12 @@ async function computeFromIndexerOrLive(limit: number, perPool: number): Promise
 }
 
 // Multiply each indexed wallet's per-token balances by the current
-// spot price to derive NFL portfolio value. Pure CPU — no network
-// or RPC calls. This is the path the deployed app should hit ~100%
-// of the time once the cron has populated top-wallets.json.
+// spot price to derive NFL portfolio value. NFL value is pure CPU
+// from the indexer JSON, but $FUN balances are overlaid with a fresh
+// multicall read because the indexer's sequential per-wallet RPC
+// pattern silently writes 0 on transient failures — and those zeros
+// would persist for 10 minutes until the next cron run, showing as
+// dashes on the leaderboard even for wallets with significant $FUN.
 async function computeFromIndex(index: TopWalletIndex, limit: number): Promise<TopNflWallet[]> {
   const players = await getPlayers();
   const priceBySuffix = new Map<string, number>();
@@ -1837,7 +1840,7 @@ async function computeFromIndex(index: TopWalletIndex, limit: number): Promise<T
   const funInfo = await getFunPriceInfo();
   const funPrice = funInfo.priceUsd;
 
-  const out: TopNflWallet[] = [];
+  const ranked: TopNflWallet[] = [];
   for (const w of index.wallets) {
     let nflValueUsd = 0;
     let topPositionUsd = 0;
@@ -1856,8 +1859,12 @@ async function computeFromIndex(index: TopWalletIndex, limit: number): Promise<T
       }
     }
     if (nflValueUsd <= 0) continue;
+    // Indexer $FUN values are written as the source of truth here;
+    // they get overlaid below with a live multicall read so any
+    // wallet the indexer recorded as 0 due to a transient RPC error
+    // gets its real balance back without waiting for the next cron.
     const funValueUsd = +(w.funBalance * funPrice).toFixed(2);
-    out.push({
+    ranked.push({
       address: w.address,
       nflValueUsd: +nflValueUsd.toFixed(2),
       positions,
@@ -1870,8 +1877,50 @@ async function computeFromIndex(index: TopWalletIndex, limit: number): Promise<T
       funValueUsd,
     });
   }
-  out.sort((a, b) => b.nflValueUsd - a.nflValueUsd);
-  return out.slice(0, limit);
+  ranked.sort((a, b) => b.nflValueUsd - a.nflValueUsd);
+  const top = ranked.slice(0, limit);
+
+  // Live $FUN overlay. Multicall is 100 wallets/call → ~5 calls for
+  // a 500-row leaderboard. Returns null per-wallet when its call
+  // failed, in which case we keep the indexer's value rather than
+  // overwriting with 0. Cached at the module level (60s TTL) so the
+  // overlay doesn't refire on every render of the page.
+  try {
+    const funMap = await getOverlaidFunBalances(top.map((w) => w.address));
+    for (let i = 0; i < top.length; i++) {
+      const lower = top[i].address.toLowerCase();
+      const live = funMap.get(lower);
+      if (live == null) continue;  // null → multicall failed, keep indexer value
+      top[i] = {
+        ...top[i],
+        funBalance: live,
+        funValueUsd: +(live * funPrice).toFixed(2),
+      };
+    }
+  } catch {
+    // Overlay failure is non-fatal — fall through with indexer values.
+  }
+
+  return top;
+}
+
+// Cache the live $FUN overlay for a short window so successive page
+// renders within ~1 minute don't re-fire the multicall. Keyed by the
+// sorted wallet list to keep cache hits stable across requests.
+let funOverlayCache: { ts: number; key: string; map: Map<string, number | null> } | null = null;
+const FUN_OVERLAY_TTL_MS = 60_000;
+
+async function getOverlaidFunBalances(
+  addresses: string[],
+): Promise<Map<string, number | null>> {
+  const key = addresses.slice().sort().join(",");
+  const now = Date.now();
+  if (funOverlayCache && funOverlayCache.key === key && now - funOverlayCache.ts < FUN_OVERLAY_TTL_MS) {
+    return funOverlayCache.map;
+  }
+  const map = await readManyFunBalances(addresses);
+  funOverlayCache = { ts: now, key, map };
+  return map;
 }
 
 async function computeTopNflWallets(limit: number, perPool: number): Promise<TopNflWallet[]> {
@@ -1979,7 +2028,11 @@ async function computeTopNflWallets(limit: number, perPool: number): Promise<Top
 
   const refined: TopNflWallet[] = aggregated.map((w) => {
     const lower = w.address.toLowerCase();
-    const funBalance = funMap.get(lower) ?? 0;
+    // null = multicall failed; treat as "unknown", keep whatever
+    // funBalance the aggregated row already had (currently 0, will
+    // be overlaid from the indexer in the index-driven path).
+    const funRead = funMap.get(lower);
+    const funBalance = funRead == null ? w.funBalance : funRead;
     const funValueUsd = +(funBalance * funPrice).toFixed(2);
 
     const onchain = refinementMap.get(lower);
@@ -2658,6 +2711,79 @@ export async function getWalletFlow(address: string, windowDays = 7): Promise<Wa
   };
 }
 
+// ---------- Rotation quick-classifier ----------
+//
+// Lightweight version of getWalletFlow() that classifies whether a
+// wallet is currently rotating INTO NFL (selling other-game positions
+// to fund NFL buys) or OUT OF NFL. Reads ONE page of Tenero
+// /wallets/.../trades — no pagination — so it stays cheap to call for
+// 50 trade-feed wallets in parallel.
+//
+// Module-level cache (15 min) sits in front of tget's 5-min fetch
+// cache, so repeat calls within a request and across the worker's
+// lifetime both short-circuit. The signal is intentionally coarse: a
+// wallet flips "into-nfl" only when net NFL inflow AND net non-NFL
+// outflow each clear $25 in the last 7 days. Random one-off NFL buys
+// funded from USDC sitting in the wallet don't trigger it.
+
+type RotationDirection = WalletFlowSummary["rotationDirection"];
+
+const ROTATION_TTL_MS = 15 * 60 * 1000;
+const rotationCache = new Map<string, { ts: number; direction: RotationDirection }>();
+
+export async function getWalletRotationQuick(address: string): Promise<RotationDirection> {
+  const lower = address.toLowerCase();
+  const cached = rotationCache.get(lower);
+  if (cached && Date.now() - cached.ts < ROTATION_TTL_MS) {
+    return cached.direction;
+  }
+
+  // Same case-sensitivity quirk as the other /wallets endpoints — the
+  // upstream returns empty rows for lowercase addresses.
+  let queryAddress = address;
+  try { queryAddress = getAddress(address); } catch { queryAddress = address; }
+
+  let rows: TeneroWalletTradeRow[] = [];
+  try {
+    const data = await tget<{ rows: TeneroWalletTradeRow[]; next: string | null }>(
+      `/wallets/${encodeURIComponent(queryAddress)}/trades?limit=100`,
+      REVALIDATE.wallet,
+    );
+    rows = data?.rows ?? [];
+  } catch {
+    rotationCache.set(lower, { ts: Date.now(), direction: "neutral" });
+    return "neutral";
+  }
+
+  const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
+  let nflInUsd = 0, nflOutUsd = 0, otherInUsd = 0, otherOutUsd = 0;
+  for (const r of rows) {
+    if (Number(r.block_time) < cutoff) continue;
+    const usd = Number(r.amount_usd ?? 0);
+    const isNfl = isNflTokenAddress(r.base_token_address);
+    if (r.event_type === "buy") {
+      if (isNfl) nflInUsd  += usd; else otherInUsd  += usd;
+    } else {
+      if (isNfl) nflOutUsd += usd; else otherOutUsd += usd;
+    }
+  }
+
+  const nflNetUsd = nflInUsd - nflOutUsd;
+  const otherNetUsd = otherInUsd - otherOutUsd;
+  // Mirror getWalletFlow's thresholds: both legs must clear $25 and
+  // point in opposite directions to qualify as a rotation. Standalone
+  // NFL buys (with no non-NFL sells) stay neutral so the icon doesn't
+  // light up for every plain buy in the feed.
+  let direction: RotationDirection = "neutral";
+  if (Math.abs(nflNetUsd) >= 25 && Math.abs(otherNetUsd) >= 25) {
+    if (nflNetUsd > 0 && otherNetUsd < 0)      direction = "into-nfl";
+    else if (nflNetUsd < 0 && otherNetUsd > 0) direction = "out-of-nfl";
+  }
+
+  rotationCache.set(lower, { ts: Date.now(), direction });
+  return direction;
+}
+
 // Lightweight wallet snapshot for trade-feed badges (no holdings detail).
 export interface WalletSnapshot {
   address: string;
@@ -2666,6 +2792,10 @@ export interface WalletSnapshot {
   tier: WalletTier;
   isNew: boolean;
   holdingsCount: number;
+  // 7-day net-flow direction. "into-nfl" means the wallet has been
+  // funding NFL buys by selling non-NFL positions in the last week —
+  // shown as a small Repeat icon on the trade-feed badge.
+  rotation?: RotationDirection;
 }
 
 const snapshotCache = new Map<string, WalletSnapshot>();
@@ -2673,26 +2803,37 @@ const snapshotCache = new Map<string, WalletSnapshot>();
 export async function getWalletSnapshot(address: string): Promise<WalletSnapshot> {
   const lower = address.toLowerCase();
   const cached = snapshotCache.get(lower);
-  if (cached) return cached;
-  const profile = await getWalletPortfolio(address);
-  let snap: WalletSnapshot;
-  if (profile) {
-    const nflValueUsd = profile.holdings
-      .filter((h) => ROSTER_BY_TOKEN.has(h.tokenAddress))
-      .reduce((a, h) => a + h.balanceValueUsd, 0);
-    snap = {
-      address: profile.address,
-      totalValueUsd: profile.totalValueUsd,
-      nflValueUsd,
-      tier: profile.tier,
-      isNew: profile.isNew,
-      holdingsCount: profile.holdingsCount,
-    };
+  let base: WalletSnapshot;
+  if (cached) {
+    base = cached;
   } else {
-    snap = { address, totalValueUsd: 0, nflValueUsd: 0, tier: "shrimp", isNew: false, holdingsCount: 0 };
+    const profile = await getWalletPortfolio(address);
+    if (profile) {
+      const nflValueUsd = profile.holdings
+        .filter((h) => ROSTER_BY_TOKEN.has(h.tokenAddress))
+        .reduce((a, h) => a + h.balanceValueUsd, 0);
+      base = {
+        address: profile.address,
+        totalValueUsd: profile.totalValueUsd,
+        nflValueUsd,
+        tier: profile.tier,
+        isNew: profile.isNew,
+        holdingsCount: profile.holdingsCount,
+      };
+    } else {
+      base = { address, totalValueUsd: 0, nflValueUsd: 0, tier: "shrimp", isNew: false, holdingsCount: 0 };
+    }
+    snapshotCache.set(lower, base);
   }
-  snapshotCache.set(lower, snap);
-  return snap;
+  // Rotation is cached separately from the portfolio snapshot so a
+  // wallet whose holdings haven't changed but whose recent flow has
+  // can still flip "into-nfl" without invalidating the rest.
+  try {
+    const rotation = await getWalletRotationQuick(address);
+    return { ...base, rotation };
+  } catch {
+    return base;
+  }
 }
 
 export async function getWalletSnapshots(addresses: string[]): Promise<Map<string, WalletSnapshot>> {
@@ -2706,9 +2847,16 @@ export async function getWalletSnapshots(addresses: string[]): Promise<Map<strin
     const lower = a.toLowerCase();
     if (!seen.has(lower)) seen.set(lower, a);
   }
-  const results = await Promise.all(
-    Array.from(seen.values()).map(async (a) => [a.toLowerCase(), await getWalletSnapshot(a)] as const),
+  // getWalletSnapshot now fires TWO Tenero calls per wallet (portfolio
+  // + rotation), so chunk to 8 concurrent to stay under the upstream
+  // 429 ceiling on cold caches. Hot caches collapse to ~0 RPC anyway.
+  const fns = Array.from(seen.values()).map(
+    (a) => async (): Promise<readonly [string, WalletSnapshot]> => [
+      a.toLowerCase(),
+      await getWalletSnapshot(a),
+    ],
   );
+  const results = await chunked(fns, 8);
   return new Map(results);
 }
 
