@@ -80,6 +80,23 @@ jobs:
             exit 0
           fi
           git commit -m "Top wallets index $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          git push origin HEAD:data
+          # Race-safe push. The four indexers all push to `data`
+          # and each commits a different file, so a conflict means
+          # someone else landed first — fetch, rebase, retry.
+          attempt=0
+          max=6
+          until git push origin HEAD:data; do
+            attempt=$((attempt + 1))
+            if [ $attempt -ge $max ]; then
+              echo "Push still failing after $max attempts — giving up."
+              exit 1
+            fi
+            echo "Push rejected (attempt $attempt) — rebasing onto origin/data"
+            git fetch origin data
+            if ! git rebase origin/data; then
+              git rebase --abort || true
+              exit 1
+            fi
+          done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
