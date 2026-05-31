@@ -1,5 +1,5 @@
 {
-  "lastIndexedBlock": 46721377,
+  "lastIndexedBlock": 46724854,
   "trades": [
     {
       "txId": "0x8f8a9567eb75cd275acd1d52cbe26c2792b8574727e1883410d5742a2e810f5c",
@@ -23672,61 +23672,6 @@
       "side": "sell",
       "shareAmount": 3408.7594126815966,
       "usdAmount": 53.55878
-    },
-    {
-      "txId": "0x50091ced9eb6f2001b9385c422f231183dd36b4c733ecc4de3631be3b3bf5dae",
-      "blockNumber": 45426708,
-      "blockTime": 1777642763000,
-      "logIndex": 375,
-      "tokenIdSuffix": "1924940894",
-      "wallet": "0xaae8f295bcab736841b3bf0e81fda04de5977a1f",
-      "side": "buy",
-      "shareAmount": 1510.3801244361032,
-      "usdAmount": 5
-    },
-    {
-      "txId": "0x6f73eeaa5c5eb779d70aa868cbe2704f95b9d3f174081f31dfd73f415efe52fa",
-      "blockNumber": 45426697,
-      "blockTime": 1777642741000,
-      "logIndex": 319,
-      "tokenIdSuffix": "1877680294",
-      "wallet": "0xaae8f295bcab736841b3bf0e81fda04de5977a1f",
-      "side": "buy",
-      "shareAmount": 973.296796771096,
-      "usdAmount": 20
-    },
-    {
-      "txId": "0xb3bbe37ff1d84a17a6dd771c93352299762ea81e449b08e08d7314f64ff53d4a",
-      "blockNumber": 45426688,
-      "blockTime": 1777642723000,
-      "logIndex": 104,
-      "tokenIdSuffix": "401615555",
-      "wallet": "0xaae8f295bcab736841b3bf0e81fda04de5977a1f",
-      "side": "buy",
-      "shareAmount": 1669.7590672890676,
-      "usdAmount": 15
-    },
-    {
-      "txId": "0x669bc6a4b6f03a5e9dab5722951205c7575436323f357a380aace6bc8ff20140",
-      "blockNumber": 45426675,
-      "blockTime": 1777642697000,
-      "logIndex": 159,
-      "tokenIdSuffix": "439100286",
-      "wallet": "0xaae8f295bcab736841b3bf0e81fda04de5977a1f",
-      "side": "buy",
-      "shareAmount": 1125.296366325995,
-      "usdAmount": 20
-    },
-    {
-      "txId": "0x670dc401b3ebc0435e0748e60f18d3a38f5fe77b944778e85e072fead6894cb7",
-      "blockNumber": 45426666,
-      "blockTime": 1777642679000,
-      "logIndex": 587,
-      "tokenIdSuffix": "1597935612",
-      "wallet": "0xaae8f295bcab736841b3bf0e81fda04de5977a1f",
-      "side": "buy",
-      "shareAmount": 1195.7919972629484,
-      "usdAmount": 20
     }
   ]
 }
