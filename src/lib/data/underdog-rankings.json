@@ -1,768 +1,232 @@
 {
   "_note": "Underdog Sports PPR rankings, scraped via Chrome MCP from app.underdogsports.com/rankings/nfl/a9c04e81-1ace-4b16-a31d-4c725a47f16f. Underdog is Cloudflare-protected and not reachable from server-side fetches; we refresh this file periodically by re-running the Chrome MCP scrape. Each entry is [posRank, name].",
-  "updatedAt": "2026-05-20",
+  "updatedAt": "2026-06-07",
   "QB": [
-    [
-      1,
-      "Josh Allen"
-    ],
-    [
-      2,
-      "Lamar Jackson"
-    ],
-    [
-      3,
-      "Joe Burrow"
-    ],
-    [
-      4,
-      "Jayden Daniels"
-    ],
-    [
-      5,
-      "Jalen Hurts"
-    ],
-    [
-      6,
-      "Caleb Williams"
-    ],
-    [
-      7,
-      "Drake Maye"
-    ],
-    [
-      8,
-      "Dak Prescott"
-    ],
-    [
-      9,
-      "Justin Herbert"
-    ],
-    [
-      10,
-      "Trevor Lawrence"
-    ],
-    [
-      11,
-      "Jaxson Dart"
-    ],
-    [
-      12,
-      "Patrick Mahomes"
-    ],
-    [
-      13,
-      "Brock Purdy"
-    ],
-    [
-      14,
-      "Bo Nix"
-    ],
-    [
-      15,
-      "Matthew Stafford"
-    ],
-    [
-      16,
-      "Jared Goff"
-    ],
-    [
-      17,
-      "Kyler Murray"
-    ],
-    [
-      18,
-      "Jordan Love"
-    ],
-    [
-      19,
-      "Tyler Shough"
-    ],
-    [
-      20,
-      "Baker Mayfield"
-    ],
-    [
-      21,
-      "Malik Willis"
-    ],
-    [
-      22,
-      "Sam Darnold"
-    ],
-    [
-      23,
-      "Cam Ward"
-    ],
-    [
-      24,
-      "C.J. Stroud"
-    ],
-    [
-      25,
-      "Daniel Jones"
-    ],
-    [
-      26,
-      "Bryce Young"
-    ],
-    [
-      27,
-      "Fernando Mendoza"
-    ],
-    [
-      28,
-      "Geno Smith"
-    ],
-    [
-      29,
-      "Aaron Rodgers"
-    ],
-    [
-      30,
-      "Jacoby Brissett"
-    ],
-    [
-      31,
-      "Tua Tagovailoa"
-    ],
-    [
-      32,
-      "Deshaun Watson"
-    ],
-    [
-      33,
-      "Michael Penix"
-    ],
-    [
-      34,
-      "Shedeur Sanders"
-    ],
-    [
-      35,
-      "Kirk Cousins"
-    ],
-    [
-      36,
-      "Carson Beck"
-    ],
-    [
-      37,
-      "Justin Fields"
-    ],
-    [
-      38,
-      "J.J. McCarthy"
-    ],
-    [
-      39,
-      "Cade Klubnik"
-    ],
-    [
-      40,
-      "Mac Jones"
-    ],
-    [
-      41,
-      "Anthony Richardson"
-    ],
-    [
-      42,
-      "Taylen Green"
-    ],
-    [
-      44,
-      "Will Howard"
-    ]
+    [1, "Josh Allen"],
+    [2, "Lamar Jackson"],
+    [3, "Joe Burrow"],
+    [4, "Jayden Daniels"],
+    [5, "Caleb Williams"],
+    [6, "Drake Maye"],
+    [7, "Jalen Hurts"],
+    [8, "Dak Prescott"],
+    [9, "Justin Herbert"],
+    [10, "Trevor Lawrence"],
+    [11, "Patrick Mahomes"],
+    [12, "Jaxson Dart"],
+    [13, "Brock Purdy"],
+    [14, "Matthew Stafford"],
+    [15, "Bo Nix"],
+    [16, "Jared Goff"],
+    [17, "Kyler Murray"],
+    [18, "Jordan Love"],
+    [19, "Tyler Shough"],
+    [20, "Baker Mayfield"],
+    [21, "Malik Willis"],
+    [22, "Cam Ward"],
+    [23, "Sam Darnold"],
+    [24, "C.J. Stroud"],
+    [25, "Daniel Jones"],
+    [26, "Bryce Young"],
+    [27, "Fernando Mendoza"],
+    [28, "Aaron Rodgers"],
+    [29, "Geno Smith"],
+    [30, "Jacoby Brissett"],
+    [31, "Tua Tagovailoa"],
+    [32, "Deshaun Watson"],
+    [33, "Michael Penix"],
+    [34, "Shedeur Sanders"],
+    [35, "Carson Beck"],
+    [36, "Kirk Cousins"],
+    [37, "Justin Fields"],
+    [38, "Anthony Richardson"],
+    [38, "J.J. McCarthy"],
+    [40, "Mac Jones"],
+    [41, "Tommy DeVito"],
+    [42, "Joe Flacco"],
+    [42, "Davis Mills"],
+    [44, "Cade Klubnik"],
+    [45, "Ty Simpson"]
   ],
   "RB": [
-    [
-      1,
-      "Bijan Robinson"
-    ],
-    [
-      2,
-      "Jahmyr Gibbs"
-    ],
-    [
-      3,
-      "Jonathan Taylor"
-    ],
-    [
-      4,
-      "Christian McCaffrey"
-    ],
-    [
-      5,
-      "James Cook"
-    ],
-    [
-      6,
-      "Ashton Jeanty"
-    ],
-    [
-      7,
-      "De'Von Achane"
-    ],
-    [
-      8,
-      "Saquon Barkley"
-    ],
-    [
-      9,
-      "Kenneth Walker III"
-    ],
-    [
-      10,
-      "Omarion Hampton"
-    ],
-    [
-      11,
-      "Derrick Henry"
-    ],
-    [
-      12,
-      "Chase Brown"
-    ],
-    [
-      13,
-      "Jeremiyah Love"
-    ],
-    [
-      14,
-      "Josh Jacobs"
-    ],
-    [
-      15,
-      "Breece Hall"
-    ],
-    [
-      16,
-      "Travis Etienne Jr."
-    ],
-    [
-      17,
-      "Kyren Williams"
-    ],
-    [
-      18,
-      "Javonte Williams"
-    ],
-    [
-      19,
-      "Bucky Irving"
-    ],
-    [
-      20,
-      "Cam Skattebo"
-    ],
-    [
-      21,
-      "TreVeyon Henderson"
-    ],
-    [
-      22,
-      "David Montgomery"
-    ],
-    [
-      23,
-      "D'Andre Swift"
-    ],
-    [
-      24,
-      "Quinshon Judkins"
-    ],
-    [
-      25,
-      "Jadarian Price"
-    ],
-    [
-      26,
-      "Bhayshul Tuten"
-    ],
-    [
-      27,
-      "Chuba Hubbard"
-    ],
-    [
-      28,
-      "Rhamondre Stevenson"
-    ],
-    [
-      29,
-      "Tony Pollard"
-    ],
-    [
-      30,
-      "Jaylen Warren"
-    ],
-    [
-      31,
-      "RJ Harvey"
-    ],
-    [
-      32,
-      "Rico Dowdle"
-    ],
-    [
-      33,
-      "Kyle Monangai"
-    ],
-    [
-      34,
-      "Blake Corum"
-    ],
-    [
-      35,
-      "J.K. Dobbins"
-    ],
-    [
-      36,
-      "Chris Rodriguez"
-    ],
-    [
-      37,
-      "Jacory Croskey-Merritt"
-    ],
-    [
-      38,
-      "Kenneth Gainwell"
-    ],
-    [
-      39,
-      "Aaron Jones"
-    ],
-    [
-      40,
-      "Jordan Mason"
-    ],
-    [
-      41,
-      "Rachaad White"
-    ],
-    [
-      42,
-      "Jonathon Brooks"
-    ],
-    [
-      43,
-      "Tyrone Tracy"
-    ],
-    [
-      44,
-      "Jonah Coleman"
-    ],
-    [
-      45,
-      "Keaton Mitchell"
-    ],
-    [
-      46,
-      "Woody Marks"
-    ],
-    [
-      47,
-      "Isiah Pacheco"
-    ],
-    [
-      48,
-      "Zach Charbonnet"
-    ],
-    [
-      49,
-      "Tyler Allgeier"
-    ]
+    [1, "Jahmyr Gibbs"],
+    [2, "Bijan Robinson"],
+    [3, "Jonathan Taylor"],
+    [4, "Christian McCaffrey"],
+    [5, "James Cook"],
+    [6, "Ashton Jeanty"],
+    [7, "Saquon Barkley"],
+    [8, "De'Von Achane"],
+    [9, "Omarion Hampton"],
+    [10, "Kenneth Walker III"],
+    [11, "Chase Brown"],
+    [12, "Derrick Henry"],
+    [13, "Jeremiyah Love"],
+    [14, "Breece Hall"],
+    [15, "Travis Etienne Jr."],
+    [16, "Kyren Williams"],
+    [17, "Javonte Williams"],
+    [18, "Josh Jacobs"],
+    [19, "Cam Skattebo"],
+    [20, "TreVeyon Henderson"],
+    [21, "David Montgomery"],
+    [22, "D'Andre Swift"],
+    [23, "Bucky Irving"],
+    [24, "Quinshon Judkins"],
+    [25, "Jadarian Price"],
+    [26, "Bhayshul Tuten"],
+    [27, "Chuba Hubbard"],
+    [28, "Rhamondre Stevenson"],
+    [29, "Jaylen Warren"],
+    [30, "Tony Pollard"],
+    [31, "RJ Harvey"],
+    [32, "Rico Dowdle"],
+    [33, "Kyle Monangai"],
+    [34, "Blake Corum"],
+    [35, "J.K. Dobbins"],
+    [36, "Kenneth Gainwell"],
+    [37, "Jonathon Brooks"],
+    [38, "Chris Rodriguez"],
+    [39, "Jacory Croskey-Merritt"],
+    [40, "Rachaad White"],
+    [41, "Aaron Jones"],
+    [42, "Jordan Mason"],
+    [43, "Tyrone Tracy"],
+    [44, "Keaton Mitchell"],
+    [45, "Woody Marks"],
+    [46, "Isiah Pacheco"],
+    [47, "Jonah Coleman"],
+    [48, "Tyler Allgeier"],
+    [49, "Tyjae Spears"],
+    [50, "Zach Charbonnet"],
+    [51, "Brian Robinson"],
+    [52, "Dylan Sampson"],
+    [53, "Tank Bigsby"],
+    [54, "Sean Tucker"],
+    [55, "Nicholas Singleton"],
+    [56, "Emmett Johnson"],
+    [57, "Alvin Kamara"],
+    [58, "Emanuel Wilson"],
+    [59, "Mike Washington"],
+    [60, "Kaytron Allen"]
   ],
   "WR": [
-    [
-      1,
-      "Ja'Marr Chase"
-    ],
-    [
-      2,
-      "Puka Nacua"
-    ],
-    [
-      3,
-      "Jaxon Smith-Njigba"
-    ],
-    [
-      4,
-      "Amon-Ra St. Brown"
-    ],
-    [
-      5,
-      "CeeDee Lamb"
-    ],
-    [
-      6,
-      "Justin Jefferson"
-    ],
-    [
-      7,
-      "Drake London"
-    ],
-    [
-      8,
-      "Rashee Rice"
-    ],
-    [
-      9,
-      "Malik Nabers"
-    ],
-    [
-      10,
-      "George Pickens"
-    ],
-    [
-      11,
-      "Nico Collins"
-    ],
-    [
-      12,
-      "A.J. Brown"
-    ],
-    [
-      13,
-      "DeVonta Smith"
-    ],
-    [
-      14,
-      "Chris Olave"
-    ],
-    [
-      15,
-      "Tee Higgins"
-    ],
-    [
-      16,
-      "Tetairoa McMillan"
-    ],
-    [
-      17,
-      "Zay Flowers"
-    ],
-    [
-      18,
-      "Garrett Wilson"
-    ],
-    [
-      19,
-      "Emeka Egbuka"
-    ],
-    [
-      20,
-      "Ladd McConkey"
-    ],
-    [
-      21,
-      "Luther Burden"
-    ],
-    [
-      22,
-      "Mike Evans"
-    ],
-    [
-      23,
-      "Jameson Williams"
-    ],
-    [
-      24,
-      "Jaylen Waddle"
-    ],
-    [
-      25,
-      "Terry McLaurin"
-    ],
-    [
-      26,
-      "Davante Adams"
-    ],
-    [
-      27,
-      "D.J. Moore"
-    ],
-    [
-      28,
-      "Rome Odunze"
-    ],
-    [
-      29,
-      "Christian Watson"
-    ],
-    [
-      30,
-      "Carnell Tate"
-    ],
-    [
-      31,
-      "Jordyn Tyson"
-    ],
-    [
-      32,
-      "Brian Thomas"
-    ],
-    [
-      33,
-      "Marvin Harrison"
-    ],
-    [
-      34,
-      "Alec Pierce"
-    ],
-    [
-      35,
-      "Makai Lemon"
-    ],
-    [
-      36,
-      "Parker Washington"
-    ],
-    [
-      37,
-      "DK Metcalf"
-    ],
-    [
-      38,
-      "Courtland Sutton"
-    ],
-    [
-      39,
-      "Jayden Reed"
-    ],
-    [
-      40,
-      "Jordan Addison"
-    ],
-    [
-      41,
-      "Michael Wilson"
-    ],
-    [
-      42,
-      "Chris Godwin"
-    ],
-    [
-      43,
-      "Quentin Johnston"
-    ],
-    [
-      44,
-      "Jakobi Meyers"
-    ],
-    [
-      45,
-      "Josh Downs"
-    ],
-    [
-      46,
-      "Ricky Pearsall"
-    ],
-    [
-      47,
-      "Matthew Golden"
-    ],
-    [
-      48,
-      "Michael Pittman Jr."
-    ],
-    [
-      49,
-      "Xavier Worthy"
-    ]
+    [1, "Ja'Marr Chase"],
+    [2, "Puka Nacua"],
+    [3, "Jaxon Smith-Njigba"],
+    [4, "Amon-Ra St. Brown"],
+    [5, "CeeDee Lamb"],
+    [6, "Justin Jefferson"],
+    [7, "Drake London"],
+    [8, "A.J. Brown"],
+    [9, "Nico Collins"],
+    [10, "George Pickens"],
+    [11, "Chris Olave"],
+    [12, "DeVonta Smith"],
+    [13, "Rashee Rice"],
+    [14, "Malik Nabers"],
+    [15, "Tee Higgins"],
+    [16, "Zay Flowers"],
+    [17, "Tetairoa McMillan"],
+    [18, "Garrett Wilson"],
+    [19, "Ladd McConkey"],
+    [20, "Emeka Egbuka"],
+    [21, "Luther Burden"],
+    [22, "Mike Evans"],
+    [23, "Terry McLaurin"],
+    [24, "Jameson Williams"],
+    [25, "Jaylen Waddle"],
+    [26, "Davante Adams"],
+    [27, "D.J. Moore"],
+    [28, "Rome Odunze"],
+    [29, "Christian Watson"],
+    [30, "Carnell Tate"],
+    [31, "Jordyn Tyson"],
+    [32, "Brian Thomas"],
+    [33, "Marvin Harrison"],
+    [34, "Parker Washington"],
+    [35, "Makai Lemon"],
+    [36, "Alec Pierce"],
+    [37, "DK Metcalf"],
+    [38, "Courtland Sutton"],
+    [39, "Jayden Reed"],
+    [40, "Jordan Addison"],
+    [41, "Quentin Johnston"],
+    [42, "Chris Godwin"],
+    [43, "Michael Wilson"],
+    [44, "Josh Downs"],
+    [45, "Jakobi Meyers"],
+    [46, "Ricky Pearsall"],
+    [47, "Xavier Worthy"],
+    [48, "Michael Pittman Jr."],
+    [49, "Matthew Golden"],
+    [50, "Romeo Doubs"],
+    [51, "KC Concepcion"],
+    [52, "Wan'Dale Robinson"],
+    [53, "Jayden Higgins"],
+    [54, "Khalil Shakir"],
+    [55, "Stefon Diggs"],
+    [56, "Jalen Coker"],
+    [57, "Travis Hunter"],
+    [58, "Rashid Shaheed"],
+    [59, "Omar Cooper"],
+    [60, "Jauan Jennings"],
+    [61, "Jalen McMillan"],
+    [62, "Jalen Nailor"],
+    [63, "Tre Tucker"],
+    [64, "Antonio Williams"],
+    [65, "Denzel Boston"],
+    [66, "Deebo Samuel"],
+    [67, "De'Zhaun Stribling"],
+    [68, "Isaac TeSlaa"],
+    [69, "Ryan Flournoy"],
+    [70, "Tre' Harris"]
   ],
   "TE": [
-    [
-      1,
-      "Brock Bowers"
-    ],
-    [
-      2,
-      "Trey McBride"
-    ],
-    [
-      3,
-      "Colston Loveland"
-    ],
-    [
-      4,
-      "Tyler Warren"
-    ],
-    [
-      5,
-      "Tucker Kraft"
-    ],
-    [
-      6,
-      "Harold Fannin"
-    ],
-    [
-      7,
-      "Sam LaPorta"
-    ],
-    [
-      8,
-      "Kyle Pitts"
-    ],
-    [
-      9,
-      "George Kittle"
-    ],
-    [
-      10,
-      "Travis Kelce"
-    ],
-    [
-      11,
-      "Jake Ferguson"
-    ],
-    [
-      12,
-      "Mark Andrews"
-    ],
-    [
-      13,
-      "Dalton Kincaid"
-    ],
-    [
-      14,
-      "Isaiah Likely"
-    ],
-    [
-      15,
-      "Dallas Goedert"
-    ],
-    [
-      16,
-      "Oronde Gadsden"
-    ],
-    [
-      17,
-      "Kenyon Sadiq"
-    ],
-    [
-      18,
-      "Hunter Henry"
-    ],
-    [
-      19,
-      "Chig Okonkwo"
-    ],
-    [
-      20,
-      "Brenton Strange"
-    ],
-    [
-      21,
-      "Juwan Johnson"
-    ],
-    [
-      22,
-      "T.J. Hockenson"
-    ],
-    [
-      23,
-      "AJ Barner"
-    ],
-    [
-      24,
-      "Dalton Schultz"
-    ],
-    [
-      25,
-      "Gunnar Helm"
-    ],
-    [
-      26,
-      "Cade Otton"
-    ],
-    [
-      27,
-      "David Njoku"
-    ],
-    [
-      28,
-      "Pat Freiermuth"
-    ],
-    [
-      29,
-      "Eli Stowers"
-    ],
-    [
-      30,
-      "Terrance Ferguson"
-    ],
-    [
-      31,
-      "Mike Gesicki"
-    ],
-    [
-      32,
-      "Greg Dulcich"
-    ],
-    [
-      33,
-      "Jake Tonges"
-    ],
-    [
-      34,
-      "Colby Parkinson"
-    ],
-    [
-      35,
-      "Evan Engram"
-    ],
-    [
-      36,
-      "Theo Johnson"
-    ],
-    [
-      37,
-      "Darnell Washington"
-    ],
-    [
-      38,
-      "Michael Mayer"
-    ],
-    [
-      39,
-      "Ja'Tavion Sanders"
-    ],
-    [
-      40,
-      "Oscar Delp"
-    ],
-    [
-      41,
-      "Eli Raridon"
-    ],
-    [
-      42,
-      "Dawson Knox"
-    ],
-    [
-      43,
-      "Mason Taylor"
-    ],
-    [
-      44,
-      "Elijah Arroyo"
-    ],
-    [
-      45,
-      "Justin Joly"
-    ],
-    [
-      46,
-      "Noah Gray"
-    ],
-    [
-      47,
-      "Max Klare"
-    ],
-    [
-      48,
-      "Cole Kmet"
-    ]
+    [1, "Brock Bowers"],
+    [2, "Trey McBride"],
+    [3, "Colston Loveland"],
+    [4, "Tyler Warren"],
+    [5, "Tucker Kraft"],
+    [6, "Harold Fannin"],
+    [7, "Sam LaPorta"],
+    [8, "Kyle Pitts"],
+    [9, "George Kittle"],
+    [10, "Travis Kelce"],
+    [11, "Jake Ferguson"],
+    [12, "Mark Andrews"],
+    [13, "Dalton Kincaid"],
+    [14, "Isaiah Likely"],
+    [15, "Dallas Goedert"],
+    [16, "Oronde Gadsden"],
+    [17, "Hunter Henry"],
+    [18, "Chig Okonkwo"],
+    [19, "Kenyon Sadiq"],
+    [20, "Brenton Strange"],
+    [21, "Juwan Johnson"],
+    [22, "T.J. Hockenson"],
+    [23, "Dalton Schultz"],
+    [24, "AJ Barner"],
+    [25, "Gunnar Helm"],
+    [26, "Cade Otton"],
+    [27, "Pat Freiermuth"],
+    [28, "Eli Stowers"],
+    [29, "Greg Dulcich"],
+    [30, "David Njoku"],
+    [31, "Terrance Ferguson"],
+    [32, "Mike Gesicki"],
+    [33, "Jake Tonges"],
+    [34, "Colby Parkinson"],
+    [35, "Darnell Washington"],
+    [36, "Evan Engram"],
+    [37, "Michael Mayer"],
+    [38, "Theo Johnson"],
+    [39, "Ja'Tavion Sanders"],
+    [40, "Eli Raridon"],
+    [41, "Dawson Knox"],
+    [42, "Elijah Arroyo"],
+    [43, "Cole Kmet"],
+    [43, "Oscar Delp"],
+    [45, "Mason Taylor"]
   ]
 }
