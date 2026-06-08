@@ -17,13 +17,14 @@ export interface ValueRow extends PlayerSummary {
   udPosRank: number | null;          // Underdog Sports PPR positional rank
   espnAvgRank: number | null;        // ESPN preseason AVG (fractional)
   ringerPosRank: number | null;      // The Ringer's PPR positional rank (avg of 3 experts)
-  industryAvgRank: number | null;    // mean(fp, ud, espn, ringer) over present sources
+  bbAdpPosRank: number | null;       // FantasyPros Best Ball ADP positional rank
+  industryAvgRank: number | null;    // mean(fp, ud, espn, ringer, bbAdp) over present sources
   posRankDelta: number | null;       // industryAvgRank − marketPosRank
   verdict: "undervalued" | "fair" | "overvalued" | "unranked";
 }
 
 type SortKey =
-  | "name" | "marketPosRank" | "fpPosRank" | "udPosRank" | "espnAvgRank" | "ringerPosRank" | "industryAvgRank" | "posRankDelta";
+  | "name" | "marketPosRank" | "fpPosRank" | "udPosRank" | "espnAvgRank" | "ringerPosRank" | "bbAdpPosRank" | "industryAvgRank" | "posRankDelta";
 
 const POSITIONS: (Position | "ALL")[] = ["ALL", "QB", "RB", "WR", "TE"];
 
@@ -80,7 +81,7 @@ export function ValueTable({
     else {
       setSortKey(key);
       // Default to asc for ranks (1 first), desc for everything else.
-      const ascKeys = new Set<SortKey>(["name", "marketPosRank", "fpPosRank", "udPosRank", "espnAvgRank", "ringerPosRank", "industryAvgRank"]);
+      const ascKeys = new Set<SortKey>(["name", "marketPosRank", "fpPosRank", "udPosRank", "espnAvgRank", "ringerPosRank", "bbAdpPosRank", "industryAvgRank"]);
       setSortDir(ascKeys.has(key) ? "asc" : "desc");
     }
   };
@@ -109,7 +110,7 @@ export function ValueTable({
       </div>
 
       <div className="overflow-x-auto rounded-[var(--r-14)] border border-[var(--color-line)] bg-[var(--color-bench)]">
-        <table className="w-full min-w-[940px]">
+        <table className="w-full min-w-[1040px]">
           <thead style={{ background: "color-mix(in oklab, var(--color-press) 60%, transparent)" }}>
             {/* Two-row header: top groups the three industry-rank columns */}
             <tr className="border-b border-[var(--color-line)]">
@@ -119,7 +120,7 @@ export function ValueTable({
                   FDF Ranking
                 </SortHeader>
               </th>
-              <th colSpan={5} className="px-3 py-2.5 text-center" style={{ ...groupHeadStyle, color: "var(--accent-soft)", borderBottom: "1px solid var(--color-line)" }}>
+              <th colSpan={6} className="px-3 py-2.5 text-center" style={{ ...groupHeadStyle, color: "var(--accent-soft)", borderBottom: "1px solid var(--color-line)" }}>
                 Industry Rankings
               </th>
               <th rowSpan={2} className="px-3 py-3 select-none text-center" style={groupHeadStyle} title="Industry avg − market rank (negative = market may be undervaluing)">
@@ -142,7 +143,10 @@ export function ValueTable({
               <th className="px-3 py-2 text-center" style={groupHeadStyle} title="The Ringer — average of 3 experts (Heifetz, Kelly, Horlbeck)">
                 <SortHeader sortKey="ringerPosRank" current={sortKey} dir={sortDir} onSort={onSort} align="center">Ringer</SortHeader>
               </th>
-              <th className="px-3 py-2 text-center" style={groupHeadStyle} title="Average of FP + UD + ESPN + Ringer positional ranks">
+              <th className="px-3 py-2 text-center" style={groupHeadStyle} title="FantasyPros Best Ball ADP positional rank — averaged across BB10, RTSports, Underdog, Drafters, DraftKings">
+                <SortHeader sortKey="bbAdpPosRank" current={sortKey} dir={sortDir} onSort={onSort} align="center">BB ADP</SortHeader>
+              </th>
+              <th className="px-3 py-2 text-center" style={groupHeadStyle} title="Average of FP + UD + ESPN + Ringer + BB ADP positional ranks">
                 <SortHeader sortKey="industryAvgRank" current={sortKey} dir={sortDir} onSort={onSort} align="center">Avg</SortHeader>
               </th>
             </tr>
@@ -235,6 +239,16 @@ export function ValueTable({
                     )}
                   </NumCell>
                   <NumCell>
+                    {p.bbAdpPosRank != null ? (
+                      <span style={{ color: "var(--color-text)" }}>
+                        {p.position}
+                        {p.bbAdpPosRank}
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--color-text-dim)" }}>—</span>
+                    )}
+                  </NumCell>
+                  <NumCell>
                     {p.industryAvgRank != null ? (
                       <span style={{ color: "var(--accent-soft)", fontWeight: 700 }}>
                         {p.position}
@@ -257,7 +271,7 @@ export function ValueTable({
             })}
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-5 py-12 text-center text-sm text-[var(--color-text-muted)]">
+                <td colSpan={10} className="px-5 py-12 text-center text-sm text-[var(--color-text-muted)]">
                   No matching players.
                 </td>
               </tr>

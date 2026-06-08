@@ -9,6 +9,7 @@ import {
 import { getUnderdogRankings, indexUdByName } from "@/lib/data/underdog";
 import { getEspnRankings, indexEspnByName } from "@/lib/data/espn";
 import { getRingerRankings, indexRingerByName } from "@/lib/data/ringer";
+import { getBestBallAdp, indexBbByName } from "@/lib/data/best-ball-adp";
 import { Pill } from "@/components/ui";
 import { ValuePageBody } from "@/components/ValuePageBody";
 import { type ValueRow } from "@/components/ValueTable";
@@ -18,7 +19,7 @@ import type { Position } from "@/lib/types";
 export const metadata = {
   title: "Value Plays · FDF Box Score",
   description:
-    "Sport.fun market rank vs an industry-consensus rank averaged across FantasyPros, Underdog Sports, ESPN, and The Ringer — surfaces NFL player tokens the market may be over- or undervaluing.",
+    "Sport.fun market rank vs an industry-consensus rank averaged across FantasyPros, Underdog Sports, ESPN, The Ringer, and FantasyPros Best Ball ADP — surfaces NFL player tokens the market may be over- or undervaluing.",
 };
 
 export const revalidate = 600;
@@ -32,14 +33,17 @@ const FAIR_BAND = 1;
 export default async function ValuePage() {
   const [players, fp] = await Promise.all([getPlayers(), getFantasyProsRankings()]);
   const fpByName = indexFpByName(fp);
-  // Underdog + ESPN + Ringer are sourced from static snapshot files.
-  // Underdog is Cloudflare-blocked and ESPN is JS-rendered (both
-  // refreshed via Chrome MCP scrape); Ringer is fetchable directly
-  // (refresh via `node scripts/scrape-ringer.mjs`). Each source's
-  // rank is positional within QB/RB/WR/TE.
+  // Underdog + ESPN + Ringer + Best Ball ADP are sourced from static
+  // snapshot files. Underdog is Cloudflare-blocked and ESPN is
+  // JS-rendered (both refreshed via Chrome MCP scrape); Ringer +
+  // FantasyPros Best Ball ADP are fetchable directly (refresh via
+  // `node scripts/scrape-ringer.mjs` and
+  // `node scripts/scrape-best-ball-adp.mjs`). Each source's rank is
+  // positional within QB/RB/WR/TE.
   const udByName = indexUdByName(getUnderdogRankings());
   const espnByName = indexEspnByName(getEspnRankings());
   const ringerByName = indexRingerByName(getRingerRankings());
+  const bbByName = indexBbByName(getBestBallAdp());
 
   // Group roster by position; market positional rank within each,
   // sorted by raw share price (highest price = #1).
@@ -57,8 +61,9 @@ export default async function ValuePage() {
   }
 
   // Build rows. Industry-average rank model:
-  //   industryAvgRank = mean of FP + UD + ESPN + Ringer positional ranks,
-  //                     over whichever sources have a value for this player
+  //   industryAvgRank = mean of FP + UD + ESPN + Ringer + BB ADP
+  //                     positional ranks, over whichever sources have
+  //                     a value for this player
   //                   = null if none of them have a rank
   //   posRankDelta    = industryAvgRank − marketPosRank
   // Negative Δ → industry ranks them higher than market → market may
@@ -73,12 +78,14 @@ export default async function ValuePage() {
       const udHit = udByName.get(nameKey);
       const espnHit = espnByName.get(nameKey);
       const ringerHit = ringerByName.get(nameKey);
+      const bbHit = bbByName.get(nameKey);
       const fpPosRank = fpHit?.posRankNum && fpHit.posRankNum > 0 ? fpHit.posRankNum : null;
       const udPosRank = udHit?.posRank && udHit.posRank > 0 ? udHit.posRank : null;
       const espnAvgRank = espnHit?.avgRank && espnHit.avgRank > 0 ? espnHit.avgRank : null;
       const ringerPosRank = ringerHit?.posRank && ringerHit.posRank > 0 ? ringerHit.posRank : null;
+      const bbAdpPosRank = bbHit?.posRank && bbHit.posRank > 0 ? bbHit.posRank : null;
 
-      const industryRanks = [fpPosRank, udPosRank, espnAvgRank, ringerPosRank].filter(
+      const industryRanks = [fpPosRank, udPosRank, espnAvgRank, ringerPosRank, bbAdpPosRank].filter(
         (r): r is number => r != null,
       );
       const industryAvgRank = industryRanks.length
@@ -105,6 +112,7 @@ export default async function ValuePage() {
         udPosRank,
         espnAvgRank,
         ringerPosRank,
+        bbAdpPosRank,
         industryAvgRank,
         posRankDelta,
         verdict,
@@ -272,9 +280,10 @@ function InfoTooltip() {
             <strong className="block text-[var(--color-text)]" style={{ marginBottom: 2 }}>
               Industry rank
             </strong>
-            Average of four PPR sources: FantasyPros consensus ECR, Underdog Sports rankings,
-            ESPN&apos;s preseason AVG (mean of 8 ESPN expert rankers), and The Ringer&apos;s
-            consensus (avg of Heifetz, Kelly, and Horlbeck).
+            Average of five PPR sources: FantasyPros consensus ECR, Underdog Sports rankings,
+            ESPN&apos;s preseason AVG (mean of 8 ESPN expert rankers), The Ringer&apos;s
+            consensus (avg of Heifetz, Kelly, and Horlbeck), and FantasyPros Best Ball ADP
+            (averaged across BB10, RTSports, Underdog, Drafters, and DraftKings).
           </span>
           <span className="mt-3 block">
             <strong className="block text-[var(--color-text)]" style={{ marginBottom: 2 }}>
