@@ -16,12 +16,7 @@ export interface PlayerStatusEntry {
   detail?: string;     // optional secondary line for tooltip
 }
 
-export const PLAYER_STATUS: Record<string, PlayerStatusEntry> = {
-  "rashee-rice": {
-    kind: "jail",
-    label: "In Jail",
-  },
-};
+export const PLAYER_STATUS: Record<string, PlayerStatusEntry> = {};
 
 export function getPlayerStatus(playerId: string): PlayerStatusEntry | null {
   return PLAYER_STATUS[playerId] ?? null;
