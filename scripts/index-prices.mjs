@@ -41,6 +41,20 @@
  * Compact array-by-index format keeps the JSON small enough that the
  * deployed app can fetch the full history (7 days × 96 samples/day ≈
  * 670 snapshots × 72 prices ≈ 500KB) on each render.
+ *
+ * SIZE MATTERS: Next.js refuses to cache fetch responses over 2MB
+ * ("items over 2MB can not be cached"), which silently turns every
+ * cold render into a full re-download of this file from GitHub raw.
+ * Two guards keep us under the limit:
+ *   1. Prices are rounded to 6 significant digits and supplies to
+ *      whole shares — raw float64 serializes at 17+ digits and was
+ *      the bulk of the old 2.9MB file.
+ *   2. JSON is written compact (no pretty-print) — the old 2-space
+ *      indent put every number on its own line and roughly doubled
+ *      the file.
+ * Existing snapshots are re-rounded on every run, so the file shrank
+ * to spec on the first run after this change without any manual
+ * data-branch surgery.
  */
 
 import { promises as fs } from "node:fs";
@@ -86,6 +100,14 @@ const TOKEN_ID_SUFFIXES = [
 // supply = TOTAL_SUPPLY − (what the bonding curve still holds).
 const TOTAL_SUPPLY_PER_TOKEN = 25_000_000;
 
+// Round to 6 significant digits. Token prices sit around $0.001-$0.05,
+// so 6 sig digits preserves far more precision than the UI ever shows
+// (fmtPrice displays 3-5) while cutting ~11 serialized chars per value.
+function sig6(n) {
+  if (!Number.isFinite(n) || n === 0) return 0;
+  return Number(n.toPrecision(6));
+}
+
 async function fetchOnchainSpotsAndSupplies(tokenIdsBig) {
   // Call 1: PAIR.getCurrencyReserves(tokenIds) → USDC reserves
   const currencyReserves = await client.readContract({
@@ -123,8 +145,8 @@ async function fetchOnchainSpotsAndSupplies(tokenIdsBig) {
     const currUsd = Number(currencyReserves[i] ?? 0n) / 1e6;
     const pairTokenCount = Number(pairBalances[i] ?? 0n) / 1e18;
     const contractTokenCount = Number(contractBalances[i] ?? 0n) / 1e18;
-    prices[i] = pairTokenCount > 0 ? currUsd / pairTokenCount : 0;
-    supplies[i] = Math.max(0, TOTAL_SUPPLY_PER_TOKEN - contractTokenCount);
+    prices[i] = sig6(pairTokenCount > 0 ? currUsd / pairTokenCount : 0);
+    supplies[i] = Math.round(Math.max(0, TOTAL_SUPPLY_PER_TOKEN - contractTokenCount));
   }
   return { prices, supplies };
 }
@@ -186,7 +208,15 @@ async function main() {
     store.snapshots = store.snapshots.slice(-HISTORY_LIMIT);
   }
 
-  const json = JSON.stringify(store, null, 2) + "\n";
+  // Retroactively compact snapshots written before the rounding was
+  // introduced — full-precision float64 entries are what pushed the
+  // file past Next's 2MB fetch-cache ceiling.
+  for (const s of store.snapshots) {
+    s.prices = s.prices.map(sig6);
+    if (Array.isArray(s.supplies)) s.supplies = s.supplies.map(Math.round);
+  }
+
+  const json = JSON.stringify(store) + "\n";
   const durationMs = Date.now() - start;
 
   const write = process.argv.includes("--write");

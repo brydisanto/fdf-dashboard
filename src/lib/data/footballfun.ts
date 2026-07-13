@@ -252,26 +252,29 @@ function buildPlayerSummary(player: NflPlayer, row: TeneroTokenRow): PlayerSumma
     team: player.team,
     jerseyNumber: player.jerseyNumber,
     playerId: player.id,
-    priceUsd: price,
+    // sig() rounding at the serialization boundary — these objects are
+    // client-component props, so every extra digit ships twice (HTML +
+    // flight). 8 sig digits is far beyond display precision.
+    priceUsd: sig(price, 8),
     change1h,
     change6h,
     change24h,
     change7d,
     marketCap,
-    volume24h: Number(row.metrics?.volume_1d_usd ?? 0),
-    volume7d: Number(row.metrics?.volume_7d_usd ?? 0),
+    volume24h: sig(Number(row.metrics?.volume_1d_usd ?? 0), 8),
+    volume7d: sig(Number(row.metrics?.volume_7d_usd ?? 0), 8),
     trades24h: Number(row.metrics?.swaps_1d ?? 0),
     holders: Number(row.holder_count ?? 0),
-    circulatingSupply: circulating,
-    poolSupply,
-    activeSupply,
-    maxSupply: totalSupply,
-    tvl: Number(row.total_liquidity_usd ?? 0),
+    circulatingSupply: Math.round(circulating),
+    poolSupply: Math.round(poolSupply),
+    activeSupply: Math.round(activeSupply),
+    maxSupply: Math.round(totalSupply),
+    tvl: sig(Number(row.total_liquidity_usd ?? 0), 8),
     // ATH/ATL aren't returned in this row; show current as a placeholder.
     // The OHLC endpoint can give a real value later.
-    ath: Math.max(price, Number(row.price?.price_30d_ago ?? price), Number(row.price?.price_7d_ago ?? price)),
+    ath: sig(Math.max(price, Number(row.price?.price_30d_ago ?? price), Number(row.price?.price_7d_ago ?? price)), 8),
     athDate: new Date().toISOString(),
-    atl: Math.min(price, Number(row.price?.price_30d_ago ?? price), Number(row.price?.price_7d_ago ?? price)),
+    atl: sig(Math.min(price, Number(row.price?.price_30d_ago ?? price), Number(row.price?.price_7d_ago ?? price)), 8),
     atlDate: new Date().toISOString(),
     sparkline7d: [],
   };
@@ -516,6 +519,34 @@ async function fetchNflTokenMap(): Promise<Map<string, TeneroTokenRow>> {
 
 // ---------- Sparklines (cheap: derive from prior price points) ----------
 
+// Round to N significant digits — used at every client-serialization
+// boundary. PlayerSummary objects are props to "use client" tables
+// (PlayersTable, RecentTrades, MoversList...), so every field ships
+// twice: once as SSR HTML and once in the RSC flight payload. Raw
+// float64 division results serialize at 17+ digits
+// ("0.011883434911071626"); the UI displays at most 5.
+function sig(n: number, digits: number): number {
+  if (!Number.isFinite(n) || n === 0) return 0;
+  return Number(n.toPrecision(digits));
+}
+
+// Downsample a sparkline to ~30 evenly-spaced points at 4 significant
+// digits. The chart is ~110px wide, so more points than that is pure
+// payload: the pre-trim shape was 72 players × 87 points × 21 chars
+// ≈ 133KB of flight data for pixels nobody can see. First and last
+// points are always kept so the endpoints match the price column.
+const SPARKLINE_MAX_POINTS = 30;
+function compactSparkline(points: number[]): number[] {
+  const rounded =
+    points.length <= SPARKLINE_MAX_POINTS
+      ? points.slice()
+      : Array.from({ length: SPARKLINE_MAX_POINTS }, (_, i) => {
+          const idx = Math.round((i * (points.length - 1)) / (SPARKLINE_MAX_POINTS - 1));
+          return points[idx];
+        });
+  return rounded.map((v) => sig(v, 4));
+}
+
 function tinySparkline(row: TeneroTokenRow): number[] {
   const p = row.price ?? ({} as TeneroTokenRow["price"]);
   const points = [
@@ -526,7 +557,7 @@ function tinySparkline(row: TeneroTokenRow): number[] {
     Number(p.price_1h_ago  ?? p.current_price),
     Number(p.current_price ?? 0),
   ];
-  return points.map((v) => (Number.isFinite(v) ? v : 0));
+  return compactSparkline(points.map((v) => (Number.isFinite(v) ? v : 0)));
 }
 
 // ---------- Public API ----------
@@ -674,7 +705,7 @@ async function computePlayers(): Promise<PlayerSummary[]> {
         // Always terminate at the live spot so the sparkline's last
         // point matches the table's price column exactly.
         points.push(spot);
-        if (points.length >= 2) summary.sparkline7d = points;
+        if (points.length >= 2) summary.sparkline7d = compactSparkline(points);
       }
     }
   });
@@ -1288,14 +1319,16 @@ function mapTrade(t: TeneroTradeRow, playerId: string): Trade {
   }
 
   // `block_time` from the upstream API is already in milliseconds.
+  // sig() rounding — Trade objects are props to the "use client"
+  // RecentTrades table, so every digit ships twice (HTML + flight).
   return {
     id: `${t.tx_id}-${t.tx_index}-${t.event_index}`,
     playerId,
     side,
     flow,
-    priceUsd: Number(t.price_usd ?? t.price ?? 0),
-    amount: Number(t.base_token_amount ?? 0),
-    totalUsd: Number(t.amount_usd ?? 0),
+    priceUsd: sig(Number(t.price_usd ?? t.price ?? 0), 8),
+    amount: sig(Number(t.base_token_amount ?? 0), 8),
+    totalUsd: sig(Number(t.amount_usd ?? 0), 8),
     wallet,
     txHash: t.tx_id,
     timestamp: Number(t.block_time),

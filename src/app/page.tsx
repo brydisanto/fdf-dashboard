@@ -9,8 +9,9 @@ import {
 } from "@/lib/data";
 import { Card, CardHeader, Pill, Delta } from "@/components/ui";
 import { MarketStatBar } from "@/components/MarketStatBar";
-import { MarketCapChart } from "@/components/MarketCharts";
-import { MarketPulse } from "@/components/MarketPulse";
+// Charts come from LazyCharts (client-only dynamic imports) so the
+// ~105KB recharts chunk loads after hydration instead of blocking it.
+import { MarketCapChart, MarketPulse } from "@/components/LazyCharts";
 import { MoversList } from "@/components/MoversList";
 import { PlayersTable } from "@/components/PlayersTable";
 import { RecentTrades } from "@/components/RecentTrades";
@@ -33,7 +34,11 @@ export const dynamic = "force-dynamic";
 // `await Promise.all` blocking page render anymore.
 const loadOverview = cache(() => getMarketOverview());
 const loadPlayers = cache(() => getPlayers());
-const loadFeedAndFlow = cache(() => getNflTradeFeedAndFlow(100, 200));
+// feedLimit 75 (was 200): every trade serializes twice to the client
+// (SSR HTML + RSC flight) at ~450 bytes each, and the filter UI is
+// still useful with 75 rows. perPool stays 100 so the FlowRollup's
+// 24h aggregates keep their full sample.
+const loadFeedAndFlow = cache(() => getNflTradeFeedAndFlow(100, 75));
 const loadDailyVolume = cache(() => getNflDailyVolume(30));
 
 // Synchronous page shell. The hero paints on the very first frame.

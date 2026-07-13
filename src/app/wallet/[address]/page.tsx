@@ -4,8 +4,8 @@ import { getWalletPortfolio, getWalletFlow, getWalletFunPosition, getWalletTrade
 import { ROSTER_BY_TOKEN } from "@/lib/data/roster";
 import { Card, CardHeader, Pill } from "@/components/ui";
 import { tierLabel, TIER_META } from "@/components/WalletBadge";
-import { CompositionPie, type CompositionSlice } from "@/components/CompositionPie";
-import { WalletFlowChart } from "@/components/WalletFlowChart";
+import { CompositionPie, WalletFlowChart } from "@/components/LazyCharts";
+import { type CompositionSlice } from "@/components/CompositionPie";
 import { WalletHoldingsTable } from "@/components/WalletHoldingsTable";
 import { WalletTradesTable } from "@/components/WalletTradesTable";
 import { getWalletLabel } from "@/lib/data/wallet-labels";
