@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Card, CardHeader, Pill } from "./ui";
-import { ValueScatter } from "./ValueScatter";
+import { ValueScatter } from "./LazyCharts";
 import { ValueTable, type ValueRow } from "./ValueTable";
 import type { Position } from "@/lib/types";
 

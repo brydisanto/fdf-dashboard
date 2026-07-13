@@ -35,6 +35,12 @@ const display = Big_Shoulders({
   subsets: ["latin"],
   weight: ["500", "700", "800", "900"],
   variable: "--font-display-raw",
+  // next/font has no size-adjust metrics for Big Shoulders (build
+  // warning: "Failed to find font override values"), so it can't
+  // synthesize a matched fallback. Give it explicit condensed-ish
+  // fallbacks and skip the auto-adjust attempt.
+  fallback: ["Arial Narrow", "Impact", "sans-serif"],
+  adjustFontFallback: false,
 });
 
 const mono = JetBrains_Mono({

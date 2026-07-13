@@ -176,7 +176,7 @@ export default async function ValuePage() {
         <div className="relative flex flex-col gap-6" style={{ padding: "32px 32px 28px" }}>
           <div className="flex flex-wrap items-center gap-2">
             <Pill tone="brand">Rank Disparity</Pill>
-            <Pill tone="muted">PPR · 4-source industry consensus</Pill>
+            <Pill tone="muted">PPR · 5-source industry consensus</Pill>
           </div>
           <h1
             className="m-0 text-[var(--color-text)]"

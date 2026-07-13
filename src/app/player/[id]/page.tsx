@@ -13,7 +13,7 @@ import {
   type WalletSnapshot,
 } from "@/lib/data";
 import { Card, CardHeader, Delta, Pill } from "@/components/ui";
-import { PlayerPriceChart } from "@/components/PlayerPriceChart";
+import { PlayerPriceChart } from "@/components/LazyCharts";
 import { HoldersBreakdown } from "@/components/HoldersBreakdown";
 import { LargestHoldersTable } from "@/components/LargestHoldersTable";
 import { PlayerStatusBadge } from "@/components/PlayerStatusBadge";
