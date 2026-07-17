@@ -4,10 +4,42 @@
 // Value Plays consensus, alongside FantasyPros consensus ECR
 // (cheatsheet), Underdog, ESPN, and The Ringer.
 //
-// Each positional page (best-ball-qb.php, best-ball-rb.php, etc.)
-// embeds a server-rendered <table id="data"> with one row per player.
-// Column 1 is the positional rank derived from the average ADP
-// across BB10, RTSports, Underdog, Drafters, and DraftKings.
+// ┌─────────────────────────────────────────────────────────────────┐
+// │ BROKEN AS OF 2026-07 — REFRESH VIA CHROME MCP INSTEAD.          │
+// └─────────────────────────────────────────────────────────────────┘
+//
+// FantasyPros redesigned these pages: the ADP table used to be a
+// server-rendered <table id="data">, and is now a JS-hydrated
+// <table class="mcu-table">. A plain fetch gets HTML with no ADP
+// table in it at all (only the unrelated #experts table), so this
+// script can't work from a server runtime any more. There's also no
+// JSON API to hit — the page's only XHRs are myplaybook/user-info.
+//
+// The data still extracts cleanly from a real browser. Open each of
+// the four pages via Chrome MCP and run:
+//
+//   const t = document.querySelector("table.mcu-table");
+//   const out = [];
+//   for (let r = 1; r < t.rows.length; r++) {
+//     const c = Array.from(t.rows[r].cells)
+//       .map(x => x.innerText.replace(/\s+/g, " ").trim());
+//     if (c.length < 3) continue;
+//     const rank = parseInt(c[0], 10);
+//     const name = (c[2] || "")
+//       .replace(/\s+\([0-9]+\)\s*$/, "")   // strip "(7)" bye
+//       .replace(/\s+[A-Z]{2,3}\s*$/, "")   // strip trailing team
+//       .trim();
+//     if (Number.isFinite(rank) && name) out.push([rank, name]);
+//   }
+//   JSON.stringify(out)
+//
+// (Slice the output — the tool result truncates around 50 rows.)
+// Then hand the rows into src/lib/data/best-ball-adp.json. The same
+// Chrome-scrape constraint already applies to ESPN and Underdog; see
+// scripts/build-espn-rankings.mjs.
+//
+// Kept in the tree because the fetch+parse skeleton is still the
+// right shape if FantasyPros ever server-renders this again.
 //
 //   node scripts/scrape-best-ball-adp.mjs
 
@@ -41,7 +73,14 @@ async function scrapeOne(pos) {
   // Isolate the table#data — the page has multiple tables, so we
   // anchor on the exact opening tag the FP template emits.
   const tableStart = html.indexOf('<table cellpadding="0" cellspacing="0" border="0" id="data"');
-  if (tableStart < 0) throw new Error(`No table#data in ${url}`);
+  if (tableStart < 0) {
+    throw new Error(
+      `No server-rendered ADP table in ${url}.\n` +
+      `FantasyPros now hydrates this table client-side (table.mcu-table), ` +
+      `so a plain fetch can't see it. Refresh via a Chrome MCP scrape — ` +
+      `see the extraction snippet in this file's header.`,
+    );
+  }
   const tableEnd = html.indexOf("</table>", tableStart);
   const tableHtml = html.slice(tableStart, tableEnd + 8);
 
