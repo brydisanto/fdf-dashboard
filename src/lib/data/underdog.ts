@@ -2,12 +2,24 @@ import "server-only";
 
 import data from "./underdog-rankings.json";
 
-// Underdog Sports PPR positional rankings, sourced manually from
-// app.underdogsports.com/rankings/nfl/<RANKER_ID> via Chrome MCP and
-// committed to underdog-rankings.json. The Underdog app sits behind
-// Cloudflare bot protection, so we can't scrape it from a serverless
-// runtime — refresh by re-running the Chrome MCP scrape and updating
-// the JSON file when rankings shift meaningfully.
+// Underdog positional ranks, committed to underdog-rankings.json.
+//
+// Source changed 2026-07-17. This used to come from
+// app.underdogsports.com/rankings/nfl/<RANKER_ID> — one Underdog
+// ranker's editorial list — but that page now requires a login, so
+// it can't be refreshed unattended. The ranks now come from the
+// UNDERDOG column of FantasyPros' Best Ball ADP tables, i.e.
+// Underdog's own best-ball ADP expressed as a positional rank. It's
+// the same book, but it measures real draft behavior rather than a
+// ranker's opinion — and it refreshes in the same Chrome pass that
+// feeds best-ball-adp.json.
+//
+// Caveat worth remembering: Underdog is ALSO one of the five books
+// averaged into best-ball-adp.json, so these two Value Plays sources
+// now partially overlap. Underdog ends up carrying ~24% of the
+// 5-source consensus (a full 1/5 slot, plus 1/5 of the BB ADP slot)
+// against 20% for each fully independent source. Small enough to
+// live with; large enough to not forget.
 
 export interface UdPlayer {
   name: string;

@@ -1,652 +1,172 @@
 {
-  "_note": "ESPN Fantasy preseason 2026 PPR positional rankings — the AVG column (mean of 8 ESPN expert rankers). Sourced via Chrome MCP from espn.com/fantasy/football/story/_/page/FFPreseasonRank26<POS>/. ESPN is JS-rendered; refresh by re-running the Chrome MCP scrape. Each entry is [name, avgRank].",
-  "updatedAt": "2026-06-08",
+  "_note": "ESPN Fantasy preseason 2026 PPR positional rankings — the AVG column (mean of 8 ESPN expert rankers: Bowen, Clay, Cockcroft, Dopp, Karabell, Loza, Moody, Yates). Sourced via Chrome MCP from espn.com/fantasy/football/story/_/page/FFPreseasonRank26<POS>/. ESPN is JS-rendered AND intermittently 403s server-side fetches behind CloudFront, so this can only be refreshed from a real browser session. Each entry is [name, avgRank]. Depth is whatever ESPN publishes: QB 25 / RB 50 / WR 60 / TE 25.",
+  "updatedAt": "2026-07-17",
   "QB": [
-    [
-      "Josh Allen",
-      1.1
-    ],
-    [
-      "Lamar Jackson",
-      2.4
-    ],
-    [
-      "Jayden Daniels",
-      3.1
-    ],
-    [
-      "Drake Maye",
-      3.8
-    ],
-    [
-      "Jalen Hurts",
-      5.3
-    ],
-    [
-      "Joe Burrow",
-      5.8
-    ],
-    [
-      "Jaxson Dart",
-      7.3
-    ],
-    [
-      "Brock Purdy",
-      9.9
-    ],
-    [
-      "Caleb Williams",
-      9.9
-    ],
-    [
-      "Trevor Lawrence",
-      10.9
-    ],
-    [
-      "Dak Prescott",
-      11.1
-    ],
-    [
-      "Patrick Mahomes",
-      11.6
-    ],
-    [
-      "Bo Nix",
-      12.1
-    ],
-    [
-      "Justin Herbert",
-      12.5
-    ],
-    [
-      "Matthew Stafford",
-      14.8
-    ],
-    [
-      "Kyler Murray",
-      16.1
-    ],
-    [
-      "Tyler Shough",
-      16.9
-    ],
-    [
-      "Baker Mayfield",
-      18.9
-    ],
-    [
-      "Jared Goff",
-      19.3
-    ],
-    [
-      "Jordan Love",
-      19.8
-    ],
-    [
-      "Daniel Jones",
-      20.5
-    ],
-    [
-      "Malik Willis",
-      20.8
-    ],
-    [
-      "C.J. Stroud",
-      23.4
-    ],
-    [
-      "Sam Darnold",
-      24.1
-    ],
-    [
-      "Cam Ward",
-      24.4
-    ]
+    ["Josh Allen", 1.1],
+    ["Lamar Jackson", 2.1],
+    ["Jayden Daniels", 3.5],
+    ["Drake Maye", 4.3],
+    ["Jalen Hurts", 5.0],
+    ["Joe Burrow", 5.3],
+    ["Jaxson Dart", 7.8],
+    ["Brock Purdy", 9.9],
+    ["Trevor Lawrence", 10.4],
+    ["Dak Prescott", 10.4],
+    ["Caleb Williams", 10.4],
+    ["Justin Herbert", 11.1],
+    ["Patrick Mahomes", 12.5],
+    ["Bo Nix", 12.8],
+    ["Matthew Stafford", 14.6],
+    ["Kyler Murray", 15.9],
+    ["Tyler Shough", 17.3],
+    ["Baker Mayfield", 19.0],
+    ["Jared Goff", 19.1],
+    ["Jordan Love", 19.9],
+    ["Daniel Jones", 20.8],
+    ["Malik Willis", 20.9],
+    ["C.J. Stroud", 23.0],
+    ["Sam Darnold", 24.3],
+    ["Cam Ward", 24.4]
   ],
   "RB": [
-    [
-      "Bijan Robinson",
-      1.3
-    ],
-    [
-      "Jahmyr Gibbs",
-      1.8
-    ],
-    [
-      "Christian McCaffrey",
-      3.9
-    ],
-    [
-      "Jonathan Taylor",
-      3.9
-    ],
-    [
-      "De'Von Achane",
-      4.9
-    ],
-    [
-      "James Cook III",
-      6.1
-    ],
-    [
-      "Ashton Jeanty",
-      7.4
-    ],
-    [
-      "Saquon Barkley",
-      9.5
-    ],
-    [
-      "Derrick Henry",
-      9.9
-    ],
-    [
-      "Jeremiyah Love",
-      10.3
-    ],
-    [
-      "Omarion Hampton",
-      10.6
-    ],
-    [
-      "Chase Brown",
-      11
-    ],
-    [
-      "Josh Jacobs",
-      11.9
-    ],
-    [
-      "Kenneth Walker III",
-      13.4
-    ],
-    [
-      "Breece Hall",
-      14.8
-    ],
-    [
-      "Javonte Williams",
-      15.9
-    ],
-    [
-      "Kyren Williams",
-      17.4
-    ],
-    [
-      "Travis Etienne Jr.",
-      17.8
-    ],
-    [
-      "Cam Skattebo",
-      20
-    ],
-    [
-      "Bucky Irving",
-      20.1
-    ],
-    [
-      "Quinshon Judkins",
-      20.3
-    ],
-    [
-      "D'Andre Swift",
-      23
-    ],
-    [
-      "Chuba Hubbard",
-      24
-    ],
-    [
-      "TreVeyon Henderson",
-      24.1
-    ],
-    [
-      "Bhayshul Tuten",
-      25.4
-    ],
-    [
-      "David Montgomery",
-      25.8
-    ],
-    [
-      "Jadarian Price",
-      25.9
-    ],
-    [
-      "Tony Pollard",
-      28.3
-    ],
-    [
-      "Jaylen Warren",
-      30.3
-    ],
-    [
-      "Aaron Jones Sr.",
-      30.6
-    ],
-    [
-      "Rhamondre Stevenson",
-      31
-    ],
-    [
-      "Rico Dowdle",
-      32.5
-    ],
-    [
-      "RJ Harvey",
-      32.5
-    ],
-    [
-      "Kenneth Gainwell",
-      33.1
-    ],
-    [
-      "J.K. Dobbins",
-      34.1
-    ],
-    [
-      "Rachaad White",
-      35
-    ],
-    [
-      "Kyle Monangai",
-      36.3
-    ],
-    [
-      "Blake Corum",
-      38.3
-    ],
-    [
-      "Jonathon Brooks",
-      41.4
-    ],
-    [
-      "Zach Charbonnet",
-      41.5
-    ],
-    [
-      "Jacory Croskey-Merritt",
-      41.8
-    ],
-    [
-      "Tyjae Spears",
-      42.8
-    ],
-    [
-      "Jordan Mason",
-      42.9
-    ],
-    [
-      "Isiah Pacheco",
-      44
-    ],
-    [
-      "Woody Marks",
-      44.1
-    ],
-    [
-      "Alvin Kamara",
-      45
-    ],
-    [
-      "Tyrone Tracy Jr.",
-      48.1
-    ],
-    [
-      "Justice Hill",
-      48.5
-    ],
-    [
-      "Tyler Allgeier",
-      49.5
-    ],
-    [
-      "Chris Rodriguez Jr.",
-      49.6
-    ]
+    ["Bijan Robinson", 1.4],
+    ["Jahmyr Gibbs", 1.6],
+    ["Jonathan Taylor", 4.1],
+    ["Christian McCaffrey", 4.4],
+    ["James Cook III", 5.5],
+    ["De'Von Achane", 5.5],
+    ["Ashton Jeanty", 7.4],
+    ["Omarion Hampton", 9.0],
+    ["Saquon Barkley", 9.4],
+    ["Chase Brown", 10.4],
+    ["Derrick Henry", 10.5],
+    ["Jeremiyah Love", 11.0],
+    ["Josh Jacobs", 12.8],
+    ["Kenneth Walker III", 12.9],
+    ["Breece Hall", 14.9],
+    ["Javonte Williams", 16.1],
+    ["Kyren Williams", 17.0],
+    ["Travis Etienne Jr.", 17.3],
+    ["Cam Skattebo", 19.9],
+    ["Quinshon Judkins", 20.3],
+    ["Bucky Irving", 20.3],
+    ["D'Andre Swift", 22.9],
+    ["TreVeyon Henderson", 23.9],
+    ["David Montgomery", 24.9],
+    ["Bhayshul Tuten", 25.3],
+    ["Jadarian Price", 25.8],
+    ["Chuba Hubbard", 25.9],
+    ["Tony Pollard", 28.6],
+    ["Jaylen Warren", 29.9],
+    ["Rhamondre Stevenson", 30.8],
+    ["Aaron Jones Sr.", 32.0],
+    ["Kenny Gainwell", 32.3],
+    ["Rico Dowdle", 32.5],
+    ["RJ Harvey", 32.9],
+    ["Rachaad White", 34.3],
+    ["J.K. Dobbins", 34.4],
+    ["Kyle Monangai", 36.1],
+    ["Blake Corum", 38.4],
+    ["Jonathon Brooks", 40.8],
+    ["Zach Charbonnet", 41.6],
+    ["Jacory Croskey-Merritt", 41.9],
+    ["Tyjae Spears", 42.9],
+    ["Jordan Mason", 43.1],
+    ["Isiah Pacheco", 44.1],
+    ["Woody Marks", 44.4],
+    ["Alvin Kamara", 44.5],
+    ["Tyrone Tracy Jr.", 48.1],
+    ["Justice Hill", 48.5],
+    ["Tyler Allgeier", 49.5],
+    ["Chris Rodriguez Jr.", 49.6]
   ],
   "WR": [
-    [
-      "Ja'Marr Chase",
-      1.4
-    ],
-    [
-      "Puka Nacua",
-      2
-    ],
-    [
-      "Jaxon Smith-Njigba",
-      2.6
-    ],
-    [
-      "Amon-Ra St. Brown",
-      4.1
-    ],
-    [
-      "CeeDee Lamb",
-      5.5
-    ],
-    [
-      "Justin Jefferson",
-      5.9
-    ],
-    [
-      "Drake London",
-      7.1
-    ],
-    [
-      "Rashee Rice",
-      8.9
-    ],
-    [
-      "Nico Collins",
-      10
-    ],
-    [
-      "Chris Olave",
-      10.6
-    ],
-    [
-      "Malik Nabers",
-      11.1
-    ],
-    [
-      "A.J. Brown",
-      12.1
-    ],
-    [
-      "George Pickens",
-      12.1
-    ],
-    [
-      "Garrett Wilson",
-      12.4
-    ],
-    [
-      "DeVonta Smith",
-      16.3
-    ],
-    [
-      "Zay Flowers",
-      17
-    ],
-    [
-      "Tetairoa McMillan",
-      17.1
-    ],
-    [
-      "Davante Adams",
-      19.1
-    ],
-    [
-      "Tee Higgins",
-      19.4
-    ],
-    [
-      "Jaylen Waddle",
-      20.6
-    ],
-    [
-      "Terry McLaurin",
-      20.8
-    ],
-    [
-      "Ladd McConkey",
-      21.6
-    ],
-    [
-      "Emeka Egbuka",
-      22.1
-    ],
-    [
-      "Rome Odunze",
-      25.3
-    ],
-    [
-      "Jameson Williams",
-      26
-    ],
-    [
-      "DJ Moore",
-      27
-    ],
-    [
-      "Carnell Tate",
-      27.6
-    ],
-    [
-      "Luther Burden III",
-      28.3
-    ],
-    [
-      "DK Metcalf",
-      29.9
-    ],
-    [
-      "Marvin Harrison Jr.",
-      30.1
-    ],
-    [
-      "Courtland Sutton",
-      31
-    ],
-    [
-      "Mike Evans",
-      31.6
-    ],
-    [
-      "Michael Pittman Jr.",
-      32.4
-    ],
-    [
-      "Alec Pierce",
-      34.6
-    ],
-    [
-      "Jordyn Tyson",
-      36.1
-    ],
-    [
-      "Christian Watson",
-      36.4
-    ],
-    [
-      "Jakobi Meyers",
-      37.4
-    ],
-    [
-      "Parker Washington",
-      38.8
-    ],
-    [
-      "Wan'Dale Robinson",
-      38.8
-    ],
-    [
-      "Michael Wilson",
-      39
-    ],
-    [
-      "Chris Godwin Jr.",
-      39.4
-    ],
-    [
-      "Makai Lemon",
-      43.5
-    ],
-    [
-      "Ricky Pearsall",
-      43.8
-    ],
-    [
-      "Matthew Golden",
-      44.5
-    ],
-    [
-      "Brian Thomas Jr.",
-      44.9
-    ],
-    [
-      "Jordan Addison",
-      45.6
-    ],
-    [
-      "Khalil Shakir",
-      47.4
-    ],
-    [
-      "Romeo Doubs",
-      48.6
-    ],
-    [
-      "Jayden Reed",
-      49
-    ],
-    [
-      "KC Concepcion",
-      49.9
-    ],
-    [
-      "Xavier Worthy",
-      50.5
-    ],
-    [
-      "Quentin Johnston",
-      52.5
-    ],
-    [
-      "Calvin Ridley",
-      52.8
-    ],
-    [
-      "Josh Downs",
-      53.6
-    ],
-    [
-      "Jalen Coker",
-      53.6
-    ],
-    [
-      "Omar Cooper Jr.",
-      55.1
-    ],
-    [
-      "Jayden Higgins",
-      56.3
-    ],
-    [
-      "Jerry Jeudy",
-      56.9
-    ],
-    [
-      "Rashid Shaheed",
-      57.6
-    ],
-    [
-      "Jalen McMillan",
-      58.8
-    ]
+    ["Puka Nacua", 1.5],
+    ["Ja'Marr Chase", 1.6],
+    ["Jaxon Smith-Njigba", 2.9],
+    ["Amon-Ra St. Brown", 4.1],
+    ["CeeDee Lamb", 5.4],
+    ["Justin Jefferson", 5.6],
+    ["Drake London", 7.3],
+    ["Nico Collins", 9.4],
+    ["Rashee Rice", 9.5],
+    ["Chris Olave", 10.5],
+    ["A.J. Brown", 11.0],
+    ["George Pickens", 11.1],
+    ["Garrett Wilson", 12.8],
+    ["Tetairoa McMillan", 15.3],
+    ["Malik Nabers", 15.8],
+    ["DeVonta Smith", 16.0],
+    ["Zay Flowers", 16.8],
+    ["Tee Higgins", 19.1],
+    ["Emeka Egbuka", 19.8],
+    ["Ladd McConkey", 20.1],
+    ["Davante Adams", 21.0],
+    ["Terry McLaurin", 21.0],
+    ["Jaylen Waddle", 21.4],
+    ["Jameson Williams", 25.5],
+    ["Rome Odunze", 25.9],
+    ["Luther Burden III", 26.0],
+    ["DJ Moore", 26.9],
+    ["Carnell Tate", 28.5],
+    ["DK Metcalf", 30.4],
+    ["Marvin Harrison Jr.", 30.4],
+    ["Mike Evans", 31.1],
+    ["Courtland Sutton", 31.8],
+    ["Michael Pittman Jr.", 32.8],
+    ["Christian Watson", 36.3],
+    ["Alec Pierce", 36.5],
+    ["Jordyn Tyson", 36.5],
+    ["Jakobi Meyers", 37.9],
+    ["Wan'Dale Robinson", 38.3],
+    ["Michael Wilson", 38.5],
+    ["Parker Washington", 38.9],
+    ["Chris Godwin Jr.", 39.4],
+    ["Ricky Pearsall", 42.4],
+    ["Matthew Golden", 42.6],
+    ["Brian Thomas Jr.", 42.6],
+    ["Makai Lemon", 43.8],
+    ["Jordan Addison", 45.6],
+    ["Khalil Shakir", 48.5],
+    ["Jayden Reed", 48.6],
+    ["Romeo Doubs", 48.9],
+    ["KC Concepcion", 50.6],
+    ["Xavier Worthy", 50.9],
+    ["Quentin Johnston", 51.9],
+    ["Josh Downs", 52.9],
+    ["Jalen Coker", 53.9],
+    ["Calvin Ridley", 54.5],
+    ["Jayden Higgins", 54.8],
+    ["Rashid Shaheed", 56.9],
+    ["Jerry Jeudy", 57.0],
+    ["Jalen McMillan", 58.1],
+    ["Omar Cooper Jr.", 58.5]
   ],
   "TE": [
-    [
-      "Trey McBride",
-      1
-    ],
-    [
-      "Brock Bowers",
-      2
-    ],
-    [
-      "Colston Loveland",
-      3.5
-    ],
-    [
-      "Tyler Warren",
-      3.9
-    ],
-    [
-      "Harold Fannin Jr.",
-      4.8
-    ],
-    [
-      "Kyle Pitts Sr.",
-      6.5
-    ],
-    [
-      "Sam LaPorta",
-      6.8
-    ],
-    [
-      "Tucker Kraft",
-      8.5
-    ],
-    [
-      "Travis Kelce",
-      10
-    ],
-    [
-      "Dallas Goedert",
-      10.3
-    ],
-    [
-      "Jake Ferguson",
-      10.8
-    ],
-    [
-      "Mark Andrews",
-      13.8
-    ],
-    [
-      "Isaiah Likely",
-      14.3
-    ],
-    [
-      "George Kittle",
-      14.5
-    ],
-    [
-      "Dalton Kincaid",
-      16.3
-    ],
-    [
-      "Juwan Johnson",
-      16.5
-    ],
-    [
-      "T.J. Hockenson",
-      16.8
-    ],
-    [
-      "Kenyon Sadiq",
-      18
-    ],
-    [
-      "Hunter Henry",
-      18.3
-    ],
-    [
-      "Brenton Strange",
-      19.3
-    ],
-    [
-      "Oronde Gadsden",
-      19.5
-    ],
-    [
-      "Dalton Schultz",
-      22
-    ],
-    [
-      "Chig Okonkwo",
-      22.5
-    ],
-    [
-      "Pat Freiermuth",
-      22.8
-    ],
-    [
-      "Gunnar Helm",
-      23.9
-    ]
+    ["Trey McBride", 1.3],
+    ["Brock Bowers", 1.8],
+    ["Colston Loveland", 3.3],
+    ["Tyler Warren", 3.9],
+    ["Harold Fannin Jr.", 5.3],
+    ["Kyle Pitts Sr.", 6.8],
+    ["Sam LaPorta", 6.9],
+    ["Tucker Kraft", 8.8],
+    ["George Kittle", 9.4],
+    ["Travis Kelce", 10.5],
+    ["Jake Ferguson", 10.6],
+    ["Dallas Goedert", 11.8],
+    ["Isaiah Likely", 14.1],
+    ["Mark Andrews", 14.6],
+    ["Dalton Kincaid", 16.8],
+    ["Juwan Johnson", 17.0],
+    ["T.J. Hockenson", 17.4],
+    ["Kenyon Sadiq", 17.8],
+    ["Hunter Henry", 18.0],
+    ["Brenton Strange", 19.4],
+    ["Oronde Gadsden", 19.8],
+    ["Dalton Schultz", 22.0],
+    ["Chig Okonkwo", 22.5],
+    ["Pat Freiermuth", 22.9],
+    ["Gunnar Helm", 23.9]
   ]
 }
