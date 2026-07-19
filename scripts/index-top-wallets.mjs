@@ -450,13 +450,39 @@ async function main() {
     });
 
   // Sanity check: never overwrite a good snapshot with degenerate
-  // output. If Phase 1 (Tenero) returned almost nothing, the cron
-  // hit an upstream outage or rate-limit — fail loudly instead of
-  // committing a 2-wallet leaderboard.
-  if (wallets.length < 50) {
+  // output. Two failure modes:
+  //   (a) Total outage — Tenero 500s everything, candidates≈0. Caught
+  //       by the absolute floor below.
+  //   (b) PARTIAL outage — Tenero returns HTTP 200 for some pools and
+  //       fails the rest, yielding a fraction of the real holder set.
+  //       This sails past a fixed floor: on 2026-07-19 a 138-wallet
+  //       partial overwrote the healthy 499-wallet snapshot, and the
+  //       live Top Wallets page lost ~360 wallets until it was
+  //       restored. Guard against it by comparing to the previous
+  //       snapshot — a run that produces materially fewer wallets than
+  //       what's already committed is treating a degraded upstream as
+  //       truth, so bail and keep the good snapshot.
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(here, "..");
+  const dataDir = path.join(repoRoot, "data");
+  const dest = path.join(dataDir, "top-wallets.json");
+
+  let prevCount = 0;
+  try {
+    const existing = JSON.parse(await fs.readFile(dest, "utf8"));
+    if (Array.isArray(existing?.wallets)) prevCount = existing.wallets.length;
+  } catch {
+    // No prior snapshot (cold start) — only the absolute floor applies.
+  }
+
+  const ABS_FLOOR = 50;            // cold-start / total-outage backstop
+  const REGRESSION_RATIO = 0.7;    // tolerate ~30% churn vs last good run
+  const floor = Math.max(ABS_FLOOR, Math.floor(prevCount * REGRESSION_RATIO));
+  if (wallets.length < floor) {
     throw new Error(
-      `Refusing to write snapshot: only ${wallets.length} wallets in the leaderboard (expected 100+). ` +
-      `Tenero candidates=${allCandidates.length}. Either the upstream is degraded or rate-limited.`,
+      `Refusing to write snapshot: ${wallets.length} wallets is below the floor of ${floor} ` +
+      `(previous snapshot had ${prevCount}; Tenero candidates=${allCandidates.length}). ` +
+      `The upstream is likely degraded or rate-limited — keeping the existing snapshot.`,
     );
   }
 
@@ -481,10 +507,6 @@ async function main() {
     return;
   }
 
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const repoRoot = path.resolve(here, "..");
-  const dataDir = path.join(repoRoot, "data");
-  const dest = path.join(dataDir, "top-wallets.json");
   await fs.mkdir(dataDir, { recursive: true });
   await fs.writeFile(dest, JSON.stringify(snapshot) + "\n", "utf8");
   console.log(
