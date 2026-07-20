@@ -2610,6 +2610,9 @@ export async function getWalletTrades(
         ? t.usdAmount / t.shareAmount
         : 0;
       out.push({
+        // logIndex is unique per event within a tx, so swap legs
+        // (same txId, same block time) get distinct uids.
+        uid: `${t.txId}-${t.logIndex}`,
         txId: t.txId,
         timestamp: t.blockTime,
         side,
@@ -2648,11 +2651,15 @@ export async function getWalletTrades(
     return [];
   }
 
-  return rows.map((r) => {
+  return rows.map((r, i) => {
     const isNfl = isNflTokenAddress(r.base_token_address);
     const rosterPlayer = isNfl ? ROSTER_BY_TOKEN.get(r.base_token_address) : undefined;
     const side: "buy" | "sell" = r.event_type === "sell" ? "sell" : "buy";
     return {
+      // Tenero rows carry no per-event index; the two legs of a swap
+      // differ by base token, and the row index guarantees uniqueness
+      // even in the rare same-token-twice-per-tx case.
+      uid: `${r.tx_id}-${r.base_token_address}-${i}`,
       txId: r.tx_id,
       timestamp: Number(r.block_time ?? 0),
       side,
@@ -2668,6 +2675,27 @@ export async function getWalletTrades(
       amountUsd: Number(r.amount_usd ?? 0),
     };
   });
+}
+
+type RotationDirection = "into-nfl" | "out-of-nfl" | "neutral";
+
+// Shared rotation classifier so the wallet-page flow chart badge
+// (getWalletFlow) and the trade-feed icon (getWalletRotationQuick)
+// never disagree for the same wallet. Two ways to qualify:
+//   1. Cross-sport rotation — net NFL and net non-NFL both clear $25
+//      and point opposite ways (bought NFL, sold soccer, or vice
+//      versa). The strict, original meaning.
+//   2. Standalone NFL move — |net NFL| ≥ $50 on its own. Covers the
+//      case where soccer data is unavailable (Tenero down) or the
+//      wallet simply accumulated/dumped NFL with fresh USDC. The
+//      badge tooltip says "net inflow", which this matches.
+function classifyRotation(nflNetUsd: number, otherNetUsd: number): RotationDirection {
+  if (Math.abs(nflNetUsd) >= 25 && Math.abs(otherNetUsd) >= 25) {
+    if (nflNetUsd > 0 && otherNetUsd < 0) return "into-nfl";
+    if (nflNetUsd < 0 && otherNetUsd > 0) return "out-of-nfl";
+  }
+  if (Math.abs(nflNetUsd) >= 50) return nflNetUsd > 0 ? "into-nfl" : "out-of-nfl";
+  return "neutral";
 }
 
 export async function getWalletFlow(address: string, windowDays = 7): Promise<WalletFlowSummary> {
@@ -2776,13 +2804,7 @@ export async function getWalletFlow(address: string, windowDays = 7): Promise<Wa
 
   const nflNetUsd = nflInUsd - nflOutUsd;
   const otherNetUsd = otherInUsd - otherOutUsd;
-  let rotationDirection: WalletFlowSummary["rotationDirection"] = "neutral";
-  if (Math.abs(nflNetUsd) >= 25 && Math.abs(otherNetUsd) >= 25) {
-    if (nflNetUsd > 0 && otherNetUsd < 0)      rotationDirection = "into-nfl";
-    else if (nflNetUsd < 0 && otherNetUsd > 0) rotationDirection = "out-of-nfl";
-  } else if (Math.abs(nflNetUsd) >= 50) {
-    rotationDirection = nflNetUsd > 0 ? "into-nfl" : "out-of-nfl";
-  }
+  const rotationDirection = classifyRotation(nflNetUsd, otherNetUsd);
 
   return {
     windowDays,
@@ -2798,19 +2820,17 @@ export async function getWalletFlow(address: string, windowDays = 7): Promise<Wa
 // ---------- Rotation quick-classifier ----------
 //
 // Lightweight version of getWalletFlow() that classifies whether a
-// wallet is currently rotating INTO NFL (selling other-game positions
-// to fund NFL buys) or OUT OF NFL. Reads ONE page of Tenero
-// /wallets/.../trades — no pagination — so it stays cheap to call for
-// 50 trade-feed wallets in parallel.
+// wallet is rotating INTO or OUT OF NFL, cheap enough to call for 50
+// trade-feed wallets in parallel.
 //
-// Module-level cache (15 min) sits in front of tget's 5-min fetch
-// cache, so repeat calls within a request and across the worker's
-// lifetime both short-circuit. The signal is intentionally coarse: a
-// wallet flips "into-nfl" only when net NFL inflow AND net non-NFL
-// outflow each clear $25 in the last 7 days. Random one-off NFL buys
-// funded from USDC sitting in the wallet don't trigger it.
-
-type RotationDirection = WalletFlowSummary["rotationDirection"];
+// The NFL side comes from our own on-chain trade index (readTradeHistory
+// — Base event logs, independent of Tenero), so the trade-feed icon
+// keeps working through a Tenero outage instead of going blank. The
+// non-NFL (soccer) side is a best-effort single page of Tenero. Both
+// feed classifyRotation(), the SAME logic getWalletFlow uses, so the
+// feed icon and the wallet-page badge can't disagree for one wallet.
+//
+// Module-level cache (15 min) fronts tget's 5-min fetch cache.
 
 const ROTATION_TTL_MS = 15 * 60 * 1000;
 const rotationCache = new Map<string, { ts: number; direction: RotationDirection }>();
@@ -2822,48 +2842,53 @@ export async function getWalletRotationQuick(address: string): Promise<RotationD
     return cached.direction;
   }
 
-  // Same case-sensitivity quirk as the other /wallets endpoints — the
-  // upstream returns empty rows for lowercase addresses.
+  const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
+  let nflInUsd = 0, nflOutUsd = 0, otherInUsd = 0, otherOutUsd = 0;
+
+  // NFL side from our own index (robust). Value swap legs at
+  // shareAmount × spot, same as the feed, so token-for-token swaps
+  // aren't silently counted as $0.
+  const history = await readTradeHistory();
+  if (history) {
+    const players = await getPlayers();
+    const spotBySuffix = new Map<string, number>();
+    for (const p of players) {
+      const roster = ROSTER_BY_ID.get(p.id);
+      if (roster) spotBySuffix.set(roster.tokenIdSuffix, p.priceUsd);
+    }
+    for (const t of history.trades) {
+      if (t.wallet !== lower) continue;
+      if (t.blockTime < cutoff) continue;
+      let usd = Number(t.usdAmount ?? 0);
+      if (usd <= 0 && (t.side === "swap-in" || t.side === "swap-out")) {
+        usd = t.shareAmount * (spotBySuffix.get(t.tokenIdSuffix) ?? 0);
+      }
+      if (t.side === "buy" || t.side === "swap-in") nflInUsd += usd;
+      else nflOutUsd += usd;
+    }
+  }
+
+  // Soccer/other side: best-effort single page of Tenero (non-NFL rows
+  // only; NFL is already covered above). Skipped silently when down.
   let queryAddress = address;
   try { queryAddress = getAddress(address); } catch { queryAddress = address; }
-
-  let rows: TeneroWalletTradeRow[] = [];
   try {
     const data = await tget<{ rows: TeneroWalletTradeRow[]; next: string | null }>(
       `/wallets/${encodeURIComponent(queryAddress)}/trades?limit=100`,
       REVALIDATE.wallet,
     );
-    rows = data?.rows ?? [];
-  } catch {
-    rotationCache.set(lower, { ts: Date.now(), direction: "neutral" });
-    return "neutral";
-  }
-
-  const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
-  let nflInUsd = 0, nflOutUsd = 0, otherInUsd = 0, otherOutUsd = 0;
-  for (const r of rows) {
-    if (Number(r.block_time) < cutoff) continue;
-    const usd = Number(r.amount_usd ?? 0);
-    const isNfl = isNflTokenAddress(r.base_token_address);
-    if (r.event_type === "buy") {
-      if (isNfl) nflInUsd  += usd; else otherInUsd  += usd;
-    } else {
-      if (isNfl) nflOutUsd += usd; else otherOutUsd += usd;
+    for (const r of data?.rows ?? []) {
+      if (Number(r.block_time) < cutoff) continue;
+      if (isNflTokenAddress(r.base_token_address)) continue;
+      const usd = Number(r.amount_usd ?? 0);
+      if (r.event_type === "buy") otherInUsd += usd; else otherOutUsd += usd;
     }
+  } catch {
+    // Tenero down — NFL side alone still drives classifyRotation's
+    // standalone-move branch, so the icon isn't dead in the water.
   }
 
-  const nflNetUsd = nflInUsd - nflOutUsd;
-  const otherNetUsd = otherInUsd - otherOutUsd;
-  // Mirror getWalletFlow's thresholds: both legs must clear $25 and
-  // point in opposite directions to qualify as a rotation. Standalone
-  // NFL buys (with no non-NFL sells) stay neutral so the icon doesn't
-  // light up for every plain buy in the feed.
-  let direction: RotationDirection = "neutral";
-  if (Math.abs(nflNetUsd) >= 25 && Math.abs(otherNetUsd) >= 25) {
-    if (nflNetUsd > 0 && otherNetUsd < 0)      direction = "into-nfl";
-    else if (nflNetUsd < 0 && otherNetUsd > 0) direction = "out-of-nfl";
-  }
-
+  const direction = classifyRotation(nflInUsd - nflOutUsd, otherInUsd - otherOutUsd);
   rotationCache.set(lower, { ts: Date.now(), direction });
   return direction;
 }

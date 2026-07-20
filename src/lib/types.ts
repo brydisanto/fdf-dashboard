@@ -157,6 +157,11 @@ export interface WalletHolding {
 }
 
 export interface WalletTradeRow {
+  // Unique per LEG. A token-for-token swap emits two rows sharing the
+  // same txId AND block timestamp, so `${txId}-${timestamp}` collided
+  // as a React key and one leg was dropped from the table. logIndex
+  // (index path) / base token (Tenero path) disambiguates the legs.
+  uid: string;
   txId: string;
   timestamp: number;          // unix ms
   side: "buy" | "sell";
