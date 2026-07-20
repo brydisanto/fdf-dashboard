@@ -2537,6 +2537,11 @@ export interface WalletFlowSummary {
   daily: WalletDailyFlow[];
   totalTrades: number;
   rotationDirection: "into-nfl" | "out-of-nfl" | "neutral";
+  // False when the Soccer/other side couldn't be fetched (Tenero down).
+  // The NFL side comes from our own on-chain index and is always
+  // available, so the chart can still render NFL flow and note that the
+  // Soccer half is temporarily unavailable rather than showing $0.
+  otherDataAvailable: boolean;
 }
 
 const NFL_CONTRACT_PREFIX = `${FOOTBALLFUN_CONTRACT.toLowerCase()}:`;
@@ -2668,6 +2673,52 @@ export async function getWalletFlow(address: string, windowDays = 7): Promise<Wa
     queryAddress = address;
   }
 
+  const buckets = new Map<number, WalletDailyFlow>();
+  const bucketFor = (blockTime: number): WalletDailyFlow => {
+    const day = Math.floor(blockTime / dayMs) * dayMs;
+    let bucket = buckets.get(day);
+    if (!bucket) {
+      bucket = { t: day, nflInUsd: 0, nflOutUsd: 0, otherInUsd: 0, otherOutUsd: 0 };
+      buckets.set(day, bucket);
+    }
+    return bucket;
+  };
+  let nflInUsd = 0, nflOutUsd = 0, otherInUsd = 0, otherOutUsd = 0;
+  let totalTrades = 0;
+
+  // ---- NFL side: our own on-chain trade index (robust) ----
+  // getWalletFlow used to read the ENTIRE chart from Tenero's
+  // /wallets/.../trades. That made it a single point of failure — when
+  // Tenero went down (as on 2026-07-19) the whole chart went to $0.
+  // The NFL half is derivable from our own event-log index, which is
+  // on-chain-sourced and independent of Tenero, so seed it from there
+  // and it always works. side buy/swap-in → into NFL, sell/swap-out →
+  // out of NFL. (An intra-NFL player↔player swap records both a
+  // swap-in and a swap-out leg, so it nets ~0 — correct: it doesn't
+  // change total NFL exposure.)
+  const target2 = address.toLowerCase();
+  const history = await readTradeHistory();
+  if (history) {
+    for (const t of history.trades) {
+      if (t.wallet !== target2) continue;
+      if (t.blockTime < cutoff) continue;
+      totalTrades++;
+      const bucket = bucketFor(t.blockTime);
+      const usd = Number(t.usdAmount ?? 0);
+      if (t.side === "buy" || t.side === "swap-in") {
+        bucket.nflInUsd += usd; nflInUsd += usd;
+      } else {
+        bucket.nflOutUsd += usd; nflOutUsd += usd;
+      }
+    }
+  }
+
+  // ---- Soccer/other side: Tenero (only source we have) ----
+  // Count ONLY non-NFL rows here — NFL is already covered by the index
+  // above, so counting Tenero's NFL rows too would double-count. When
+  // Tenero is down, otherDataAvailable stays false and the chart notes
+  // the Soccer half is temporarily unavailable instead of implying $0.
+  let otherDataAvailable = false;
   const collected: TeneroWalletTradeRow[] = [];
   let cursor: string | null = null;
   let safety = 0;
@@ -2678,6 +2729,7 @@ export async function getWalletFlow(address: string, windowDays = 7): Promise<Wa
       const data = await tget<{ rows: TeneroWalletTradeRow[]; next: string | null }>(
         path, REVALIDATE.wallet,
       );
+      otherDataAvailable = true; // a successful response, even if empty
       const rows = data?.rows ?? [];
       for (const r of rows) collected.push(r);
       cursor = data?.next ?? null;
@@ -2687,32 +2739,18 @@ export async function getWalletFlow(address: string, windowDays = 7): Promise<Wa
       safety++;
     } while (cursor && safety < 12);
   } catch {
-    // partial result is fine
+    // Tenero down or rate-limited — leave otherDataAvailable false.
   }
-
-  const buckets = new Map<number, WalletDailyFlow>();
-  let nflInUsd = 0, nflOutUsd = 0, otherInUsd = 0, otherOutUsd = 0;
-  let totalTrades = 0;
 
   for (const r of collected) {
     if (Number(r.block_time) < cutoff) continue;
+    if (isNflTokenAddress(r.base_token_address)) continue; // NFL counted from index
     totalTrades++;
-    const day = Math.floor(Number(r.block_time) / dayMs) * dayMs;
-    let bucket = buckets.get(day);
-    if (!bucket) {
-      bucket = { t: day, nflInUsd: 0, nflOutUsd: 0, otherInUsd: 0, otherOutUsd: 0 };
-      buckets.set(day, bucket);
-    }
     const usd = Number(r.amount_usd ?? 0);
-    const isNfl = isNflTokenAddress(r.base_token_address);
-    // event_type: "buy" → wallet gained that base token; "sell" → wallet released it
-    if (r.event_type === "buy") {
-      if (isNfl) { bucket.nflInUsd += usd; nflInUsd += usd; }
-      else       { bucket.otherInUsd += usd; otherInUsd += usd; }
-    } else {
-      if (isNfl) { bucket.nflOutUsd += usd; nflOutUsd += usd; }
-      else       { bucket.otherOutUsd += usd; otherOutUsd += usd; }
-    }
+    const bucket = bucketFor(Number(r.block_time));
+    // event_type: "buy" → wallet gained that base token; "sell" → released
+    if (r.event_type === "buy") { bucket.otherInUsd += usd; otherInUsd += usd; }
+    else                        { bucket.otherOutUsd += usd; otherOutUsd += usd; }
   }
 
   // Build daily series (filling empty days with zeros) so charts are continuous.
@@ -2741,6 +2779,7 @@ export async function getWalletFlow(address: string, windowDays = 7): Promise<Wa
     daily,
     totalTrades,
     rotationDirection,
+    otherDataAvailable,
   };
 }
 
