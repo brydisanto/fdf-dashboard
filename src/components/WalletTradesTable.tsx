@@ -30,7 +30,7 @@ export function WalletTradesTable({ rows }: { rows: WalletTradeRow[] }) {
         <tbody>
           {rows.map((r) => (
             <tr
-              key={`${r.txId}-${r.timestamp}`}
+              key={r.uid}
               className="transition-colors duration-[180ms] ease-out hover:bg-[color-mix(in_oklab,var(--color-press)_50%,transparent)]"
               style={{ borderBottom: "1px solid var(--color-line)" }}
             >
