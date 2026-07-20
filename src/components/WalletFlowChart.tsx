@@ -24,7 +24,31 @@ export function WalletFlowChart({
   }));
 
   return (
-    <div className="h-[200px] w-full">
+    <div className="flex h-[200px] w-full flex-col">
+      {/* NFL flow comes from our own on-chain index and is always
+          available; the Soccer half depends on the Tenero upstream.
+          When that's down, say so instead of letting the missing bars
+          read as "no soccer activity". */}
+      {flow.otherDataAvailable === false ? (
+        <div
+          className="mb-1 flex items-center gap-1.5"
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "10px",
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            color: "var(--color-text-dim)",
+          }}
+        >
+          <span
+            aria-hidden
+            className="inline-block h-1.5 w-1.5 rounded-full"
+            style={{ background: "var(--color-flag)" }}
+          />
+          Soccer flow temporarily unavailable · NFL shown
+        </div>
+      ) : null}
+      <div className="min-h-0 flex-1">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap={8}>
           <XAxis
@@ -64,6 +88,7 @@ export function WalletFlowChart({
           <Bar dataKey="soccerNet" fill={soccerColor}        radius={[3, 3, 0, 0]} isAnimationActive={false} />
         </BarChart>
       </ResponsiveContainer>
+      </div>
     </div>
   );
 }
