@@ -1269,10 +1269,22 @@ export async function getTrades(id: string, limit = 30): Promise<Trade[]> {
   // Primary: our own event-log index.
   const history = await readTradeHistory();
   if (history && history.trades.length > 0) {
+    // Spot lookup so swap legs are valued at shareAmount × spot. The
+    // indexer hard-codes usdAmount = 0 for token-for-token swaps (no
+    // paired USDC Transfer to read a price from), so without this every
+    // SWAP IN / SWAP OUT on the player page renders $0.00000 / $0. The
+    // global feed already does this; getTrades never did, so player
+    // pages showed dollarless swaps. getPlayers() is memoized and
+    // on-chain-backed (prices survive a Tenero outage), so the values
+    // stay correct even while the upstream is down.
+    const players = await getPlayers();
+    const spotByPlayerId = new Map<string, number>(
+      players.map((p) => [p.id, p.priceUsd]),
+    );
     const out: Trade[] = [];
     for (const t of history.trades) {
       if (t.tokenIdSuffix !== player.tokenIdSuffix) continue;
-      const trade = indexedToTrade(t);
+      const trade = indexedToTrade(t, spotByPlayerId);
       if (trade) out.push(trade);
       if (out.length >= limit) break;
     }
