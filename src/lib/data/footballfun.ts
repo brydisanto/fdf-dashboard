@@ -689,6 +689,16 @@ async function computePlayers(): Promise<PlayerSummary[]> {
     if (a24h != null) summary.change24h = +(((spot - a24h) / a24h) * 100).toFixed(2);
     if (a7d != null) summary.change7d = +(((spot - a7d) / a7d) * 100).toFixed(2);
 
+    // 24H / 7D volume + trade count from our own on-chain index — see
+    // indexVolumeFor. Gated on the index being loaded so a cold start
+    // keeps Tenero's numbers.
+    if (tradeStore && tradeStore.trades.length > 0) {
+      const { v24, v7, n24 } = indexVolumeFor(tokenTrades, spot, bucketedNow);
+      summary.volume24h = sig(v24, 8);
+      summary.volume7d = sig(v7, 8);
+      summary.trades24h = n24;
+    }
+
     // 7D Trend sparkline: pull every snapshot's price for this token
     // from the past 7 days. Tenero's stale price_*_ago fields gave us
     // a flat line; the snapshot has real intra-day movement.
@@ -749,6 +759,35 @@ function buildTradesByTokenIndex(trades: IndexedTrade[]): Map<string, IndexedTra
   }
   for (const arr of out.values()) arr.sort((a, b) => a.blockTime - b.blockTime);
   return out;
+}
+
+// 24H / 7D volume + 24H trade count for one token, computed from its
+// own on-chain index trades. Tenero's metrics.volume_1d_usd (and every
+// sub-7d window) can silently stick at 0 while the API returns HTTP 200
+// — it did after the 2026-07 outage recovered, zeroing every volume
+// stat site-wide. The index is ground truth. Swap legs (usdAmount 0 —
+// no paired USDC Transfer on token-for-token swaps) are valued at
+// shareAmount × spot, consistent with the feed/flow/rotation code.
+// Shared by getPlayers()'s enricher and getPlayer() so the home page
+// and the player page can't drift.
+function indexVolumeFor(
+  tokenTrades: IndexedTrade[],
+  spot: number,
+  nowMs: number,
+): { v24: number; v7: number; n24: number } {
+  const c24 = nowMs - 86_400_000;
+  const c7d = nowMs - 7 * 86_400_000;
+  let v24 = 0, v7 = 0, n24 = 0;
+  for (const t of tokenTrades) {
+    if (t.blockTime < c7d) continue;
+    let usd = t.usdAmount;
+    if (usd <= 0 && (t.side === "swap-in" || t.side === "swap-out")) {
+      usd = t.shareAmount * spot;
+    }
+    v7 += usd;
+    if (t.blockTime >= c24) { v24 += usd; n24++; }
+  }
+  return { v24, v7, n24 };
 }
 
 // Fee-adjusted post-trade mid spot from the most recent buy/sell
@@ -1128,6 +1167,16 @@ export async function getPlayer(id: string): Promise<PlayerSummary | null> {
       if (a6h != null) summary.change6h = +(((spot - a6h) / a6h) * 100).toFixed(2);
       if (a24h != null) summary.change24h = +(((spot - a24h) / a24h) * 100).toFixed(2);
       if (a7d != null) summary.change7d = +(((spot - a7d) / a7d) * 100).toFixed(2);
+
+      // Index-derived volume + trade count (see indexVolumeFor). The
+      // player page reads this path, not getPlayers, so it needs the
+      // same override or Tenero's stuck volume_1d_usd shows $0 here.
+      if (tradeStore && tradeStore.trades.length > 0) {
+        const { v24, v7, n24 } = indexVolumeFor(tokenTrades, spot, bucketedNow);
+        summary.volume24h = sig(v24, 8);
+        summary.volume7d = sig(v7, 8);
+        summary.trades24h = n24;
+      }
     }
     // Apply the same Active Shares definition as getPlayers — total
     // supply minus what the platform-side wallets hold.
