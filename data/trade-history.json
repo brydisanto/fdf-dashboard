@@ -1,6 +1,94 @@
 {
-  "lastIndexedBlock": 48941929,
+  "lastIndexedBlock": 48943870,
   "trades": [
+    {
+      "txId": "0x7c6637cc22e48b6d830cf6b4638cf75ef62ccb1ce6f54ec1f5b7fb9c63675358",
+      "blockNumber": 48943761,
+      "blockTime": 1784676869000,
+      "logIndex": 53,
+      "tokenIdSuffix": "1694187555",
+      "wallet": "0x77fd87c12d74426244f2912738820567a0e80b6e",
+      "side": "sell",
+      "shareAmount": 109,
+      "usdAmount": 1.624884
+    },
+    {
+      "txId": "0x616b3f8dea7955e0f4854e98e291b793ea03a4218ab0cd9a946eb974e99bd829",
+      "blockNumber": 48943737,
+      "blockTime": 1784676821000,
+      "logIndex": 169,
+      "tokenIdSuffix": "1886297532",
+      "wallet": "0x77fd87c12d74426244f2912738820567a0e80b6e",
+      "side": "buy",
+      "shareAmount": 232.62038779590878,
+      "usdAmount": 1.7
+    },
+    {
+      "txId": "0xc81f8961b3589944e40006018425ae9539b8ba0b0d96d1302946f0f251e63a33",
+      "blockNumber": 48943717,
+      "blockTime": 1784676781000,
+      "logIndex": 138,
+      "tokenIdSuffix": "1229893067",
+      "wallet": "0x77fd87c12d74426244f2912738820567a0e80b6e",
+      "side": "buy",
+      "shareAmount": 255.19820102049718,
+      "usdAmount": 2.3
+    },
+    {
+      "txId": "0x7f8a9fd8efe9ab0d1c35db3ecf17b6dbf6d6d33bc8ff855f56172dffea1928d7",
+      "blockNumber": 48943662,
+      "blockTime": 1784676671000,
+      "logIndex": 335,
+      "tokenIdSuffix": "1708223670",
+      "wallet": "0x77fd87c12d74426244f2912738820567a0e80b6e",
+      "side": "buy",
+      "shareAmount": 381.8393444550792,
+      "usdAmount": 1.25
+    },
+    {
+      "txId": "0xef95a02f4978efe2eca5c21274ddc1512646b3a4bda5bab35a28464b46ea6f31",
+      "blockNumber": 48943450,
+      "blockTime": 1784676247000,
+      "logIndex": 559,
+      "tokenIdSuffix": "33526712",
+      "wallet": "0xcf48bc4770e2d0381187fd9f49d0ffbc1640a83c",
+      "side": "swap-out",
+      "shareAmount": 397.7482772436554,
+      "usdAmount": 0
+    },
+    {
+      "txId": "0xef95a02f4978efe2eca5c21274ddc1512646b3a4bda5bab35a28464b46ea6f31",
+      "blockNumber": 48943450,
+      "blockTime": 1784676247000,
+      "logIndex": 560,
+      "tokenIdSuffix": "637063064",
+      "wallet": "0xcf48bc4770e2d0381187fd9f49d0ffbc1640a83c",
+      "side": "swap-in",
+      "shareAmount": 717.8702935472938,
+      "usdAmount": 0
+    },
+    {
+      "txId": "0xaba57b2b73a1d8594ce9ce45acbce01983d614c557e18a29521715c0b14a6a4b",
+      "blockNumber": 48942976,
+      "blockTime": 1784675299000,
+      "logIndex": 149,
+      "tokenIdSuffix": "363339787",
+      "wallet": "0xcf48bc4770e2d0381187fd9f49d0ffbc1640a83c",
+      "side": "swap-out",
+      "shareAmount": 4167.815084833018,
+      "usdAmount": 0
+    },
+    {
+      "txId": "0xaba57b2b73a1d8594ce9ce45acbce01983d614c557e18a29521715c0b14a6a4b",
+      "blockNumber": 48942976,
+      "blockTime": 1784675299000,
+      "logIndex": 150,
+      "tokenIdSuffix": "2018186111",
+      "wallet": "0xcf48bc4770e2d0381187fd9f49d0ffbc1640a83c",
+      "side": "swap-in",
+      "shareAmount": 3111.8331518175637,
+      "usdAmount": 0
+    },
     {
       "txId": "0x43c017615c611d2c2962c9fc31abef140729b886db29fddf54787b923b3d69ca",
       "blockNumber": 48941566,
@@ -45870,28 +45958,6 @@
       "side": "sell",
       "shareAmount": 3867.76,
       "usdAmount": 5.206659
-    },
-    {
-      "txId": "0xa80a87ebc20621e5f2e1b10e993c55a4592f2c60c129cadad1b2e6de044b2240",
-      "blockNumber": 47646683,
-      "blockTime": 1782082713000,
-      "logIndex": 90,
-      "tokenIdSuffix": "298000720",
-      "wallet": "0xfc653689fb5afe3980ae7665116c1b23222117e0",
-      "side": "sell",
-      "shareAmount": 5000,
-      "usdAmount": 86.326643
-    },
-    {
-      "txId": "0x118bd841dece9d06d04e0c95a00699a4ae0cbb0d7ce6ce567ef8cd197db0de65",
-      "blockNumber": 47646672,
-      "blockTime": 1782082691000,
-      "logIndex": 366,
-      "tokenIdSuffix": "1877680294",
-      "wallet": "0xfc653689fb5afe3980ae7665116c1b23222117e0",
-      "side": "sell",
-      "shareAmount": 5000,
-      "usdAmount": 87.07103
     }
   ]
 }
