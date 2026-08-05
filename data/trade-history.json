@@ -1,6 +1,17 @@
 {
-  "lastIndexedBlock": 49589495,
+  "lastIndexedBlock": 49591530,
   "trades": [
+    {
+      "txId": "0x8ca4070b8b040db2b850eab1cfd6dd905bfb1899ff8cac5c8eeaa23d244fa8d6",
+      "blockNumber": 49590201,
+      "blockTime": 1785969749000,
+      "logIndex": 251,
+      "tokenIdSuffix": "1737560144",
+      "wallet": "0x48f66235b2604422fdfe7146caff9d050dfd75e5",
+      "side": "buy",
+      "shareAmount": 1902.43,
+      "usdAmount": 9.435302
+    },
     {
       "txId": "0xe39023134afcd79efd8532ce68037b26bafe3c47c837ea9ccc26113012182b47",
       "blockNumber": 49589134,
