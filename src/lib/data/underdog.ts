@@ -45,6 +45,11 @@ export function getUnderdogRankings(): UdPlayer[] {
   return out;
 }
 
+// Snapshot date (YYYY-MM-DD) this file was last refreshed.
+export function getUnderdogUpdatedAt(): string {
+  return (data as { updatedAt?: string }).updatedAt ?? "";
+}
+
 // Mirror the FantasyPros normalize so callers can join across sources.
 export const normalizeName = (s: string) =>
   s

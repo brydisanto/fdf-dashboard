@@ -36,6 +36,11 @@ export function getEspnRankings(): EspnPlayer[] {
   return out;
 }
 
+// Snapshot date (YYYY-MM-DD) this file was last refreshed.
+export function getEspnUpdatedAt(): string {
+  return (data as { updatedAt?: string }).updatedAt ?? "";
+}
+
 // Same normalization the FP/UD adapters use, so the value page can
 // join across all three sources by name.
 export const normalizeName = (s: string) =>

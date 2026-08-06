@@ -43,6 +43,12 @@ export function getRingerRankings(): RingerPlayer[] {
   return out;
 }
 
+// Scrape date (YYYY-MM-DD) this file was last refreshed. The JSON
+// stores an ISO scrapedAt timestamp; return just the date portion.
+export function getRingerUpdatedAt(): string {
+  return ((data as { scrapedAt?: string }).scrapedAt ?? "").slice(0, 10);
+}
+
 // Same normalization the FP/UD/ESPN adapters use, so the value page
 // can join across all four sources by name.
 export const normalizeName = (s: string) =>
