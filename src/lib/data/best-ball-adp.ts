@@ -37,6 +37,12 @@ export function getBestBallAdp(): BbAdpPlayer[] {
   return out;
 }
 
+// Snapshot date (YYYY-MM-DD) this file was last refreshed. Surfaced on
+// the Value Plays page so viewers can see how current the rankings are.
+export function getBestBallAdpUpdatedAt(): string {
+  return (data as { updatedAt?: string }).updatedAt ?? "";
+}
+
 // Same normalization the other rankings loaders use so callers can
 // reuse the roster join.
 export const normalizeName = (s: string) =>

@@ -6,10 +6,10 @@ import {
   indexFpByName,
   normalizeName,
 } from "@/lib/data/fantasypros";
-import { getUnderdogRankings, indexUdByName } from "@/lib/data/underdog";
-import { getEspnRankings, indexEspnByName } from "@/lib/data/espn";
-import { getRingerRankings, indexRingerByName } from "@/lib/data/ringer";
-import { getBestBallAdp, indexBbByName } from "@/lib/data/best-ball-adp";
+import { getUnderdogRankings, indexUdByName, getUnderdogUpdatedAt } from "@/lib/data/underdog";
+import { getEspnRankings, indexEspnByName, getEspnUpdatedAt } from "@/lib/data/espn";
+import { getRingerRankings, indexRingerByName, getRingerUpdatedAt } from "@/lib/data/ringer";
+import { getBestBallAdp, indexBbByName, getBestBallAdpUpdatedAt } from "@/lib/data/best-ball-adp";
 import { Pill } from "@/components/ui";
 import { ValuePageBody } from "@/components/ValuePageBody";
 import { type ValueRow } from "@/components/ValueTable";
@@ -25,6 +25,16 @@ export const metadata = {
 export const revalidate = 600;
 
 const POS: Position[] = ["QB", "RB", "WR", "TE"];
+
+// "Aug 5, 2026" from a YYYY-MM-DD string. Parsed by hand rather than
+// via Date() to avoid the snapshot date shifting a day under the
+// viewer's timezone.
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function fmtSnapshotDate(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!m) return "";
+  return `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}`;
+}
 
 // Δ band tolerated as "fair". |Δ| ≤ this → no over/undervalued
 // verdict. 1 spot of disparity is noise; 2+ starts to matter.
@@ -43,6 +53,18 @@ export default async function ValuePage() {
   const udByName = indexUdByName(getUnderdogRankings());
   const espnByName = indexEspnByName(getEspnRankings());
   const ringerByName = indexRingerByName(getRingerRankings());
+  // Freshness stamp for the snapshot sources. ISO dates sort
+  // lexically = chronologically, so max() gives the most recent
+  // refresh. FantasyPros consensus ECR is fetched live at runtime, so
+  // it has no snapshot date and doesn't factor in.
+  const rankingsUpdatedAt = fmtSnapshotDate(
+    [
+      getRingerUpdatedAt(),
+      getEspnUpdatedAt(),
+      getUnderdogUpdatedAt(),
+      getBestBallAdpUpdatedAt(),
+    ].filter(Boolean).sort().at(-1) ?? "",
+  );
   const bbByName = indexBbByName(getBestBallAdp());
 
   // Group roster by position; market positional rank within each,
@@ -177,6 +199,25 @@ export default async function ValuePage() {
           <div className="flex flex-wrap items-center gap-2">
             <Pill tone="brand">Rank Disparity</Pill>
             <Pill tone="muted">PPR · 5-source industry consensus</Pill>
+            {rankingsUpdatedAt ? (
+              <span
+                className="inline-flex items-center gap-1.5"
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "11px",
+                  letterSpacing: "0.06em",
+                  color: "var(--color-text-dim)",
+                }}
+                title="Snapshot rankings (Ringer, ESPN, Underdog, Best Ball ADP) last refreshed. FantasyPros consensus updates live."
+              >
+                <span
+                  aria-hidden
+                  className="live-dot inline-block h-1.5 w-1.5 rounded-full"
+                  style={{ background: "var(--color-turf)" }}
+                />
+                Rankings updated {rankingsUpdatedAt}
+              </span>
+            ) : null}
           </div>
           <h1
             className="m-0 text-[var(--color-text)]"
