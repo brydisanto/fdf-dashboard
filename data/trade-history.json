@@ -1,6 +1,83 @@
 {
-  "lastIndexedBlock": 49798723,
+  "lastIndexedBlock": 49800702,
   "trades": [
+    {
+      "txId": "0xda48f23e18374f5841670994f59ecd38fd9fde3534b0e4b1a18a88f4ccf1cac9",
+      "blockNumber": 49800327,
+      "blockTime": 1786390001000,
+      "logIndex": 334,
+      "tokenIdSuffix": "2050898691",
+      "wallet": "0x9e96c8ad9a3d52bf0e496ed73462bab29426ab17",
+      "side": "buy",
+      "shareAmount": 500.16957261771176,
+      "usdAmount": 6
+    },
+    {
+      "txId": "0xde13f68652313daa4e3ef9f852b0736c2b9447dc2e56e692cafe26116267ab34",
+      "blockNumber": 49800142,
+      "blockTime": 1786389631000,
+      "logIndex": 164,
+      "tokenIdSuffix": "1339944146",
+      "wallet": "0xe057ad8aa9cd729282160c5ae01f473ef4bdcdde",
+      "side": "sell",
+      "shareAmount": 15000,
+      "usdAmount": 93.080193
+    },
+    {
+      "txId": "0x71d5f30727c845a578871491acd296329fb6fbd91a57aaa38031f3cc6e29ff18",
+      "blockNumber": 49800126,
+      "blockTime": 1786389599000,
+      "logIndex": 353,
+      "tokenIdSuffix": "1045355498",
+      "wallet": "0xe057ad8aa9cd729282160c5ae01f473ef4bdcdde",
+      "side": "sell",
+      "shareAmount": 20000,
+      "usdAmount": 189.306384
+    },
+    {
+      "txId": "0x56b817337fe823f7dfb720b00edff5cd1402f9b6a2a6a1c7b18658eba79af35a",
+      "blockNumber": 49800105,
+      "blockTime": 1786389557000,
+      "logIndex": 84,
+      "tokenIdSuffix": "88065636",
+      "wallet": "0xe057ad8aa9cd729282160c5ae01f473ef4bdcdde",
+      "side": "sell",
+      "shareAmount": 24999.999999999996,
+      "usdAmount": 96.08702
+    },
+    {
+      "txId": "0xa7ebb41c1f76dd976bc11380ffba20aed1c2d48c09bef90be88be905becf042a",
+      "blockNumber": 49800087,
+      "blockTime": 1786389521000,
+      "logIndex": 209,
+      "tokenIdSuffix": "1597935612",
+      "wallet": "0xe057ad8aa9cd729282160c5ae01f473ef4bdcdde",
+      "side": "sell",
+      "shareAmount": 15000,
+      "usdAmount": 222.118197
+    },
+    {
+      "txId": "0x8ec772be03c0aaa0fb997b812ee9fc5f76a9dea2f2f900564f1d2739aaad0f66",
+      "blockNumber": 49800078,
+      "blockTime": 1786389503000,
+      "logIndex": 187,
+      "tokenIdSuffix": "1694187555",
+      "wallet": "0xe057ad8aa9cd729282160c5ae01f473ef4bdcdde",
+      "side": "sell",
+      "shareAmount": 10000,
+      "usdAmount": 156.653799
+    },
+    {
+      "txId": "0xb6c5e03415ba862ac87a3a87b1a1db0892afc03a3abf0a66c62cb69be17d4521",
+      "blockNumber": 49800074,
+      "blockTime": 1786389495000,
+      "logIndex": 151,
+      "tokenIdSuffix": "972599423",
+      "wallet": "0xe057ad8aa9cd729282160c5ae01f473ef4bdcdde",
+      "side": "sell",
+      "shareAmount": 10000,
+      "usdAmount": 159.690087
+    },
     {
       "txId": "0xc97f87cb98969cfc1f36f9e86d6937e04a175b98a7e7fbcafd3502e4eec622e5",
       "blockNumber": 49798306,
@@ -52195,17 +52272,6 @@
       "side": "buy",
       "shareAmount": 5864.9598089829105,
       "usdAmount": 25
-    },
-    {
-      "txId": "0x3722cd401f511c2519bb258a37973ebc4594b5fefb73b935c142a39a3a4da840",
-      "blockNumber": 48504632,
-      "blockTime": 1783798611000,
-      "logIndex": 188,
-      "tokenIdSuffix": "439100286",
-      "wallet": "0x29494befcbc3a704ad25a75fc2fcb1641fd87977",
-      "side": "buy",
-      "shareAmount": 918.7429128302208,
-      "usdAmount": 10.250755
     }
   ]
 }
