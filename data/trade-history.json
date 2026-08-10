@@ -1,6 +1,61 @@
 {
-  "lastIndexedBlock": 49765110,
+  "lastIndexedBlock": 49768835,
   "trades": [
+    {
+      "txId": "0x9c2fb258341245973099d4548911feab78afad883598b3211142cfb8627e14fc",
+      "blockNumber": 49767934,
+      "blockTime": 1786325215000,
+      "logIndex": 139,
+      "tokenIdSuffix": "88065636",
+      "wallet": "0xc53d1c4935a0e760c769756d0d4267f08e67bc84",
+      "side": "sell",
+      "shareAmount": 1026.131315178131,
+      "usdAmount": 3.980206
+    },
+    {
+      "txId": "0x450277c0601b3a468c1f9fc877866466325160b0018000dc4257fb55430c2d47",
+      "blockNumber": 49767922,
+      "blockTime": 1786325191000,
+      "logIndex": 3110,
+      "tokenIdSuffix": "1613245508",
+      "wallet": "0xc53d1c4935a0e760c769756d0d4267f08e67bc84",
+      "side": "buy",
+      "shareAmount": 3678.6705167116565,
+      "usdAmount": 25
+    },
+    {
+      "txId": "0xb86b6af882a6a2f67783cc7b52ffedf3d3da114d3c58359cefc9ec9395806708",
+      "blockNumber": 49767892,
+      "blockTime": 1786325131000,
+      "logIndex": 80,
+      "tokenIdSuffix": "833812969",
+      "wallet": "0xc53d1c4935a0e760c769756d0d4267f08e67bc84",
+      "side": "sell",
+      "shareAmount": 308.824837873435,
+      "usdAmount": 1.420362
+    },
+    {
+      "txId": "0x5d40ca3c6d9d77016fc154ee9459dde05f35741b517d6d986403782d534206bb",
+      "blockNumber": 49767705,
+      "blockTime": 1786324757000,
+      "logIndex": 80,
+      "tokenIdSuffix": "1072658622",
+      "wallet": "0x5c68f21a261b40936d90be7b69e8270345518c5d",
+      "side": "swap-out",
+      "shareAmount": 5537.461386842003,
+      "usdAmount": 0
+    },
+    {
+      "txId": "0x5d40ca3c6d9d77016fc154ee9459dde05f35741b517d6d986403782d534206bb",
+      "blockNumber": 49767705,
+      "blockTime": 1786324757000,
+      "logIndex": 81,
+      "tokenIdSuffix": "1892649533",
+      "wallet": "0x5c68f21a261b40936d90be7b69e8270345518c5d",
+      "side": "swap-in",
+      "shareAmount": 8221.467348162465,
+      "usdAmount": 0
+    },
     {
       "txId": "0x0270a7578d96f513c76bb13a14f605a58e558a43acf0d1024a660567fc901189",
       "blockNumber": 49764616,
@@ -51722,61 +51777,6 @@
       "side": "swap-in",
       "shareAmount": 16185.577271999935,
       "usdAmount": 0
-    },
-    {
-      "txId": "0x07005c18cf9bc8948e8754ced1afb9f293a71e7095a2597fd50d56470da9ff9c",
-      "blockNumber": 48469316,
-      "blockTime": 1783727979000,
-      "logIndex": 274,
-      "tokenIdSuffix": "646914359",
-      "wallet": "0x3799b1f3630052dbbed89194ff67fb03d2f828c0",
-      "side": "buy",
-      "shareAmount": 939.2,
-      "usdAmount": 8.924125
-    },
-    {
-      "txId": "0x14187449e63064807ab00b69a928b1bb04a6eea854f1a36902db495a842953d4",
-      "blockNumber": 48469246,
-      "blockTime": 1783727839000,
-      "logIndex": 95,
-      "tokenIdSuffix": "1957905857",
-      "wallet": "0x3799b1f3630052dbbed89194ff67fb03d2f828c0",
-      "side": "buy",
-      "shareAmount": 1738.24,
-      "usdAmount": 7.64246
-    },
-    {
-      "txId": "0xe13d6ee7123b8b6eb8a9affbf7e80edafeb5469cbd91b16ce87635614a921531",
-      "blockNumber": 48469230,
-      "blockTime": 1783727807000,
-      "logIndex": 260,
-      "tokenIdSuffix": "942484606",
-      "wallet": "0x3799b1f3630052dbbed89194ff67fb03d2f828c0",
-      "side": "buy",
-      "shareAmount": 1488.2,
-      "usdAmount": 5.188011
-    },
-    {
-      "txId": "0xe4d2acf9d454e86527b4f1883398095fe3ab331733b695314b016bbc7a3cbf95",
-      "blockNumber": 48469171,
-      "blockTime": 1783727689000,
-      "logIndex": 166,
-      "tokenIdSuffix": "79420307",
-      "wallet": "0x3799b1f3630052dbbed89194ff67fb03d2f828c0",
-      "side": "buy",
-      "shareAmount": 600,
-      "usdAmount": 3.698622
-    },
-    {
-      "txId": "0x0b6718c25aaacf028b021433fcdacb1ed90019f235b5e7a744c8ab2f78af784c",
-      "blockNumber": 48469157,
-      "blockTime": 1783727661000,
-      "logIndex": 189,
-      "tokenIdSuffix": "79420307",
-      "wallet": "0x3799b1f3630052dbbed89194ff67fb03d2f828c0",
-      "side": "buy",
-      "shareAmount": 1438.22,
-      "usdAmount": 8.857914
     }
   ]
 }
