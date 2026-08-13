@@ -1,6 +1,61 @@
 {
-  "lastIndexedBlock": 49915145,
+  "lastIndexedBlock": 49916608,
   "trades": [
+    {
+      "txId": "0x9281b06dd94ea63a1cea52bcec6a57ae55b9a0a24648e9101923c74b98a21509",
+      "blockNumber": 49916216,
+      "blockTime": 1786621779000,
+      "logIndex": 243,
+      "tokenIdSuffix": "2050898691",
+      "wallet": "0x77fd87c12d74426244f2912738820567a0e80b6e",
+      "side": "sell",
+      "shareAmount": 100,
+      "usdAmount": 1.164549
+    },
+    {
+      "txId": "0x8196965b0f1d538375e2953c7709b0834648d75f5365474e148f8d879a1821d3",
+      "blockNumber": 49916145,
+      "blockTime": 1786621637000,
+      "logIndex": 527,
+      "tokenIdSuffix": "1694187555",
+      "wallet": "0x77fd87c12d74426244f2912738820567a0e80b6e",
+      "side": "sell",
+      "shareAmount": 100,
+      "usdAmount": 1.767501
+    },
+    {
+      "txId": "0x47e4c5a523199dddf65a4f433ca5f90347a8bf90cd54ae08ae8e06dd4e318662",
+      "blockNumber": 49915564,
+      "blockTime": 1786620475000,
+      "logIndex": 182,
+      "tokenIdSuffix": "1229893067",
+      "wallet": "0xc53d1c4935a0e760c769756d0d4267f08e67bc84",
+      "side": "buy",
+      "shareAmount": 2111.5808753581427,
+      "usdAmount": 20
+    },
+    {
+      "txId": "0x6a4cda844e3b85f650e478d0dbee7e0758d272969b2130a191a684ad7e5ba919",
+      "blockNumber": 49915523,
+      "blockTime": 1786620393000,
+      "logIndex": 151,
+      "tokenIdSuffix": "1049357910",
+      "wallet": "0xc53d1c4935a0e760c769756d0d4267f08e67bc84",
+      "side": "sell",
+      "shareAmount": 549.9280125297404,
+      "usdAmount": 1.239541
+    },
+    {
+      "txId": "0xf874d852b85789f7cf31d193797bd77e57abefa51764f7a1a42bcd840acf4592",
+      "blockNumber": 49915511,
+      "blockTime": 1786620369000,
+      "logIndex": 1045,
+      "tokenIdSuffix": "1634868202",
+      "wallet": "0xc53d1c4935a0e760c769756d0d4267f08e67bc84",
+      "side": "sell",
+      "shareAmount": 894.4132704963836,
+      "usdAmount": 5.288115
+    },
     {
       "txId": "0x1aab9d1d68c22d596830dfe9b5104d26e6fd14b15c8041e430f9175f2627a1ee",
       "blockNumber": 49913852,
