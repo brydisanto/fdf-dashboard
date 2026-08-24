@@ -67,7 +67,13 @@ async function readSnapshotFromRemote(): Promise<TradeStore | null> {
     return remoteCache.store;
   }
   try {
-    const res = await fetch(REMOTE_URL, { next: { revalidate: 300 } });
+    // no-store, not `next: { revalidate }`: trade-history.json is ~2.8MB
+    // and grows, which is over Next's 2MB fetch-cache ceiling — the
+    // revalidate variant logged "items over 2MB can not be cached" on
+    // every miss and cached nothing anyway. The module-level remoteCache
+    // above already provides the 5-min TTL, so no-store gives identical
+    // freshness without the futile cache attempt and log spam.
+    const res = await fetch(REMOTE_URL, { cache: "no-store" });
     if (!res.ok) return null;
     const parsed = (await res.json()) as Partial<TradeStore>;
     if (!Array.isArray(parsed.trades) || typeof parsed.lastIndexedBlock !== "number") return null;
