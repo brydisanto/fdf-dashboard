@@ -16,6 +16,7 @@ import { MoversList } from "@/components/MoversList";
 import { PlayersTable } from "@/components/PlayersTable";
 import { RecentTrades } from "@/components/RecentTrades";
 import { FreshnessIndicator } from "@/components/FreshnessIndicator";
+import { LiveRefresher } from "@/components/LiveRefresher";
 import { UniqueHoldersCard, UniqueHoldersCardSkeleton } from "@/components/UniqueHoldersCard";
 import { Sk, SkBlock } from "@/components/PageSkeleton";
 import { fmtUsd } from "@/lib/format";
@@ -48,6 +49,10 @@ const loadDailyVolume = cache(() => getNflDailyVolume(30));
 export default function Home() {
   return (
     <div className="mx-auto max-w-[var(--max-w)] px-5 sm:px-8 py-6 sm:py-8">
+      {/* Soft-refreshes the server components on an interval so the
+          Live Trade Feed, ticker, and movers update on their own
+          instead of sitting frozen until a manual reload. */}
+      <LiveRefresher />
       <Hero />
 
       <section className="mt-6">
