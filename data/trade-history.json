@@ -1,6 +1,28 @@
 {
-  "lastIndexedBlock": 50419708,
+  "lastIndexedBlock": 50421150,
   "trades": [
+    {
+      "txId": "0xc343bb0b443bd62bea4d4fa4ef57ffa36937be1f3c2162cbccc78d80019ebba9",
+      "blockNumber": 50420060,
+      "blockTime": 1787629467000,
+      "logIndex": 322,
+      "tokenIdSuffix": "1597935612",
+      "wallet": "0x77fd87c12d74426244f2912738820567a0e80b6e",
+      "side": "sell",
+      "shareAmount": 200,
+      "usdAmount": 2.989985
+    },
+    {
+      "txId": "0x65af38e600a156c68b672a86f364cd9c4b95d03ecbb4f81a152f066440bccef1",
+      "blockNumber": 50420036,
+      "blockTime": 1787629419000,
+      "logIndex": 218,
+      "tokenIdSuffix": "33526712",
+      "wallet": "0x77fd87c12d74426244f2912738820567a0e80b6e",
+      "side": "sell",
+      "shareAmount": 500,
+      "usdAmount": 2.557116
+    },
     {
       "txId": "0xe0e81ca6a2f2d994bce0e31bebf57718760f0b51b9b5afd71d07476a083b10de",
       "blockNumber": 50418281,
@@ -86504,39 +86526,6 @@
       "side": "swap-in",
       "shareAmount": 1001.4766092112491,
       "usdAmount": 0
-    },
-    {
-      "txId": "0x38c818a39786df6c2823a5e7b61dcf65519c4bbb8d4b930bf053f56f923cbc63",
-      "blockNumber": 49125015,
-      "blockTime": 1785039377000,
-      "logIndex": 219,
-      "tokenIdSuffix": "1924940894",
-      "wallet": "0x70130485cd421f465a909eff07d341b1eea42b19",
-      "side": "swap-out",
-      "shareAmount": 125000.32214712555,
-      "usdAmount": 0
-    },
-    {
-      "txId": "0x38c818a39786df6c2823a5e7b61dcf65519c4bbb8d4b930bf053f56f923cbc63",
-      "blockNumber": 49125015,
-      "blockTime": 1785039377000,
-      "logIndex": 220,
-      "tokenIdSuffix": "656282335",
-      "wallet": "0x70130485cd421f465a909eff07d341b1eea42b19",
-      "side": "swap-in",
-      "shareAmount": 72913.32774296346,
-      "usdAmount": 0
-    },
-    {
-      "txId": "0x0fce93654e67bc04a08f4f1009c7fccd0920ff4c4e67adb478a43d3daef4787e",
-      "blockNumber": 49124998,
-      "blockTime": 1785039343000,
-      "logIndex": 566,
-      "tokenIdSuffix": "656282335",
-      "wallet": "0x70130485cd421f465a909eff07d341b1eea42b19",
-      "side": "buy",
-      "shareAmount": 4181.999382795961,
-      "usdAmount": 25
     }
   ]
 }
