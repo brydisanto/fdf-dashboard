@@ -1284,12 +1284,20 @@ function indexedToTrade(
   if (!player) return null;
   const side: "buy" | "sell" =
     t.side === "buy" || t.side === "swap-in" ? "buy" : "sell";
-  // The indexer hard-codes usdAmount = 0 for swap legs (no paired
-  // USDC Transfer on token-for-token swaps). When a spot lookup is
-  // provided, value those legs at shareAmount × spot — otherwise
-  // every swap shows $0 in the feed and rolls up to $0 in flow tiles.
+  // Value any trade missing a USD amount at shareAmount × spot.
+  //
+  // Two ways usdAmount can be 0:
+  //   - swap legs: the indexer hard-codes 0 (token-for-token swaps have
+  //     no paired USDC Transfer to read).
+  //   - buys/sells: normally have a real amount, but the live tail can
+  //     fail to fetch a tx receipt (RPC rate-limit), leaving no USDC
+  //     moves to sum. That used to render "$0.00000 / $0" in the feed.
+  //
+  // The cause differs but the remedy is identical, so apply it to any
+  // side rather than just swaps — a fresh trade should never surface as
+  // $0 when we know the share count and the spot price.
   let totalUsd = t.usdAmount;
-  if (totalUsd <= 0 && (t.side === "swap-in" || t.side === "swap-out") && spotByPlayerId) {
+  if (totalUsd <= 0 && spotByPlayerId) {
     const spot = spotByPlayerId.get(player.id) ?? 0;
     if (spot > 0 && t.shareAmount > 0) {
       totalUsd = t.shareAmount * spot;
