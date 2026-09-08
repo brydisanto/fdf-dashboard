@@ -1,6 +1,6 @@
 {
   "source": "https://theringer.com/fantasy-football/2026-preseason?draft=ppr",
-  "scrapedAt": "2026-09-01T16:22:32.680Z",
+  "scrapedAt": "2026-09-08T16:22:52.925Z",
   "players": [
     {
       "name": "Josh Allen",
@@ -588,21 +588,12 @@
       "overallRank": 36
     },
     {
-      "name": "Josh Jacobs",
-      "firstName": "Josh",
-      "lastName": "Jacobs",
-      "team": "GB",
-      "position": "RB",
-      "positionalRank": 14,
-      "overallRank": 26
-    },
-    {
       "name": "Javonte Williams",
       "firstName": "Javonte",
       "lastName": "Williams",
       "team": "DAL",
       "position": "RB",
-      "positionalRank": 15,
+      "positionalRank": 14,
       "overallRank": 35
     },
     {
@@ -611,7 +602,7 @@
       "lastName": "Love",
       "team": "ARI",
       "position": "RB",
-      "positionalRank": 16,
+      "positionalRank": 15,
       "overallRank": 53
     },
     {
@@ -620,7 +611,7 @@
       "lastName": "Hall",
       "team": "NYJ",
       "position": "RB",
-      "positionalRank": 17,
+      "positionalRank": 16,
       "overallRank": 38
     },
     {
@@ -629,7 +620,7 @@
       "lastName": "Skattebo",
       "team": "NYG",
       "position": "RB",
-      "positionalRank": 18,
+      "positionalRank": 17,
       "overallRank": 37
     },
     {
@@ -638,7 +629,7 @@
       "lastName": "Etienne Jr.",
       "team": "NO",
       "position": "RB",
-      "positionalRank": 19,
+      "positionalRank": 18,
       "overallRank": 42
     },
     {
@@ -647,7 +638,7 @@
       "lastName": "Swift",
       "team": "CHI",
       "position": "RB",
-      "positionalRank": 20,
+      "positionalRank": 19,
       "overallRank": 52
     },
     {
@@ -656,8 +647,17 @@
       "lastName": "Montgomery",
       "team": "HOU",
       "position": "RB",
-      "positionalRank": 21,
+      "positionalRank": 20,
       "overallRank": 50
+    },
+    {
+      "name": "Jadarian Price",
+      "firstName": "Jadarian",
+      "lastName": "Price",
+      "team": "SEA",
+      "position": "RB",
+      "positionalRank": 21,
+      "overallRank": 54
     },
     {
       "name": "Quinshon Judkins",
@@ -678,21 +678,12 @@
       "overallRank": 62
     },
     {
-      "name": "Jadarian Price",
-      "firstName": "Jadarian",
-      "lastName": "Price",
-      "team": "SEA",
-      "position": "RB",
-      "positionalRank": 24,
-      "overallRank": 54
-    },
-    {
       "name": "Rhamondre Stevenson",
       "firstName": "Rhamondre",
       "lastName": "Stevenson",
       "team": "NE",
       "position": "RB",
-      "positionalRank": 25,
+      "positionalRank": 24,
       "overallRank": 63
     },
     {
@@ -701,7 +692,7 @@
       "lastName": "Henderson",
       "team": "NE",
       "position": "RB",
-      "positionalRank": 26,
+      "positionalRank": 25,
       "overallRank": 71
     },
     {
@@ -710,8 +701,17 @@
       "lastName": "Tuten",
       "team": "JAC",
       "position": "RB",
-      "positionalRank": 27,
+      "positionalRank": 26,
       "overallRank": 66
+    },
+    {
+      "name": "Jaylen Warren",
+      "firstName": "Jaylen",
+      "lastName": "Warren",
+      "team": "PIT",
+      "position": "RB",
+      "positionalRank": 27,
+      "overallRank": 73
     },
     {
       "name": "Tony Pollard",
@@ -723,21 +723,12 @@
       "overallRank": 87
     },
     {
-      "name": "Jaylen Warren",
-      "firstName": "Jaylen",
-      "lastName": "Warren",
-      "team": "PIT",
-      "position": "RB",
-      "positionalRank": 29,
-      "overallRank": 73
-    },
-    {
       "name": "Jonathon Brooks",
       "firstName": "Jonathon",
       "lastName": "Brooks",
       "team": "CAR",
       "position": "RB",
-      "positionalRank": 30,
+      "positionalRank": 29,
       "overallRank": 74
     },
     {
@@ -746,7 +737,7 @@
       "lastName": "Dowdle",
       "team": "PIT",
       "position": "RB",
-      "positionalRank": 31,
+      "positionalRank": 30,
       "overallRank": 72
     },
     {
@@ -755,7 +746,7 @@
       "lastName": "Hubbard",
       "team": "CAR",
       "position": "RB",
-      "positionalRank": 32,
+      "positionalRank": 31,
       "overallRank": 86
     },
     {
@@ -764,7 +755,7 @@
       "lastName": "Harvey",
       "team": "DEN",
       "position": "RB",
-      "positionalRank": 33,
+      "positionalRank": 32,
       "overallRank": 99
     },
     {
@@ -773,7 +764,7 @@
       "lastName": "Corum",
       "team": "LAR",
       "position": "RB",
-      "positionalRank": 34,
+      "positionalRank": 33,
       "overallRank": 99
     },
     {
@@ -782,7 +773,7 @@
       "lastName": "Dobbins",
       "team": "DEN",
       "position": "RB",
-      "positionalRank": 35,
+      "positionalRank": 34,
       "overallRank": 100
     },
     {
@@ -791,8 +782,17 @@
       "lastName": "Mason",
       "team": "MIN",
       "position": "RB",
-      "positionalRank": 36,
+      "positionalRank": 35,
       "overallRank": 88
+    },
+    {
+      "name": "Rachaad White",
+      "firstName": "Rachaad",
+      "lastName": "White",
+      "team": "WAS",
+      "position": "RB",
+      "positionalRank": 36,
+      "overallRank": 111
     },
     {
       "name": "Jacory Croskey-Merritt",
@@ -804,22 +804,22 @@
       "overallRank": 104
     },
     {
-      "name": "Rachaad White",
-      "firstName": "Rachaad",
-      "lastName": "White",
-      "team": "WAS",
-      "position": "RB",
-      "positionalRank": 38,
-      "overallRank": 111
-    },
-    {
       "name": "Kenneth Gainwell",
       "firstName": "Kenneth",
       "lastName": "Gainwell",
       "team": "TB",
       "position": "RB",
-      "positionalRank": 39,
+      "positionalRank": 38,
       "overallRank": 122
+    },
+    {
+      "name": "MarShawn Lloyd",
+      "firstName": "MarShawn",
+      "lastName": "Lloyd",
+      "team": "GB",
+      "position": "RB",
+      "positionalRank": 39,
+      "overallRank": 155
     },
     {
       "name": "Kyle Monangai",
@@ -876,12 +876,21 @@
       "overallRank": 120
     },
     {
+      "name": "Josh Jacobs",
+      "firstName": "Josh",
+      "lastName": "Jacobs",
+      "team": "GB",
+      "position": "RB",
+      "positionalRank": 46,
+      "overallRank": 26
+    },
+    {
       "name": "Woody Marks",
       "firstName": "Woody",
       "lastName": "Marks",
       "team": "HOU",
       "position": "RB",
-      "positionalRank": 46,
+      "positionalRank": 47,
       "overallRank": 130
     },
     {
@@ -890,17 +899,8 @@
       "lastName": "Allen",
       "team": "NYJ",
       "position": "RB",
-      "positionalRank": 47,
-      "overallRank": 154
-    },
-    {
-      "name": "Tyjae Spears",
-      "firstName": "Tyjae",
-      "lastName": "Spears",
-      "team": "TEN",
-      "position": "RB",
       "positionalRank": 48,
-      "overallRank": 137
+      "overallRank": 154
     },
     {
       "name": "Mike Washington Jr.",
@@ -912,22 +912,22 @@
       "overallRank": 143
     },
     {
+      "name": "Tyjae Spears",
+      "firstName": "Tyjae",
+      "lastName": "Spears",
+      "team": "TEN",
+      "position": "RB",
+      "positionalRank": 50,
+      "overallRank": 137
+    },
+    {
       "name": "Dylan Sampson",
       "firstName": "Dylan",
       "lastName": "Sampson",
       "team": "CLE",
       "position": "RB",
-      "positionalRank": 50,
-      "overallRank": 199
-    },
-    {
-      "name": "MarShawn Lloyd",
-      "firstName": "MarShawn",
-      "lastName": "Lloyd",
-      "team": "GB",
-      "position": "RB",
       "positionalRank": 51,
-      "overallRank": 155
+      "overallRank": 199
     },
     {
       "name": "Tyrone Tracy Jr.",
@@ -1029,22 +1029,22 @@
       "overallRank": 198
     },
     {
+      "name": "Kaleb Johnson",
+      "firstName": "Kaleb",
+      "lastName": "Johnson",
+      "team": "PIT",
+      "position": "RB",
+      "positionalRank": 63,
+      "overallRank": null
+    },
+    {
       "name": "Kimani Vidal",
       "firstName": "Kimani",
       "lastName": "Vidal",
       "team": "LAC",
       "position": "RB",
-      "positionalRank": 63,
-      "overallRank": 159
-    },
-    {
-      "name": "Jaydon Blue",
-      "firstName": "Jaydon",
-      "lastName": "Blue",
-      "team": "DAL",
-      "position": "RB",
       "positionalRank": 64,
-      "overallRank": 178
+      "overallRank": 159
     },
     {
       "name": "Emanuel Wilson",
@@ -1070,7 +1070,7 @@
       "lastName": "Conner",
       "team": "ARI",
       "position": "RB",
-      "positionalRank": 999,
+      "positionalRank": 67,
       "overallRank": null
     },
     {
@@ -1216,6 +1216,15 @@
       "position": "RB",
       "positionalRank": 999,
       "overallRank": null
+    },
+    {
+      "name": "Jaydon Blue",
+      "firstName": "Jaydon",
+      "lastName": "Blue",
+      "team": "DAL",
+      "position": "RB",
+      "positionalRank": 999,
+      "overallRank": 178
     },
     {
       "name": "Jaleel McLaughlin",
@@ -1429,15 +1438,6 @@
       "firstName": "Will",
       "lastName": "Shipley",
       "team": "PHI",
-      "position": "RB",
-      "positionalRank": 999,
-      "overallRank": null
-    },
-    {
-      "name": "Kaleb Johnson",
-      "firstName": "Kaleb",
-      "lastName": "Johnson",
-      "team": "PIT",
       "position": "RB",
       "positionalRank": 999,
       "overallRank": null
@@ -2037,22 +2037,22 @@
       "overallRank": 21
     },
     {
-      "name": "Drake London",
-      "firstName": "Drake",
-      "lastName": "London",
-      "team": "ATL",
-      "position": "WR",
-      "positionalRank": 9,
-      "overallRank": 22
-    },
-    {
       "name": "Rashee Rice",
       "firstName": "Rashee",
       "lastName": "Rice",
       "team": "KC",
       "position": "WR",
-      "positionalRank": 10,
+      "positionalRank": 9,
       "overallRank": 25
+    },
+    {
+      "name": "Drake London",
+      "firstName": "Drake",
+      "lastName": "London",
+      "team": "ATL",
+      "position": "WR",
+      "positionalRank": 10,
+      "overallRank": 22
     },
     {
       "name": "George Pickens",
@@ -2244,12 +2244,21 @@
       "overallRank": 67
     },
     {
+      "name": "Quentin Johnston",
+      "firstName": "Quentin",
+      "lastName": "Johnston",
+      "team": "LAC",
+      "position": "WR",
+      "positionalRank": 32,
+      "overallRank": 69
+    },
+    {
       "name": "Marvin Harrison Jr.",
       "firstName": "Marvin",
       "lastName": "Harrison Jr.",
       "team": "ARI",
       "position": "WR",
-      "positionalRank": 32,
+      "positionalRank": 33,
       "overallRank": 75
     },
     {
@@ -2258,17 +2267,8 @@
       "lastName": "Wilson",
       "team": "ARI",
       "position": "WR",
-      "positionalRank": 33,
-      "overallRank": 76
-    },
-    {
-      "name": "Quentin Johnston",
-      "firstName": "Quentin",
-      "lastName": "Johnston",
-      "team": "LAC",
-      "position": "WR",
       "positionalRank": 34,
-      "overallRank": 69
+      "overallRank": 76
     },
     {
       "name": "Carnell Tate",
@@ -2316,22 +2316,22 @@
       "overallRank": 77
     },
     {
-      "name": "Jordan Addison",
-      "firstName": "Jordan",
-      "lastName": "Addison",
-      "team": "MIN",
-      "position": "WR",
-      "positionalRank": 40,
-      "overallRank": 95
-    },
-    {
       "name": "Courtland Sutton",
       "firstName": "Courtland",
       "lastName": "Sutton",
       "team": "DEN",
       "position": "WR",
-      "positionalRank": 41,
+      "positionalRank": 40,
       "overallRank": 94
+    },
+    {
+      "name": "Jordan Addison",
+      "firstName": "Jordan",
+      "lastName": "Addison",
+      "team": "MIN",
+      "position": "WR",
+      "positionalRank": 41,
+      "overallRank": 95
     },
     {
       "name": "Wan’Dale Robinson",
@@ -2505,22 +2505,22 @@
       "overallRank": 132
     },
     {
-      "name": "Jalen Nailor",
-      "firstName": "Jalen",
-      "lastName": "Nailor",
-      "team": "LV",
-      "position": "WR",
-      "positionalRank": 61,
-      "overallRank": 147
-    },
-    {
       "name": "Tre Tucker",
       "firstName": "Tre",
       "lastName": "Tucker",
       "team": "LV",
       "position": "WR",
-      "positionalRank": 62,
+      "positionalRank": 61,
       "overallRank": 177
+    },
+    {
+      "name": "Jalen Nailor",
+      "firstName": "Jalen",
+      "lastName": "Nailor",
+      "team": "LV",
+      "position": "WR",
+      "positionalRank": 62,
+      "overallRank": 147
     },
     {
       "name": "Kayshon Boutte",
@@ -2550,22 +2550,22 @@
       "overallRank": 148
     },
     {
-      "name": "Malik Washington",
-      "firstName": "Malik",
-      "lastName": "Washington",
-      "team": "MIA",
-      "position": "WR",
-      "positionalRank": 66,
-      "overallRank": 187
-    },
-    {
       "name": "Rashod Bateman",
       "firstName": "Rashod",
       "lastName": "Bateman",
       "team": "BAL",
       "position": "WR",
-      "positionalRank": 67,
+      "positionalRank": 66,
       "overallRank": 152
+    },
+    {
+      "name": "Malik Washington",
+      "firstName": "Malik",
+      "lastName": "Washington",
+      "team": "MIA",
+      "position": "WR",
+      "positionalRank": 67,
+      "overallRank": 187
     },
     {
       "name": "Jack Bech",
@@ -2682,15 +2682,6 @@
       "team": "PIT",
       "position": "WR",
       "positionalRank": 80,
-      "overallRank": null
-    },
-    {
-      "name": "Caleb Douglas",
-      "firstName": "Caleb",
-      "lastName": "Douglas",
-      "team": "MIA",
-      "position": "WR",
-      "positionalRank": 81,
       "overallRank": null
     },
     {
@@ -2851,6 +2842,15 @@
       "firstName": "Deion",
       "lastName": "Burks",
       "team": "IND",
+      "position": "WR",
+      "positionalRank": 999,
+      "overallRank": null
+    },
+    {
+      "name": "Caleb Douglas",
+      "firstName": "Caleb",
+      "lastName": "Douglas",
+      "team": "MIA",
       "position": "WR",
       "positionalRank": 999,
       "overallRank": null
