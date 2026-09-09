@@ -47,10 +47,15 @@ const BASE_BLOCK_TIME_MS = 2000;
 // fixes that; the throttle below is the safety net.
 const MAX_TAIL_BLOCKS = 90 * 30; // ~90 min of blocks on Base (2s blocks)
 
+// Only RPCs that serve eth_getLogs anonymously belong here. publicnode
+// was removed: it answers every getLogs with "Archive requests require a
+// personal token" (InvalidParams), and because viem's fallback treats
+// that as a final answer rather than a transport failure, one rate-limit
+// blip on mainnet.base.org used to end the whole tail scan with that
+// error instead of retrying.
 const BASE_RPCS = [
   "https://mainnet.base.org",
   "https://base.llamarpc.com",
-  "https://base.publicnode.com",
 ];
 
 const client = createPublicClient({
@@ -104,12 +109,26 @@ export async function tailNflTrades(lastIndexedBlock: number): Promise<IndexedTr
     // Just NFL share transfers. USD attribution comes from each tx's
     // receipt below — that way we're robust to USDC moving through
     // any contract (router, FOOTBALLFUN, or PAIR), not just PAIR.
-    const shareLogs = await client.getLogs({
-      address: FOOTBALLFUN_CONTRACT as Address,
-      event: TRANSFER_SINGLE_EVENT,
-      fromBlock: scanFrom,
-      toBlock: head,
-    });
+    //
+    // CHUNKED: the public Base RPC caps eth_getLogs at a 2,000-block
+    // range and rejects anything wider with InvalidParams. MAX_TAIL_BLOCKS
+    // is 2,700, so the previous single call failed on every render —
+    // the tail silently returned nothing and the "live" feed froze at
+    // the last cron write. Chunks run sequentially (at most 2 calls),
+    // so this adds no concurrency pressure on the receipt fetches below.
+    const LOGS_CHUNK_BLOCKS = 2_000n;
+    const fetchChunk = (from: bigint, to: bigint) =>
+      client.getLogs({
+        address: FOOTBALLFUN_CONTRACT as Address,
+        event: TRANSFER_SINGLE_EVENT,
+        fromBlock: from,
+        toBlock: to,
+      });
+    const shareLogs: Awaited<ReturnType<typeof fetchChunk>> = [];
+    for (let from = scanFrom; from <= head; from += LOGS_CHUNK_BLOCKS) {
+      const to = from + LOGS_CHUNK_BLOCKS - 1n < head ? from + LOGS_CHUNK_BLOCKS - 1n : head;
+      shareLogs.push(...(await fetchChunk(from, to)));
+    }
 
     // Filter NFL share movements that involve a user wallet (skip
     // mints/burns and internal pair ↔ contract moves).
@@ -164,7 +183,7 @@ export async function tailNflTrades(lastIndexedBlock: number): Promise<IndexedTr
     // Transfer the user is involved in, regardless of counterparty.
     //
     // THROTTLED, with retry. This used to be a single Promise.all over
-    // every tx in the window. MAX_TAIL_BLOCKS is ~5h of blocks, which
+    // every tx in the window. MAX_TAIL_BLOCKS was ~5h of blocks, which
     // in practice is 500+ txs, so the tail fired 500+ concurrent
     // eth_getTransactionReceipt calls at the public Base RPC. It
     // rate-limited roughly half of them, each rejection was swallowed
