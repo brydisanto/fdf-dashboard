@@ -17,6 +17,7 @@ import { PlayersTable } from "@/components/PlayersTable";
 import { RecentTrades } from "@/components/RecentTrades";
 import { FreshnessIndicator } from "@/components/FreshnessIndicator";
 import { LiveRefresher } from "@/components/LiveRefresher";
+import { ROSTER } from "@/lib/data/roster";
 import { UniqueHoldersCard, UniqueHoldersCardSkeleton } from "@/components/UniqueHoldersCard";
 import { Sk, SkBlock } from "@/components/PageSkeleton";
 import { fmtUsd } from "@/lib/format";
@@ -448,8 +449,8 @@ function Hero() {
           style={{ fontSize: "15px" }}
         >
           Real-time price action, pool liquidity, holders, trades, and value assessment for every
-          tokenized athlete on Sport.fun&apos;s NFL market. 72 players listed. This is how Real
-          Football&trade; is played.
+          tokenized athlete on Sport.fun&apos;s NFL market. {ROSTER.length} players listed. This is
+          how Real Football&trade; is played.
         </p>
       </div>
     </div>

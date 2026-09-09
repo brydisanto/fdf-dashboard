@@ -1,4 +1,7 @@
-// 72 NFL player tokens listed on Sport.fun (Football.fun's NFL market).
+// NFL player tokens listed on Sport.fun (Football.fun's NFL market).
+// 76 as of 2026-09: the original 72 plus 4 listed at Base block 50972993
+// (Burrow, J. Love, Nabers, Loveland). Token ids were confirmed against
+// Sport.fun's own /api/nfl/v3/players (oPlayerId) — 76 isTradeable.
 // Captured from api.tenero.io/v1/sportsfun/tokens on 2025-12-12 via live
 // inspection. The contract is shared across every player; only the
 // numeric tokenId differs per player.
@@ -26,6 +29,7 @@ const ROWS: Row[] = [
   ["patrick-mahomes",    "Patrick Mahomes",     "QB", "KC",  "PM15",  15, "646914359"],
   ["jordan-love",        "Jordan Love",         "QB", "GB",  "JL10",  10, "88065636"],
   ["baker-mayfield",     "Baker Mayfield",      "QB", "TB",  "BM6",    6, "403250563"],
+  ["joe-burrow",         "Joe Burrow",          "QB", "CIN", "JB9",    9, "1356730929"], // listed 2026-09
 
   // RBs
   ["christian-mccaffrey","Christian McCaffrey", "RB", "SF",  "CM23",  23, "2050898691"],
@@ -52,6 +56,7 @@ const ROWS: Row[] = [
   ["treveyon-henderson", "TreVeyon Henderson",  "RB", "NE",  "TH32",  32, "637063064"],
   ["omarion-hampton",    "Omarion Hampton",     "RB", "LAC", "OH8",    8, "1835372287"],
   ["dandre-swift",       "D'Andre Swift",       "RB", "CHI", "DS4",    4, "1096457743"],
+  ["jeremiyah-love",     "Jeremiyah Love",      "RB", "ARI", "JL4",    4, "1708756815"], // listed 2026-09
 
   // WRs
   ["puka-nacua",         "Puka Nacua",          "WR", "LAR", "PN12",  12, "344873876"],
@@ -78,6 +83,7 @@ const ROWS: Row[] = [
   ["stefon-diggs",       "Stefon Diggs",        "WR", "NE",  "SD8",    8, "1892649533"],
   ["michael-pittman",    "Michael Pittman Jr.", "WR", "IND", "MP11",  11, "280776288"],
   ["courtland-sutton",   "Courtland Sutton",    "WR", "DEN", "CS14",  14, "1986714215"],
+  ["malik-nabers",       "Malik Nabers",        "WR", "NYG", "MN1",    1, "383785792"],  // listed 2026-09
 
   // TEs
   ["brock-bowers",       "Brock Bowers",        "TE", "LV",  "BB89",  89, "972599423"],
@@ -92,6 +98,7 @@ const ROWS: Row[] = [
   ["hunter-henry",       "Hunter Henry",        "TE", "NE",  "HH85",  85, "946323199"],
   ["mark-andrews",       "Mark Andrews",        "TE", "BAL", "MA89",  89, "2078797761"],
   ["dalton-kincaid",     "Dalton Kincaid",      "TE", "BUF", "DK86",  86, "1378093404"],
+  ["colston-loveland",   "Colston Loveland",    "TE", "CHI", "CL84",  84, "1675627806"], // listed 2026-09
 ];
 
 export interface NflPlayer extends Player {
