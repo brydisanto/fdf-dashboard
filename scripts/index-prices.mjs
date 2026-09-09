@@ -94,6 +94,10 @@ const TOKEN_ID_SUFFIXES = [
   "363339787","1631265816","1965487160","1892649533","280776288","1986714215",
   "972599423","1597935612","1257875488","268596935","202647757","708089183",
   "1049357910","543182829","1953241833","946323199","2078797761","1378093404",
+  // Listed 2026-09 (block 50972993). APPEND-ONLY: price-history columns
+  // are positional, so new ids must go at the end to keep old snapshots
+  // aligned (see the roster-expansion padding below).
+  "1675627806","1356730929","1708756815","383785792",
 ];
 
 // Every Sport.fun player token has the same 25M hard cap — circulating
@@ -193,14 +197,32 @@ async function main() {
     // No existing file — start fresh.
   }
 
-  // If the roster expanded since the last snapshot, prepend zeros to
-  // the new entries so the array shape is consistent. Conversely, if
-  // a token was removed from the roster, the existing snapshots'
-  // extra entries are harmless (the reader looks up by index).
-  if (store.tokenIds.length !== TOKEN_ID_SUFFIXES.length ||
-      store.tokenIds.some((id, i) => id !== TOKEN_ID_SUFFIXES[i])) {
-    console.error("Roster changed since last snapshot — resetting tokenIds. Old snapshots may have misaligned indices and should be considered stale.");
+  // Roster changes. The common case is EXPANSION: new players get
+  // appended to the end of TOKEN_ID_SUFFIXES, so every existing index
+  // still points at the same token. Pad old snapshots with 0 for the
+  // new slots and carry on — the reader treats 0 as "no data" (priceAt
+  // returns null for p <= 0), so sparklines/deltas for new tokens just
+  // start from now while the 72 originals keep their full history.
+  //
+  // Only a genuine re-ordering or removal (an existing index now
+  // pointing at a different token) forces a reset, because then every
+  // old snapshot's arrays would be misaligned. Previously ANY change —
+  // including a pure append — reset the whole store and silently wiped
+  // 7 days of price history for every player.
+  const prefixIntact =
+    store.tokenIds.length <= TOKEN_ID_SUFFIXES.length &&
+    store.tokenIds.every((id, i) => id === TOKEN_ID_SUFFIXES[i]);
+  if (!prefixIntact) {
+    console.error("Roster re-ordered or shrank since last snapshot — resetting tokenIds. Old snapshots would be misaligned.");
     store = { tokenIds: TOKEN_ID_SUFFIXES, snapshots: [] };
+  } else if (store.tokenIds.length < TOKEN_ID_SUFFIXES.length) {
+    const added = TOKEN_ID_SUFFIXES.length - store.tokenIds.length;
+    console.error(`Roster expanded by ${added} token(s) — padding ${store.snapshots.length} existing snapshots, history preserved.`);
+    for (const s of store.snapshots) {
+      while (s.prices.length < TOKEN_ID_SUFFIXES.length) s.prices.push(0);
+      if (Array.isArray(s.supplies)) while (s.supplies.length < TOKEN_ID_SUFFIXES.length) s.supplies.push(0);
+    }
+    store.tokenIds = TOKEN_ID_SUFFIXES;
   }
 
   store.snapshots.push(snapshot);

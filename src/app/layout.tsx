@@ -7,6 +7,7 @@ import { Suspense } from "react";
 import { MobileNav } from "@/components/MobileNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { TickerStrip } from "@/components/TickerStrip";
+import { ROSTER } from "@/lib/data/roster";
 import "./globals.css";
 
 // Google Analytics 4 measurement ID. Loaded via @next/third-parties so
@@ -52,7 +53,7 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "FDF Box Score — NFL Player Token Market",
   description:
-    "Real-time price action, trade feed, top wallets, trends, value assessment and more for every tokenized athlete on Sport.fun's NFL market. Includes 72 players. This is how Real Football™ is played.",
+    `Real-time price action, trade feed, top wallets, trends, value assessment and more for every tokenized athlete on Sport.fun's NFL market. Includes ${ROSTER.length} players. This is how Real Football™ is played.`,
 };
 
 export default function RootLayout({

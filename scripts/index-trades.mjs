@@ -107,6 +107,10 @@ const TOKEN_ID_SUFFIXES = [
   "363339787","1631265816","1965487160","1892649533","280776288","1986714215",
   "972599423","1597935612","1257875488","268596935","202647757","708089183",
   "1049357910","543182829","1953241833","946323199","2078797761","1378093404",
+  // Listed 2026-09 (block 50972993). Their first ~3 days of trades were
+  // filtered out before this line existed — backfill with a
+  // workflow_dispatch rescan_blocks covering block 50972993 onward.
+  "1675627806","1356730929","1708756815","383785792",
 ];
 const NFL_TOKEN_SET = new Set(TOKEN_ID_SUFFIXES);
 
