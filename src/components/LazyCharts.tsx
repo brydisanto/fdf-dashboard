@@ -73,6 +73,11 @@ export const NewWalletsJoinsChart = dynamic(
   { ssr: false, loading: () => <Box height={240} /> },
 );
 
+export const NewWalletsNetFlowChart = dynamic(
+  () => import("./NewWalletsChart").then((m) => m.NewWalletsNetFlowChart),
+  { ssr: false, loading: () => <Box height={240} /> },
+);
+
 export const NewWalletsActivityChart = dynamic(
   () => import("./NewWalletsChart").then((m) => m.NewWalletsActivityChart),
   { ssr: false, loading: () => <Box height={240} /> },

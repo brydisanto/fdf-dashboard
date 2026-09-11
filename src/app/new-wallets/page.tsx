@@ -4,7 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { getNewWallets } from "@/lib/data/new-wallets";
 import { Card, Pill } from "@/components/ui";
 import { NewWalletsTable } from "@/components/NewWalletsTable";
-import { NewWalletsActivityChart, NewWalletsJoinsChart } from "@/components/LazyCharts";
+import { NewWalletsActivityChart, NewWalletsJoinsChart, NewWalletsNetFlowChart } from "@/components/LazyCharts";
 import type { NewWalletCohort } from "@/lib/data/new-wallets";
 import { Sk, SkBlock } from "@/components/PageSkeleton";
 import { fmtNum, fmtUsd } from "@/lib/format";
@@ -161,6 +161,33 @@ async function Body() {
         </Card>
       </div>
 
+      <div className="mt-4">
+        <SectionHead
+          title="Net Buy / Sell From New Wallets"
+          hint="Bars: daily buys (up) and sells (down) by the 30-day cohort · Line: running net over the window, right axis"
+          right={
+            <Pill tone={r.cohortNet7d >= 0 ? "gain" : "loss"}>
+              {r.cohortNet7d >= 0 ? "Net buying" : "Net selling"} · 7d
+            </Pill>
+          }
+        />
+        <Card variant="press" padded={false}>
+          <div className="p-5">
+            <div className="mb-4 grid grid-cols-3 gap-3">
+              <FlowTile label="Buys · 7d" value={fmtUsd(r.cohortBuy7d, { compact: true })} tone="gain" />
+              <FlowTile label="Sells · 7d" value={fmtUsd(r.cohortSell7d, { compact: true })} tone="loss" />
+              <FlowTile
+                label="Net · 7d"
+                value={`${r.cohortNet7d >= 0 ? "+" : "−"}${fmtUsd(Math.abs(r.cohortNet7d), { compact: true })}`}
+                sub={`prior 7d ${r.cohortNetPrior7d >= 0 ? "+" : "−"}${fmtUsd(Math.abs(r.cohortNetPrior7d), { compact: true })}`}
+                tone={r.cohortNet7d >= 0 ? "gain" : "loss"}
+              />
+            </div>
+            <NewWalletsNetFlowChart daily={r.daily} />
+          </div>
+        </Card>
+      </div>
+
       {/* Trends */}
       <div className="mt-6">
         <SectionHead
@@ -184,6 +211,26 @@ async function Body() {
         </Card>
       </div>
     </>
+  );
+}
+
+function FlowTile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone: "gain" | "loss" }) {
+  const color = tone === "gain" ? "var(--color-turf)" : "var(--color-penalty)";
+  return (
+    <div
+      className="rounded-[var(--r-8)] border border-[var(--color-line)] px-4 py-3"
+      style={{ background: `color-mix(in oklab, ${color} 6%, transparent)` }}
+    >
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--color-text-muted)" }}>
+        {label}
+      </div>
+      <div className="mt-1" style={{ fontFamily: "var(--font-mono)", fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", color, fontVariantNumeric: "tabular-nums" }}>
+        {value}
+      </div>
+      {sub ? (
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--color-text-dim)" }}>{sub}</div>
+      ) : null}
+    </div>
   );
 }
 

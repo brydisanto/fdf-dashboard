@@ -41,6 +41,10 @@ export interface NewWalletsDay {
   activeNew: number;          // distinct 30-day-cohort wallets that traded this day
   cohortTrades: number;       // trades by the 30-day cohort this day
   cohortVolumeUsd: number;    // their volume (buys + sells + swaps at spot)
+  cohortBuyUsd: number;       // buys + swap-ins by the cohort this day
+  cohortSellUsd: number;      // sells + swap-outs by the cohort this day
+  cohortNetUsd: number;       // buy − sell (positive = new money in)
+  cohortNetCumUsd: number;    // running net over the 30-day window
   marketVolumeUsd: number;    // all NFL volume this day, for the share line
 }
 
@@ -73,6 +77,10 @@ export interface NewWalletsReport {
   stillHolding7d: number;     // of new7d, wallets whose position is still > $1
   activeNew7d: number;        // distinct 30-day-cohort wallets that traded in the last 7d
   cohortVolume7d: number;     // 30-day cohort volume over the last 7d
+  cohortBuy7d: number;
+  cohortSell7d: number;
+  cohortNet7d: number;        // cohortBuy7d − cohortSell7d
+  cohortNetPrior7d: number;   // same for the 7 days before that
   marketVolume7d: number;     // all NFL volume over the last 7d
   generatedAt: number;
 }
@@ -210,34 +218,49 @@ async function buildReport(): Promise<NewWalletsReport> {
   // Daily activity: what the 30-day cohort did each day versus the
   // whole market. One pass over the trade history.
   const cohort = new Set(rows.map((r) => r.address));
-  const dayActivity = new Map<number, { active: Set<string>; trades: number; cohortUsd: number; marketUsd: number }>();
+  const dayActivity = new Map<number, {
+    active: Set<string>; trades: number; cohortUsd: number; buyUsd: number; sellUsd: number; marketUsd: number;
+  }>();
   const activeNew7dSet = new Set<string>();
-  let cohortVolume7d = 0, marketVolume7d = 0;
+  let cohortVolume7d = 0, marketVolume7d = 0, cohortBuy7d = 0, cohortSell7d = 0, cohortNetPrior7d = 0;
   const sevenDaysAgo = now - 7 * DAY_MS;
+  const fourteenDaysAgo = now - 14 * DAY_MS;
   for (const t of trades) {
     if (t.blockTime < windowStart) continue;
     const key = dayOf(t.blockTime);
     let d = dayActivity.get(key);
-    if (!d) dayActivity.set(key, (d = { active: new Set(), trades: 0, cohortUsd: 0, marketUsd: 0 }));
+    if (!d) dayActivity.set(key, (d = { active: new Set(), trades: 0, cohortUsd: 0, buyUsd: 0, sellUsd: 0, marketUsd: 0 }));
     const usd = value(t);
     d.marketUsd += usd;
     const recent = t.blockTime >= sevenDaysAgo;
     if (recent) marketVolume7d += usd;
     if (!cohort.has(t.wallet)) continue;
+    const isIn = t.side === "buy" || t.side === "swap-in";
     d.active.add(t.wallet);
     d.trades++;
     d.cohortUsd += usd;
-    if (recent) { cohortVolume7d += usd; activeNew7dSet.add(t.wallet); }
+    if (isIn) d.buyUsd += usd; else d.sellUsd += usd;
+    if (recent) {
+      cohortVolume7d += usd;
+      activeNew7dSet.add(t.wallet);
+      if (isIn) cohortBuy7d += usd; else cohortSell7d += usd;
+    } else if (t.blockTime >= fourteenDaysAgo) {
+      cohortNetPrior7d += isIn ? usd : -usd;
+    }
   }
 
   const daily: NewWalletsDay[] = [];
   const today = dayOf(now);
   let cumulative = olderThanWindow;
+  let netCum = 0;
   for (let i = 29; i >= 0; i--) {
     const t = today - i * DAY_MS;
     const count = dailyCounts.get(t) ?? 0;
     cumulative += count;
     const d = dayActivity.get(t);
+    const buy = d?.buyUsd ?? 0;
+    const sell = d?.sellUsd ?? 0;
+    netCum += buy - sell;
     daily.push({
       t,
       count,
@@ -245,6 +268,10 @@ async function buildReport(): Promise<NewWalletsReport> {
       activeNew: d?.active.size ?? 0,
       cohortTrades: d?.trades ?? 0,
       cohortVolumeUsd: d?.cohortUsd ?? 0,
+      cohortBuyUsd: buy,
+      cohortSellUsd: sell,
+      cohortNetUsd: buy - sell,
+      cohortNetCumUsd: netCum,
       marketVolumeUsd: d?.marketUsd ?? 0,
     });
   }
@@ -287,6 +314,10 @@ async function buildReport(): Promise<NewWalletsReport> {
     stillHolding7d,
     activeNew7d: activeNew7dSet.size,
     cohortVolume7d,
+    cohortBuy7d,
+    cohortSell7d,
+    cohortNet7d: cohortBuy7d - cohortSell7d,
+    cohortNetPrior7d,
     marketVolume7d,
     generatedAt: now,
   };
