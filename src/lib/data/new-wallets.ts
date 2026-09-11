@@ -36,21 +36,44 @@ export interface NewWalletRow {
 
 export interface NewWalletsDay {
   t: number;                  // unix ms at UTC midnight
-  count: number;
+  count: number;              // wallets whose first NFL trade landed this day
+  cumulative: number;         // all-time wallet count at the end of this day
+  activeNew: number;          // distinct 30-day-cohort wallets that traded this day
+  cohortTrades: number;       // trades by the 30-day cohort this day
+  cohortVolumeUsd: number;    // their volume (buys + sells + swaps at spot)
+  marketVolumeUsd: number;    // all NFL volume this day, for the share line
+}
+
+export interface NewWalletCohort {
+  label: string;              // "This week", "1 week ago", ...
+  from: number;               // unix ms, inclusive
+  to: number;                 // unix ms, exclusive
+  joined: number;
+  stillHolding: number;       // position > $1 today
+  avgFirstUsd: number;        // mean dollars on the first trade
+  volumeUsd: number;          // everything they've traded since joining
+  netUsd: number;             // buys − sells (positive = money still in)
+  tradesPerWallet: number;
 }
 
 export interface NewWalletsReport {
   rows: NewWalletRow[];       // newest first
   daily: NewWalletsDay[];     // 30 days, oldest first
+  cohorts: NewWalletCohort[]; // 4 weekly cohorts, newest first
   totalWalletsEver: number;
   registrySeeded: boolean;
   registryUpdatedAt: number;
   new24h: number;
+  prior24h: number;           // first-seen between 48h and 24h ago
   new7d: number;
-  new30d: number;
   prior7d: number;            // first-seen between 14d and 7d ago, for the trend
+  new30d: number;
+  prior30d: number;           // first-seen between 60d and 30d ago
   firstBuyUsd7d: number;      // dollars committed on first trades in the last 7d
   stillHolding7d: number;     // of new7d, wallets whose position is still > $1
+  activeNew7d: number;        // distinct 30-day-cohort wallets that traded in the last 7d
+  cohortVolume7d: number;     // 30-day cohort volume over the last 7d
+  marketVolume7d: number;     // all NFL volume over the last 7d
   generatedAt: number;
 }
 
@@ -102,27 +125,33 @@ async function buildReport(): Promise<NewWalletsReport> {
     else if (cur.provisional && t.blockTime < cur.at) cur.at = t.blockTime;
   }
 
+  const value = (t: IndexedTrade) => {
+    if (t.usdAmount > 0) return t.usdAmount;
+    const spot = spotByToken.get(t.tokenIdSuffix) ?? 0;
+    return spot > 0 ? t.shareAmount * spot : 0;
+  };
+  const dayOf = (ts: number) => Math.floor(ts / DAY_MS) * DAY_MS;
+
   const rows: NewWalletRow[] = [];
   const dailyCounts = new Map<number, number>();
-  let new24h = 0, new7d = 0, new30d = 0, prior7d = 0, firstBuyUsd7d = 0, stillHolding7d = 0;
+  let new24h = 0, prior24h = 0, new7d = 0, prior7d = 0, new30d = 0, prior30d = 0;
+  let firstBuyUsd7d = 0, stillHolding7d = 0;
+  let olderThanWindow = 0;
 
   for (const [addr, seen] of firstSeen) {
     const age = now - seen.at;
+    if (age >= DAY_MS && age < 2 * DAY_MS) prior24h++;
     if (age >= 7 * DAY_MS && age < 14 * DAY_MS) prior7d++;
-    if (seen.at < windowStart) continue;
+    if (age >= 30 * DAY_MS && age < 60 * DAY_MS) prior30d++;
+    if (seen.at < windowStart) { olderThanWindow++; continue; }
 
     new30d++;
     if (age < DAY_MS) new24h++;
     if (age < 7 * DAY_MS) new7d++;
-    const dayKey = Math.floor(seen.at / DAY_MS) * DAY_MS;
+    const dayKey = dayOf(seen.at);
     dailyCounts.set(dayKey, (dailyCounts.get(dayKey) ?? 0) + 1);
 
     const list = (byWallet.get(addr) ?? []).slice().sort((a, b) => a.blockTime - b.blockTime || a.logIndex - b.logIndex);
-    const value = (t: IndexedTrade) => {
-      if (t.usdAmount > 0) return t.usdAmount;
-      const spot = spotByToken.get(t.tokenIdSuffix) ?? 0;
-      return spot > 0 ? t.shareAmount * spot : 0;
-    };
 
     let buyUsd = 0, sellUsd = 0;
     const shares = new Map<string, number>();
@@ -178,25 +207,87 @@ async function buildReport(): Promise<NewWalletsReport> {
 
   rows.sort((a, b) => b.firstSeenAt - a.firstSeenAt);
 
+  // Daily activity: what the 30-day cohort did each day versus the
+  // whole market. One pass over the trade history.
+  const cohort = new Set(rows.map((r) => r.address));
+  const dayActivity = new Map<number, { active: Set<string>; trades: number; cohortUsd: number; marketUsd: number }>();
+  const activeNew7dSet = new Set<string>();
+  let cohortVolume7d = 0, marketVolume7d = 0;
+  const sevenDaysAgo = now - 7 * DAY_MS;
+  for (const t of trades) {
+    if (t.blockTime < windowStart) continue;
+    const key = dayOf(t.blockTime);
+    let d = dayActivity.get(key);
+    if (!d) dayActivity.set(key, (d = { active: new Set(), trades: 0, cohortUsd: 0, marketUsd: 0 }));
+    const usd = value(t);
+    d.marketUsd += usd;
+    const recent = t.blockTime >= sevenDaysAgo;
+    if (recent) marketVolume7d += usd;
+    if (!cohort.has(t.wallet)) continue;
+    d.active.add(t.wallet);
+    d.trades++;
+    d.cohortUsd += usd;
+    if (recent) { cohortVolume7d += usd; activeNew7dSet.add(t.wallet); }
+  }
+
   const daily: NewWalletsDay[] = [];
-  const today = Math.floor(now / DAY_MS) * DAY_MS;
+  const today = dayOf(now);
+  let cumulative = olderThanWindow;
   for (let i = 29; i >= 0; i--) {
     const t = today - i * DAY_MS;
-    daily.push({ t, count: dailyCounts.get(t) ?? 0 });
+    const count = dailyCounts.get(t) ?? 0;
+    cumulative += count;
+    const d = dayActivity.get(t);
+    daily.push({
+      t,
+      count,
+      cumulative,
+      activeNew: d?.active.size ?? 0,
+      cohortTrades: d?.trades ?? 0,
+      cohortVolumeUsd: d?.cohortUsd ?? 0,
+      marketVolumeUsd: d?.marketUsd ?? 0,
+    });
+  }
+
+  // Weekly cohorts, newest first. Each wallet lands in exactly one.
+  const cohorts: NewWalletCohort[] = [];
+  const labels = ["This week", "1 week ago", "2 weeks ago", "3 weeks ago"];
+  for (let w = 0; w < 4; w++) {
+    const to = now - w * 7 * DAY_MS;
+    const from = to - 7 * DAY_MS;
+    const members = rows.filter((r) => r.firstSeenAt >= from && r.firstSeenAt < to);
+    const joined = members.length;
+    cohorts.push({
+      label: labels[w],
+      from,
+      to,
+      joined,
+      stillHolding: members.filter((r) => r.nflValueUsd > 1).length,
+      avgFirstUsd: joined ? members.reduce((a, r) => a + r.firstUsd, 0) / joined : 0,
+      volumeUsd: members.reduce((a, r) => a + r.buyUsd + r.sellUsd, 0),
+      netUsd: members.reduce((a, r) => a + r.netUsd, 0),
+      tradesPerWallet: joined ? members.reduce((a, r) => a + r.trades, 0) / joined : 0,
+    });
   }
 
   return {
     rows,
     daily,
+    cohorts,
     totalWalletsEver: firstSeen.size,
     registrySeeded: (registry?.seededFromBlock ?? 0) > 0,
     registryUpdatedAt: registry?.updatedAt ?? 0,
     new24h,
+    prior24h,
     new7d,
-    new30d,
     prior7d,
+    new30d,
+    prior30d,
     firstBuyUsd7d,
     stillHolding7d,
+    activeNew7d: activeNew7dSet.size,
+    cohortVolume7d,
+    marketVolume7d,
     generatedAt: now,
   };
 }

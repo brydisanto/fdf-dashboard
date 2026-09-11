@@ -4,14 +4,15 @@ import { ArrowLeft } from "lucide-react";
 import { getNewWallets } from "@/lib/data/new-wallets";
 import { Card, Pill } from "@/components/ui";
 import { NewWalletsTable } from "@/components/NewWalletsTable";
-import { NewWalletsChart } from "@/components/LazyCharts";
+import { NewWalletsActivityChart, NewWalletsJoinsChart } from "@/components/LazyCharts";
+import type { NewWalletCohort } from "@/lib/data/new-wallets";
 import { Sk, SkBlock } from "@/components/PageSkeleton";
 import { fmtNum, fmtUsd } from "@/lib/format";
 
 export const metadata = {
   title: "New Wallets · FDF Box Score",
   description:
-    "Wallets making their first-ever NFL trade on Sport.fun: daily signups, what they bought first, how much they committed, and whether they are still holding.",
+    "New wallets on Sport.fun's NFL market: daily joins and all-time growth, what new wallets trade and their share of volume, weekly cohort retention, and every first trade.",
 };
 
 // Reads the trade index plus the live on-chain tail, so it has to
@@ -79,7 +80,7 @@ export default function NewWalletsPage() {
             New Wallets
           </h1>
           <p className="m-0 max-w-[80ch] text-[var(--color-text-muted)]" style={{ fontSize: "15px" }}>
-            Every wallet making its first-ever NFL trade, tracked from the day it shows up.
+            Joins, activity, and trends for wallets making their first-ever NFL trade.
             First-seen dates come from a full history of the player-share contract, so a
             wallet only counts as new once.
           </p>
@@ -104,41 +105,75 @@ async function HeadlinePill() {
   );
 }
 
+function trend(cur: number, prior: number, label: string): string {
+  if (prior <= 0) return cur > 0 ? `up from 0 ${label}` : `no change ${label}`;
+  const pct = Math.round(((cur - prior) / prior) * 100);
+  return `${pct >= 0 ? "+" : ""}${pct}% ${label}`;
+}
+
 async function Body() {
   const r = await load();
-  const trendPct = r.prior7d > 0 ? Math.round(((r.new7d - r.prior7d) / r.prior7d) * 100) : null;
-  const trendText = trendPct === null
-    ? "vs prior 7d: n/a"
-    : `${trendPct >= 0 ? "+" : ""}${trendPct}% vs prior 7d`;
   const retention = r.new7d > 0 ? Math.round((r.stillHolding7d / r.new7d) * 100) : 0;
+  const share7d = r.marketVolume7d > 0 ? (r.cohortVolume7d / r.marketVolume7d) * 100 : 0;
+  const avgFirst7d = r.new7d > 0 ? r.firstBuyUsd7d / r.new7d : 0;
 
   return (
     <>
+      {/* Joins */}
       <div className="stat-strip mt-4 grid grid-cols-2 md:grid-cols-4">
-        <StatCell label="New · 24h" value={fmtNum(r.new24h)} sub="First NFL trade in the last day" />
-        <StatCell label="New · 7d" value={fmtNum(r.new7d)} sub={trendText} />
-        <StatCell label="New · 30d" value={fmtNum(r.new30d)} sub={`${fmtNum(r.totalWalletsEver)} wallets all time`} />
-        <StatCell
-          label="Still Holding · 7d"
-          value={`${retention}%`}
-          sub={`${fmtNum(r.stillHolding7d)} of ${fmtNum(r.new7d)} · ${fmtUsd(r.firstBuyUsd7d, { compact: true })} first buys`}
-        />
+        <StatCell label="Joined · 24h" value={fmtNum(r.new24h)} sub={trend(r.new24h, r.prior24h, "vs prior 24h")} />
+        <StatCell label="Joined · 7d" value={fmtNum(r.new7d)} sub={trend(r.new7d, r.prior7d, "vs prior 7d")} />
+        <StatCell label="Joined · 30d" value={fmtNum(r.new30d)} sub={trend(r.new30d, r.prior30d, "vs prior 30d")} />
+        <StatCell label="All-Time Wallets" value={fmtNum(r.totalWalletsEver)} sub="Ever traded an NFL token" />
       </div>
 
       <div className="mt-4">
         <SectionHead
-          title="New Wallets Per Day"
-          hint="First-ever NFL trade, by UTC day · last 30 days · accent bars are the current week"
-          right={!r.registrySeeded ? <Pill tone="warn">Registry not seeded yet</Pill> : null}
+          title="Joins · New Wallets Per Day"
+          hint="Bars: first-ever NFL trade by UTC day, accent for the current week · Line: all-time wallet count"
+          right={!r.registrySeeded ? <Pill tone="warn">Registry not seeded yet</Pill> : <Pill tone="muted">Last 30 days</Pill>}
         />
         <Card variant="press" padded={false}>
           <div className="p-5">
-            <NewWalletsChart daily={r.daily} />
+            <NewWalletsJoinsChart daily={r.daily} />
           </div>
         </Card>
       </div>
 
+      {/* Activity */}
+      <div className="stat-strip mt-6 grid grid-cols-2 md:grid-cols-4">
+        <StatCell label="Active New · 7d" value={fmtNum(r.activeNew7d)} sub={`of ${fmtNum(r.new30d)} joined in 30d`} />
+        <StatCell label="New-Wallet Volume · 7d" value={fmtUsd(r.cohortVolume7d, { compact: true })} sub={`${share7d.toFixed(1)}% of all NFL volume`} />
+        <StatCell label="Avg First Trade · 7d" value={fmtUsd(avgFirst7d, { digits: 0 })} sub={`${fmtUsd(r.firstBuyUsd7d, { compact: true })} committed on first buys`} />
+        <StatCell label="Still Holding · 7d" value={`${retention}%`} sub={`${fmtNum(r.stillHolding7d)} of ${fmtNum(r.new7d)} keep a position`} />
+      </div>
+
       <div className="mt-4">
+        <SectionHead
+          title="Activity · What New Wallets Are Doing"
+          hint="Bars: daily volume from wallets that joined in the last 30 days · Line: their share of all NFL volume that day"
+          right={<Pill tone="muted">30-day cohort</Pill>}
+        />
+        <Card variant="press" padded={false}>
+          <div className="p-5">
+            <NewWalletsActivityChart daily={r.daily} />
+          </div>
+        </Card>
+      </div>
+
+      {/* Trends */}
+      <div className="mt-6">
+        <SectionHead
+          title="Trends · Weekly Cohorts"
+          hint="Each wallet belongs to the week it joined · retention and flow measured as of now"
+          right={<Pill tone="muted">4 weeks</Pill>}
+        />
+        <Card variant="press" padded={false}>
+          <CohortTable cohorts={r.cohorts} />
+        </Card>
+      </div>
+
+      <div className="mt-6">
         <SectionHead
           title="Newest Wallets"
           hint="What they bought first, how much they have moved since, and what they still hold · click a row to drill in"
@@ -149,6 +184,74 @@ async function Body() {
         </Card>
       </div>
     </>
+  );
+}
+
+const TH: React.CSSProperties = {
+  fontFamily: "var(--font-mono)",
+  fontSize: 10,
+  fontWeight: 600,
+  letterSpacing: "0.18em",
+  textTransform: "uppercase",
+  color: "var(--color-text-dim)",
+  padding: "12px 12px",
+  whiteSpace: "nowrap",
+};
+const TD: React.CSSProperties = {
+  fontFamily: "var(--font-mono)",
+  fontVariantNumeric: "tabular-nums",
+  fontSize: 12.5,
+  padding: "var(--row-pad-y) 12px",
+  textAlign: "center",
+  whiteSpace: "nowrap",
+};
+
+function CohortTable({ cohorts }: { cohorts: NewWalletCohort[] }) {
+  const fmtRange = (from: number, to: number) => {
+    const f = (t: number) => new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return `${f(from)} – ${f(to - 1)}`;
+  };
+  const usd = (n: number) => (Math.abs(n) >= 1000 ? fmtUsd(n, { compact: true }) : fmtUsd(n, { digits: 0 }));
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[820px] text-[13px]">
+        <thead style={{ background: "color-mix(in oklab, var(--color-press) 50%, transparent)" }}>
+          <tr className="border-b border-[var(--color-line)]">
+            <th style={{ ...TH, textAlign: "left", paddingLeft: 20 }}>Cohort</th>
+            <th style={{ ...TH, textAlign: "center" }}>Joined</th>
+            <th style={{ ...TH, textAlign: "center" }}>Still Holding</th>
+            <th style={{ ...TH, textAlign: "center" }}>Avg First Trade</th>
+            <th style={{ ...TH, textAlign: "center" }}>Trades / Wallet</th>
+            <th style={{ ...TH, textAlign: "center" }}>Volume Since</th>
+            <th style={{ ...TH, textAlign: "center", paddingRight: 20 }}>Net Flow</th>
+          </tr>
+        </thead>
+        <tbody>
+          {cohorts.map((c, i) => {
+            const pct = c.joined > 0 ? Math.round((c.stillHolding / c.joined) * 100) : 0;
+            return (
+              <tr key={c.label} style={{ borderBottom: "1px solid var(--color-line)" }}>
+                <td style={{ ...TD, textAlign: "left", paddingLeft: 20 }}>
+                  <span style={{ color: i === 0 ? "var(--accent-soft)" : "var(--color-text)", fontWeight: 700 }}>{c.label}</span>
+                  <span style={{ color: "var(--color-text-dim)", fontSize: 10.5, marginLeft: 8 }}>{fmtRange(c.from, c.to)}</span>
+                </td>
+                <td style={{ ...TD, color: "var(--color-text)", fontWeight: 700 }}>{fmtNum(c.joined)}</td>
+                <td style={TD}>
+                  <span style={{ color: "var(--color-text)" }}>{pct}%</span>
+                  <span style={{ color: "var(--color-text-dim)", fontSize: 10.5 }}> · {fmtNum(c.stillHolding)}</span>
+                </td>
+                <td style={TD}>{usd(c.avgFirstUsd)}</td>
+                <td style={TD}>{c.tradesPerWallet.toFixed(1)}</td>
+                <td style={TD}>{usd(c.volumeUsd)}</td>
+                <td style={{ ...TD, paddingRight: 20, color: c.netUsd >= 0 ? "var(--color-turf)" : "var(--color-penalty)", fontWeight: 600 }}>
+                  {c.netUsd >= 0 ? "+" : "−"}{usd(Math.abs(c.netUsd))}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

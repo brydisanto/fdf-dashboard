@@ -1,55 +1,126 @@
 "use client";
 
-import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  Bar, Cell, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis,
+} from "recharts";
+import { fmtNum, fmtUsd } from "@/lib/format";
 import type { NewWalletsDay } from "@/lib/data/new-wallets";
 
-// 30-day bar chart of first-time NFL wallets per UTC day. The last
-// 7 days are painted in the accent color so the "this week" stat
-// strip above maps visually onto the bars.
+// Two 30-day charts for the New Wallets page.
+//
+//   JoinsChart:    bars = first-time wallets per UTC day (accent for the
+//                  current week), line = cumulative all-time wallet count.
+//   ActivityChart: bars = volume traded by the 30-day cohort per day,
+//                  line = that volume as a share of all NFL volume.
 
 function fmtDay(t: number) {
   return new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
-export function NewWalletsChart({ daily }: { daily: NewWalletsDay[] }) {
+const tooltipStyle = {
+  contentStyle: { background: "var(--color-press)", border: "1px solid var(--color-line-strong)", borderRadius: 8, fontSize: 12, color: "var(--color-text)" },
+  labelStyle: { color: "var(--color-text)" },
+  itemStyle: { color: "var(--color-text)" },
+  cursor: { fill: "rgba(255,255,255,0.05)" },
+};
+
+const axisProps = {
+  stroke: "var(--color-text-muted)",
+  tick: { fill: "var(--color-text)" },
+  tickLine: false,
+  axisLine: false,
+  fontSize: 11,
+};
+
+export function NewWalletsJoinsChart({ daily }: { daily: NewWalletsDay[] }) {
   const cutoff = daily.length >= 7 ? daily[daily.length - 7].t : 0;
   return (
-    <div className="h-[220px]">
+    <div className="h-[240px]">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={daily} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-          <XAxis
-            dataKey="t"
-            tickFormatter={fmtDay}
-            stroke="var(--color-text-muted)"
-            tick={{ fill: "var(--color-text)" }}
-            tickLine={false}
-            axisLine={false}
-            fontSize={11}
-            minTickGap={28}
-          />
+        <ComposedChart data={daily} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+          <XAxis dataKey="t" tickFormatter={fmtDay} minTickGap={28} {...axisProps} />
+          <YAxis yAxisId="joins" width={36} allowDecimals={false} {...axisProps} />
           <YAxis
-            stroke="var(--color-text-muted)"
-            tick={{ fill: "var(--color-text)" }}
-            tickLine={false}
-            axisLine={false}
-            fontSize={11}
-            width={36}
-            allowDecimals={false}
+            yAxisId="cum"
+            orientation="right"
+            width={48}
+            domain={["auto", "auto"]}
+            tickFormatter={(v) => fmtNum(Number(v), { compact: true })}
+            {...axisProps}
           />
           <Tooltip
-            cursor={{ fill: "rgba(255,255,255,0.05)" }}
-            contentStyle={{ background: "var(--color-press)", border: "1px solid var(--color-line-strong)", borderRadius: 8, fontSize: 12, color: "var(--color-text)" }}
-            labelStyle={{ color: "var(--color-text)" }}
-            itemStyle={{ color: "var(--color-text)" }}
+            {...tooltipStyle}
             labelFormatter={(v) => fmtDay(Number(v))}
-            formatter={(v) => [`${v}`, "New wallets"] as [string, string]}
+            formatter={(v, name) =>
+              name === "cumulative"
+                ? [fmtNum(Number(v)), "All-time wallets"]
+                : [`${v}`, "New wallets"]}
           />
-          <Bar dataKey="count" radius={[3, 3, 0, 0]} isAnimationActive={false}>
+          <Bar yAxisId="joins" dataKey="count" radius={[3, 3, 0, 0]} isAnimationActive={false}>
             {daily.map((d) => (
               <Cell key={d.t} fill={d.t >= cutoff ? "var(--accent)" : "var(--color-text-dim)"} />
             ))}
           </Bar>
-        </BarChart>
+          <Line
+            yAxisId="cum"
+            type="monotone"
+            dataKey="cumulative"
+            stroke="var(--color-broadcast)"
+            strokeWidth={2}
+            dot={false}
+            isAnimationActive={false}
+          />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+export function NewWalletsActivityChart({ daily }: { daily: NewWalletsDay[] }) {
+  const data = daily.map((d) => ({
+    ...d,
+    sharePct: d.marketVolumeUsd > 0 ? (d.cohortVolumeUsd / d.marketVolumeUsd) * 100 : 0,
+  }));
+  return (
+    <div className="h-[240px]">
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+          <XAxis dataKey="t" tickFormatter={fmtDay} minTickGap={28} {...axisProps} />
+          <YAxis
+            yAxisId="usd"
+            width={56}
+            tickFormatter={(v) => fmtUsd(Number(v), { compact: true })}
+            {...axisProps}
+          />
+          <YAxis
+            yAxisId="pct"
+            orientation="right"
+            width={40}
+            domain={[0, 100]}
+            tickFormatter={(v) => `${Math.round(Number(v))}%`}
+            {...axisProps}
+          />
+          <Tooltip
+            {...tooltipStyle}
+            labelFormatter={(v) => fmtDay(Number(v))}
+            formatter={(v, name) => {
+              if (name === "sharePct") return [`${Number(v).toFixed(1)}%`, "Share of NFL volume"];
+              if (name === "activeNew") return [`${v}`, "Active new wallets"];
+              return [fmtUsd(Number(v), { compact: true }), "New-wallet volume"];
+            }}
+          />
+          <Bar yAxisId="usd" dataKey="cohortVolumeUsd" fill="var(--color-turf)" radius={[3, 3, 0, 0]} isAnimationActive={false} />
+          <Line
+            yAxisId="pct"
+            type="monotone"
+            dataKey="sharePct"
+            stroke="var(--color-flag)"
+            strokeWidth={2}
+            dot={false}
+            isAnimationActive={false}
+          />
+          <Line yAxisId="pct" dataKey="activeNew" stroke="transparent" dot={false} isAnimationActive={false} legendType="none" />
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );
