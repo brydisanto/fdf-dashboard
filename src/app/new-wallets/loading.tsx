@@ -4,5 +4,5 @@ import { HeroPageSkeleton } from "@/components/PageSkeleton";
 // nav click paints a skeleton instantly instead of waiting on the
 // trade-index read + on-chain tail.
 export default function Loading() {
-  return <HeroPageSkeleton pillCount={2} statCount={4} bodyHeight={800} />;
+  return <HeroPageSkeleton pillCount={2} statCount={4} bodyHeight={1400} />;
 }
