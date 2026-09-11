@@ -68,6 +68,11 @@ export const CompositionPie = dynamic(
   },
 );
 
+export const NewWalletsChart = dynamic(
+  () => import("./NewWalletsChart").then((m) => m.NewWalletsChart),
+  { ssr: false, loading: () => <Box height={220} /> },
+);
+
 export const ValueScatter = dynamic(
   () => import("./ValueScatter").then((m) => m.ValueScatter),
   { ssr: false, loading: () => <Box height={320} /> },

@@ -215,6 +215,79 @@ async function fetchReceipt(txHash) {
   return rpc("eth_getTransactionReceipt", [txHash]);
 }
 
+// ---------------------------------------------------------------------
+// Wallet registry (data/wallet-registry.json)
+//
+// Persistent map of wallet → its first-ever NFL trade. trade-history
+// only retains 30 days, so "is this wallet new?" can't be answered
+// from it alone: a wallet whose first trade in the window is 5 days
+// old may have been trading for months. The registry never trims, so
+// once seeded (scripts/seed-wallet-registry.mjs scans from the
+// contract's deployment block) every later run only appends
+// genuinely-new wallets.
+//
+// Schema:
+//   {
+//     updatedAt: number,               // unix ms
+//     seededFromBlock: number,         // 0 until the one-time seed ran
+//     wallets: {
+//       [address]: {
+//         firstSeenAt: number,         // unix ms of the first trade
+//         firstBlock: number,
+//         firstTx: string,
+//         firstToken: string,          // tokenIdSuffix
+//         firstSide: "buy" | "sell" | "swap-in" | "swap-out",
+//         firstShares: number,
+//         firstUsd: number,
+//       }
+//     }
+//   }
+async function readRegistry(registryPath) {
+  try {
+    const parsed = JSON.parse(await fs.readFile(registryPath, "utf8"));
+    if (parsed && typeof parsed.wallets === "object" && parsed.wallets) {
+      return {
+        updatedAt: Number(parsed.updatedAt ?? 0),
+        seededFromBlock: Number(parsed.seededFromBlock ?? 0),
+        wallets: parsed.wallets,
+      };
+    }
+  } catch {}
+  return { updatedAt: 0, seededFromBlock: 0, wallets: {} };
+}
+
+// Fold a trade list into the registry. Keeps the earliest trade per
+// wallet (by block, then log index) and returns how many wallets were
+// added. Safe to call with overlapping data — an existing entry is only
+// replaced if the candidate is strictly earlier, which can only happen
+// during the one-time seed.
+function updateRegistry(registry, trades) {
+  let added = 0;
+  for (const t of trades) {
+    if (!t.wallet || !(t.blockTime > 0)) continue;
+    const cur = registry.wallets[t.wallet];
+    const earlier = !cur
+      || t.blockNumber < cur.firstBlock
+      || (t.blockNumber === cur.firstBlock && t.logIndex < (cur.firstLogIndex ?? Infinity));
+    if (!earlier) continue;
+    if (!cur) added++;
+    registry.wallets[t.wallet] = {
+      firstSeenAt: t.blockTime,
+      firstBlock: t.blockNumber,
+      firstLogIndex: t.logIndex,
+      firstTx: t.txId,
+      firstToken: t.tokenIdSuffix,
+      firstSide: t.side,
+      firstShares: t.shareAmount,
+      firstUsd: t.usdAmount,
+    };
+  }
+  registry.updatedAt = Date.now();
+  return added;
+}
+
+export { readRegistry, updateRegistry, parseTransferSingle, computeNetUsd, fetchTransferLogs, fetchBlock, fetchReceipt, rpc, hexToNum, NFL_TOKEN_SET, PAIR_LC, FOOTBALLFUN_LC, LOGS_CHUNK_BLOCKS };
+
 async function main() {
   const startWall = Date.now();
   const __filename = fileURLToPath(import.meta.url);
@@ -457,13 +530,22 @@ async function main() {
   const newLastIndexed = Math.max(existing.lastIndexedBlock, scannedForwardTo);
   const store = { lastIndexedBlock: newLastIndexed, trades };
   const json = JSON.stringify(store, null, 2) + "\n";
+
+  // Wallet registry: first-ever NFL trade per wallet. Fed by every
+  // run so it keeps growing even though trade-history.json only
+  // retains 30 days.
+  const registryPath = path.join(repoRoot, "data", "wallet-registry.json");
+  const registry = await readRegistry(registryPath);
+  const added = updateRegistry(registry, trades);
   const durationMs = Date.now() - startWall;
 
   const write = process.argv.includes("--write");
   if (write) {
     await fs.mkdir(path.dirname(outPath), { recursive: true });
     await fs.writeFile(outPath, json, "utf8");
+    await fs.writeFile(registryPath, JSON.stringify(registry, null, 2) + "\n", "utf8");
     console.error(`Wrote ${trades.length} trades (chain tip ${latestBlock}, indexed through ${safeLatestBlock}) in ${durationMs}ms`);
+    console.error(`Registry: ${Object.keys(registry.wallets).length} wallets (+${added} new this run)`);
   } else {
     console.log(JSON.stringify({
       lastIndexedBlock: newLastIndexed,
@@ -475,7 +557,13 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error("Indexer failed:", err);
-  process.exit(1);
-});
+// Only run when executed directly — scripts/seed-wallet-registry.mjs
+// imports the helpers above without wanting a full indexer run.
+const invokedDirectly = process.argv[1]
+  && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
+  main().catch((err) => {
+    console.error("Indexer failed:", err);
+    process.exit(1);
+  });
+}
