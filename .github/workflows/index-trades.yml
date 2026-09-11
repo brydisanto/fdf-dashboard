@@ -83,7 +83,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          git add data/trade-history.json
+          git add data/trade-history.json data/wallet-registry.json
           if git diff --staged --quiet; then
             echo "No new trades."
             exit 0
