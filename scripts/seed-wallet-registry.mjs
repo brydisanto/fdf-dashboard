@@ -33,6 +33,7 @@ const FROM_BLOCK = Number(process.env.FROM_BLOCK || DEPLOY_BLOCK);
 const CONCURRENCY = Number(process.env.CONCURRENCY || 6);
 const ZERO = "0x0000000000000000000000000000000000000000";
 const isAmm = (addr) => addr === PAIR_LC || addr === FOOTBALLFUN_LC;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function mapLimit(items, limit, fn) {
   const out = new Array(items.length);
@@ -64,16 +65,8 @@ async function main() {
   const txEntries = new Map();          // txHash → [{ log, parsed }]
   let done = 0;
   let totalLogs = 0;
-  let failedChunks = 0;
-  await mapLimit(chunks, CONCURRENCY, async ([from, to]) => {
-    let logs;
-    try {
-      logs = await fetchTransferLogs(from, to);
-    } catch (err) {
-      failedChunks++;
-      console.error(`  chunk ${from}..${to} failed: ${err.message}`);
-      return;
-    }
+  const failed = [];
+  const ingest = (logs) => {
     totalLogs += logs.length;
     for (const log of logs) {
       const parsed = parseTransferSingle(log);
@@ -96,70 +89,107 @@ async function main() {
       if (!txEntries.has(tx)) txEntries.set(tx, []);
       txEntries.get(tx).push({ log, parsed });
     }
+  };
+  await mapLimit(chunks, CONCURRENCY, async ([from, to]) => {
+    try {
+      ingest(await fetchTransferLogs(from, to));
+    } catch (err) {
+      failed.push([from, to]);
+      console.error(`  chunk ${from}..${to} failed: ${err.message}`);
+    }
     done++;
     if (done % 250 === 0) {
       console.error(`  ${done}/${chunks.length} chunks · ${totalLogs} logs · ${earliestTxByWallet.size} wallets so far`);
     }
   });
-  console.error(`Pass 1 done: ${totalLogs} logs, ${earliestTxByWallet.size} wallets, ${failedChunks} failed chunks`);
-  if (failedChunks > 0) {
+  // Failed chunks were almost always rate limits under concurrency.
+  // Walk them again one at a time with a pause; a chunk that still
+  // fails leaves a gap that a later re-run fills.
+  let unrecovered = 0;
+  for (const [from, to] of failed) {
+    await sleep(1500);
+    try {
+      ingest(await fetchTransferLogs(from, to));
+      console.error(`  recovered chunk ${from}..${to}`);
+    } catch (err) {
+      unrecovered++;
+      console.error(`  chunk ${from}..${to} failed again: ${err.message}`);
+    }
+  }
+  console.error(`Pass 1 done: ${totalLogs} logs, ${earliestTxByWallet.size} wallets, ${failed.length} chunks retried, ${unrecovered} unrecovered`);
+  if (unrecovered > 0) {
     console.error("Some chunks failed — re-run to fill gaps (existing entries are kept unless an earlier trade is found).");
   }
 
-  // Pass 2: receipt + block for each wallet's first tx only.
+  // Pass 2: receipt + block for each wallet's first tx only. A tx can
+  // carry legs for several wallets (batch distributions), so legs are
+  // grouped per wallet rather than attributed to the first one seen.
   const firstTxs = Array.from(new Set(Array.from(earliestTxByWallet.values()).map((e) => e.txHash)));
   console.error(`Pass 2: fetching ${firstTxs.length} receipts`);
   const blockTimeCache = new Map();
   const trades = [];
   let processed = 0;
-  await mapLimit(firstTxs, CONCURRENCY, async (txHash) => {
+  const failedTxs = [];
+  const processTx = async (txHash) => {
     const entries = txEntries.get(txHash) ?? [];
-    let receipt;
-    try {
-      receipt = await fetchReceipt(txHash);
-    } catch (err) {
-      console.error(`  receipt failed ${txHash}: ${err.message}`);
-      return;
-    }
-    if (!receipt) return;
+    const receipt = await fetchReceipt(txHash);
+    if (!receipt) throw new Error("no receipt");
     const blockNumber = hexToNum(receipt.blockNumber);
     let blockTime = blockTimeCache.get(blockNumber);
-    if (blockTime == null) {
-      try {
-        const block = await fetchBlock(receipt.blockNumber);
-        blockTime = Number(BigInt(block.timestamp)) * 1000;
-      } catch {
-        blockTime = 0;
-      }
+    if (!blockTime) {
+      const block = await fetchBlock(receipt.blockNumber);
+      blockTime = Number(BigInt(block.timestamp)) * 1000;
+      if (!blockTime) throw new Error("block timestamp missing");
       blockTimeCache.set(blockNumber, blockTime);
     }
-    let userWallet = null;
-    for (const { parsed } of entries) {
-      const candidate = isAmm(parsed.from) ? parsed.to : parsed.from;
-      if (!isAmm(candidate)) { userWallet = candidate; break; }
+    const legsByWallet = new Map();
+    for (const e of entries) {
+      const w = isAmm(e.parsed.from) ? e.parsed.to : e.parsed.from;
+      if (!legsByWallet.has(w)) legsByWallet.set(w, []);
+      legsByWallet.get(w).push(e);
     }
-    if (!userWallet) return;
-    const isSwap = entries.length > 1;
-    for (const { log, parsed } of entries) {
-      let side;
-      if (isAmm(parsed.from) && parsed.to === userWallet) side = isSwap ? "swap-in" : "buy";
-      else if (parsed.from === userWallet && isAmm(parsed.to)) side = isSwap ? "swap-out" : "sell";
-      else continue;
-      trades.push({
-        txId: txHash,
-        blockNumber,
-        blockTime,
-        logIndex: hexToNum(log.logIndex),
-        tokenIdSuffix: parsed.tokenId,
-        wallet: userWallet,
-        side,
-        shareAmount: Number(parsed.value) / 1e18,
-        usdAmount: isSwap ? 0 : Math.abs(computeNetUsd(userWallet, receipt.logs)),
-      });
+    for (const [userWallet, legs] of legsByWallet) {
+      const isSwap = legs.length > 1;
+      for (const { log, parsed } of legs) {
+        const side = isAmm(parsed.from)
+          ? (isSwap ? "swap-in" : "buy")
+          : (isSwap ? "swap-out" : "sell");
+        trades.push({
+          txId: txHash,
+          blockNumber,
+          blockTime,
+          logIndex: hexToNum(log.logIndex),
+          tokenIdSuffix: parsed.tokenId,
+          wallet: userWallet,
+          side,
+          shareAmount: Number(parsed.value) / 1e18,
+          usdAmount: isSwap ? 0 : Math.abs(computeNetUsd(userWallet, receipt.logs)),
+        });
+      }
+    }
+  };
+  await mapLimit(firstTxs, CONCURRENCY, async (txHash) => {
+    try {
+      await processTx(txHash);
+    } catch (err) {
+      failedTxs.push(txHash);
+      console.error(`  tx ${txHash} failed: ${err.message}`);
     }
     processed++;
     if (processed % 250 === 0) console.error(`  ${processed}/${firstTxs.length} receipts`);
   });
+  let unrecoveredTxs = 0;
+  for (const txHash of failedTxs) {
+    await sleep(1500);
+    try {
+      await processTx(txHash);
+      console.error(`  recovered tx ${txHash}`);
+    } catch (err) {
+      unrecoveredTxs++;
+      console.error(`  tx ${txHash} failed again: ${err.message}`);
+    }
+  }
+  console.error(`Pass 2 done: ${failedTxs.length} txs retried, ${unrecoveredTxs} unrecovered`);
 
   const registry = await readRegistry(registryPath);
   const added = updateRegistry(registry, trades);
@@ -175,7 +205,7 @@ async function main() {
     console.error(`Wrote ${total} wallets (+${added}) to ${registryPath} in ${durationMs}ms`);
   } else {
     const sample = Object.entries(registry.wallets).sort((a, b) => a[1].firstSeenAt - b[1].firstSeenAt).slice(0, 3);
-    console.log(JSON.stringify({ total, added, failedChunks, durationMs, earliest: sample }, null, 2));
+    console.log(JSON.stringify({ total, added, unrecoveredChunks: unrecovered, unrecoveredTxs, durationMs, earliest: sample }, null, 2));
   }
 }
 
