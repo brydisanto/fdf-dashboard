@@ -79,6 +79,11 @@ async function main() {
       const parsed = parseTransferSingle(log);
       if (!NFL_TOKEN_SET.has(parsed.tokenId)) continue;
       if (parsed.from === ZERO || parsed.to === ZERO) continue;
+      // Only trade legs count (one side is the AMM). A wallet-to-wallet
+      // transfer must not become a wallet's "first trade": pass 2 would
+      // find no trade leg in that tx and the wallet would be dropped
+      // from the registry entirely.
+      if (!isAmm(parsed.from) && !isAmm(parsed.to)) continue;
       const candidate = isAmm(parsed.from) ? parsed.to : parsed.from;
       if (isAmm(candidate)) continue;
       const blockNumber = hexToNum(log.blockNumber);

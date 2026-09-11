@@ -117,12 +117,23 @@ const NFL_TOKEN_SET = new Set(TOKEN_ID_SUFFIXES);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function rpc(method, params, attempt = 0) {
-  const res = await fetch(RPC_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  const json = await res.json();
+  let json;
+  try {
+    const res = await fetch(RPC_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    });
+    json = await res.json();
+  } catch (err) {
+    // Network-level failure (socket reset, 5xx HTML body). Retry with
+    // the same backoff as an RPC error instead of failing the chunk.
+    if (attempt < 4) {
+      await sleep(500 * (attempt + 1) ** 2);
+      return rpc(method, params, attempt + 1);
+    }
+    throw new Error(`RPC ${method} failed: ${err.message}`);
+  }
   if (json.error) {
     if (attempt < 4) {
       await sleep(500 * (attempt + 1) ** 2);
