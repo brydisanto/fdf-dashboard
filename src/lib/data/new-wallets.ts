@@ -1,7 +1,7 @@
 import "server-only";
 import { FOOTBALLFUN_CONTRACT, ROSTER_BY_ID, ROSTER_BY_TOKEN } from "./roster";
 import { readTradeHistory, type IndexedTrade } from "./trade-indexer";
-import { readWalletRegistry } from "./wallet-registry";
+import { readWalletRegistry, type FirstAcquisition } from "./wallet-registry";
 import { getPlayers, tierForValue } from "./footballfun";
 import type { WalletTier } from "../types";
 
@@ -19,7 +19,7 @@ export interface NewWalletRow {
   address: string;
   firstSeenAt: number;
   firstPlayerId: string | null;
-  firstSide: IndexedTrade["side"];
+  firstSide: FirstAcquisition;
   firstUsd: number;
   lastActiveAt: number;
   trades: number;
@@ -122,6 +122,15 @@ async function buildReport(): Promise<NewWalletsReport> {
   for (const [addr, e] of Object.entries(registryWallets)) {
     if (e.firstSeenAt > 0) firstSeen.set(addr, { at: e.firstSeenAt, provisional: false });
   }
+  // A wallet missing from the registry is only treated as new if its
+  // first trade lands AFTER the registry was last written — that is the
+  // narrow window where the cron genuinely hasn't caught up. Without
+  // this guard, a registry that failed to load (or was never seeded)
+  // would make every wallet in the 30-day index look like a new join,
+  // which is exactly how long-standing holders ended up on this page.
+  const registryReady = !!registry && Object.keys(registry.wallets).length > 0;
+  const provisionalFrom = registryReady ? (registry!.updatedAt || now) : Infinity;
+
   const trades = history?.trades ?? [];
   const byWallet = new Map<string, IndexedTrade[]>();
   for (const t of trades) {
@@ -129,8 +138,13 @@ async function buildReport(): Promise<NewWalletsReport> {
     if (!list) byWallet.set(t.wallet, (list = []));
     list.push(t);
     const cur = firstSeen.get(t.wallet);
-    if (!cur) firstSeen.set(t.wallet, { at: t.blockTime, provisional: true });
-    else if (cur.provisional && t.blockTime < cur.at) cur.at = t.blockTime;
+    if (!cur) {
+      if (t.blockTime >= provisionalFrom) {
+        firstSeen.set(t.wallet, { at: t.blockTime, provisional: true });
+      }
+    } else if (cur.provisional && t.blockTime < cur.at) {
+      cur.at = t.blockTime;
+    }
   }
 
   const value = (t: IndexedTrade) => {

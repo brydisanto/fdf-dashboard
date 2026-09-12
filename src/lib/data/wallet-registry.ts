@@ -7,13 +7,24 @@ import "server-only";
 // wallet" mean first NFL trade ever rather than first trade inside
 // the 30-day trade-history window.
 
+export type FirstAcquisition =
+  | "buy"          // bought from the AMM (or minted on the curve)
+  | "swap-in"      // received in a player-for-player swap
+  | "transfer-in"  // sent the shares by another wallet
+  | "sell"         // legacy rows only, see below
+  | "swap-out";
+
 export interface RegistryEntry {
   firstSeenAt: number;      // unix ms
   firstBlock: number;
   firstLogIndex?: number;
   firstTx: string;
   firstToken: string;       // tokenIdSuffix
-  firstSide: "buy" | "sell" | "swap-in" | "swap-out";
+  // How the wallet first got NFL shares. "sell"/"swap-out" only appear
+  // in rows written before the seed read TransferBatch events — a
+  // wallet cannot sell shares it never received, so such a row means
+  // the acquisition was missed and the date is too late.
+  firstSide: FirstAcquisition;
   firstShares: number;
   firstUsd: number;
 }
