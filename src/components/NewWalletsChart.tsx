@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  Bar, Cell, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Bar, Cell, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { fmtNum, fmtUsd } from "@/lib/format";
 import type { NewWalletsDay } from "@/lib/data/new-wallets";
@@ -65,6 +65,57 @@ export function NewWalletsJoinsChart({ daily }: { daily: NewWalletsDay[] }) {
             yAxisId="cum"
             type="monotone"
             dataKey="cumulative"
+            stroke="var(--color-broadcast)"
+            strokeWidth={2}
+            dot={false}
+            isAnimationActive={false}
+          />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// Buys above the axis, sells below, running net as a line. Positive
+// net = new wallets are putting more into NFL tokens than they take out.
+export function NewWalletsNetFlowChart({ daily }: { daily: NewWalletsDay[] }) {
+  const data = daily.map((d) => ({ ...d, sellNeg: -d.cohortSellUsd }));
+  return (
+    <div className="h-[240px]">
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} stackOffset="sign">
+          <XAxis dataKey="t" tickFormatter={fmtDay} minTickGap={28} {...axisProps} />
+          <YAxis
+            yAxisId="usd"
+            width={56}
+            tickFormatter={(v) => fmtUsd(Number(v), { compact: true })}
+            {...axisProps}
+          />
+          <YAxis
+            yAxisId="cum"
+            orientation="right"
+            width={56}
+            tickFormatter={(v) => fmtUsd(Number(v), { compact: true })}
+            {...axisProps}
+          />
+          <ReferenceLine yAxisId="usd" y={0} stroke="var(--color-line-strong)" />
+          <Tooltip
+            {...tooltipStyle}
+            labelFormatter={(v) => fmtDay(Number(v))}
+            formatter={(v, name) => {
+              if (name === "cohortBuyUsd") return [fmtUsd(Number(v), { compact: true }), "Buys"];
+              if (name === "sellNeg") return [fmtUsd(-Number(v), { compact: true }), "Sells"];
+              if (name === "cohortNetUsd") return [fmtUsd(Number(v), { compact: true }), "Net (day)"];
+              return [fmtUsd(Number(v), { compact: true }), "Net (running, 30d)"];
+            }}
+          />
+          <Bar yAxisId="usd" dataKey="cohortBuyUsd" stackId="flow" fill="var(--color-turf)" isAnimationActive={false} />
+          <Bar yAxisId="usd" dataKey="sellNeg" stackId="flow" fill="var(--color-penalty)" isAnimationActive={false} />
+          <Line yAxisId="usd" dataKey="cohortNetUsd" stroke="transparent" dot={false} isAnimationActive={false} legendType="none" />
+          <Line
+            yAxisId="cum"
+            type="monotone"
+            dataKey="cohortNetCumUsd"
             stroke="var(--color-broadcast)"
             strokeWidth={2}
             dot={false}

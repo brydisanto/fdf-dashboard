@@ -25,10 +25,11 @@ const WINDOW_MS: Record<Window, number> = {
 const PAGE_SIZE = 25;
 
 const SIDE_LABEL: Record<NewWalletRow["firstSide"], { text: string; color: string }> = {
-  "buy":      { text: "BUY",      color: "var(--color-turf)" },
-  "swap-in":  { text: "SWAP IN",  color: "var(--color-turf)" },
-  "sell":     { text: "SELL",     color: "var(--color-penalty)" },
-  "swap-out": { text: "SWAP OUT", color: "var(--color-penalty)" },
+  "buy":         { text: "BUY",      color: "var(--color-turf)" },
+  "swap-in":     { text: "SWAP IN",  color: "var(--color-turf)" },
+  "transfer-in": { text: "RECEIVED", color: "var(--color-broadcast)" },
+  "sell":        { text: "SELL",     color: "var(--color-penalty)" },
+  "swap-out":    { text: "SWAP OUT", color: "var(--color-penalty)" },
 };
 
 export function NewWalletsTable({ rows, now }: { rows: NewWalletRow[]; now: number }) {
@@ -94,7 +95,7 @@ export function NewWalletsTable({ rows, now }: { rows: NewWalletRow[]; now: numb
               <Th align="center" sortKey="firstSeenAt" current={sortKey} dir={sortDir} onSort={onSort} emphasized>
                 First Seen
               </Th>
-              <Th align="left">First Trade</Th>
+              <Th align="left">How They Joined</Th>
               <Th align="center" sortKey="firstUsd" current={sortKey} dir={sortDir} onSort={onSort}>
                 First $
               </Th>
@@ -195,7 +196,11 @@ export function NewWalletsTable({ rows, now }: { rows: NewWalletRow[]; now: numb
                       )}
                     </span>
                   </Cell>
-                  <NumCell>{fmtUsdSmart(w.firstUsd)}</NumCell>
+                  <NumCell>
+                    {w.firstUsd > 0
+                      ? fmtUsdSmart(w.firstUsd)
+                      : <span style={{ color: "var(--color-text-dim)" }}>—</span>}
+                  </NumCell>
                   <NumCell>
                     <span style={{ color: "var(--color-text)" }}>{fmtNum(w.trades)}</span>
                     <span style={{ color: "var(--color-text-dim)", fontSize: 10.5 }}> · {w.playersTraded}p</span>

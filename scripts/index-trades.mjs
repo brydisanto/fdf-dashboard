@@ -197,10 +197,10 @@ function computeNetUsd(wallet, logs) {
 // threshold for this window, halve the range and recurse — that lets
 // us silently work around the public Base RPC's undocumented response
 // cap without missing events.
-async function fetchTransferLogs(fromBlock, toBlock) {
+async function fetchTransferLogs(fromBlock, toBlock, topic0 = ERC1155_TRANSFER_SINGLE) {
   const logs = await rpc("eth_getLogs", [{
     address: FOOTBALLFUN_CONTRACT,
-    topics: [ERC1155_TRANSFER_SINGLE],
+    topics: [topic0],
     fromBlock: "0x" + fromBlock.toString(16),
     toBlock: "0x" + toBlock.toString(16),
   }]);
@@ -210,12 +210,48 @@ async function fetchTransferLogs(fromBlock, toBlock) {
     }
     const mid = Math.floor((fromBlock + toBlock) / 2);
     const [a, b] = await Promise.all([
-      fetchTransferLogs(fromBlock, mid),
-      fetchTransferLogs(mid + 1, toBlock),
+      fetchTransferLogs(fromBlock, mid, topic0),
+      fetchTransferLogs(mid + 1, toBlock, topic0),
     ]);
     return [...a, ...b];
   }
   return logs;
+}
+
+// Decode a TransferBatch log into one {from, to, tokenId, value} record
+// per id. The AMM does not currently emit these for trades, but bulk
+// wallet-to-wallet moves do, and a wallet's shares can arrive that way
+// — which is why the registry scan must read them.
+function parseTransferBatch(log) {
+  const from = topicToAddress(log.topics[2]);
+  const to = topicToAddress(log.topics[3]);
+  const d = log.data.slice(2);
+  const word = (i) => d.slice(i * 64, (i + 1) * 64);
+  const idsOffset = Number(BigInt("0x" + word(0))) / 32;
+  const valsOffset = Number(BigInt("0x" + word(1))) / 32;
+  const idCount = Number(BigInt("0x" + word(idsOffset)));
+  const valCount = Number(BigInt("0x" + word(valsOffset)));
+  const out = [];
+  for (let i = 0; i < idCount; i++) {
+    const tokenId = BigInt("0x" + word(idsOffset + 1 + i)).toString();
+    const value = i < valCount ? BigInt("0x" + word(valsOffset + 1 + i)) : 0n;
+    out.push({ from, to, tokenId, value });
+  }
+  return out;
+}
+
+// Every share-movement log in a range, both event shapes, flattened to
+// one record per (log, tokenId). `logIndex` is the log's own index, so
+// batch legs from one log share it.
+async function fetchAllShareMovements(fromBlock, toBlock) {
+  const [singles, batches] = await Promise.all([
+    fetchTransferLogs(fromBlock, toBlock, ERC1155_TRANSFER_SINGLE),
+    fetchTransferLogs(fromBlock, toBlock, ERC1155_TRANSFER_BATCH),
+  ]);
+  const out = [];
+  for (const log of singles) out.push({ log, ...parseTransferSingle(log) });
+  for (const log of batches) for (const leg of parseTransferBatch(log)) out.push({ log, ...leg });
+  return out;
 }
 
 async function fetchBlock(numberHex) {
@@ -267,14 +303,19 @@ async function readRegistry(registryPath) {
   return { updatedAt: 0, seededFromBlock: 0, wallets: {} };
 }
 
-// Fold a trade list into the registry. Keeps the earliest trade per
-// wallet (by block, then log index) and returns how many wallets were
+// Fold events into the registry, keeping the EARLIEST acquisition per
+// wallet (by block, then log index) and returning how many wallets were
 // added. Safe to call with overlapping data — an existing entry is only
-// replaced if the candidate is strictly earlier, which can only happen
-// during the one-time seed.
-function updateRegistry(registry, trades) {
+// replaced when the candidate is strictly earlier.
+//
+// Events are acquisitions, not just AMM trades. A wallet that received
+// its shares by transfer, or in a TransferBatch, joined the market on
+// that date; recording only AMM trades made such a wallet look new on
+// the day it first SOLD, months after it actually started holding.
+// `side` therefore also carries "transfer-in".
+function updateRegistry(registry, events) {
   let added = 0;
-  for (const t of trades) {
+  for (const t of events) {
     if (!t.wallet || !(t.blockTime > 0)) continue;
     const cur = registry.wallets[t.wallet];
     const earlier = !cur
@@ -297,7 +338,38 @@ function updateRegistry(registry, trades) {
   return added;
 }
 
-export { readRegistry, updateRegistry, parseTransferSingle, computeNetUsd, fetchTransferLogs, fetchBlock, fetchReceipt, rpc, hexToNum, NFL_TOKEN_SET, PAIR_LC, FOOTBALLFUN_LC, LOGS_CHUNK_BLOCKS };
+// Acquisition records for the registry, straight from share-movement
+// logs. Every inbound leg to a non-AMM address counts: AMM buys and
+// swap-ins, mints, and plain transfers between wallets. Unlike the
+// trade path this does NOT filter to the current 76-token roster — the
+// contract is NFL-only, so a delisted player's shares are still an NFL
+// position, and ignoring them would date a wallet's arrival too late.
+function acquisitionsFromMovements(movements, blockTimeFor) {
+  const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
+  const out = [];
+  for (const m of movements) {
+    if (m.to === ZERO_ADDR) continue;
+    if (m.to === PAIR_LC || m.to === FOOTBALLFUN_LC) continue;
+    const blockNumber = hexToNum(m.log.blockNumber);
+    const blockTime = blockTimeFor(blockNumber);
+    if (!blockTime) continue;
+    const fromAmm = m.from === PAIR_LC || m.from === FOOTBALLFUN_LC || m.from === ZERO_ADDR;
+    out.push({
+      wallet: m.to,
+      blockNumber,
+      blockTime,
+      logIndex: hexToNum(m.log.logIndex),
+      txId: m.log.transactionHash,
+      tokenIdSuffix: m.tokenId,
+      side: fromAmm ? "buy" : "transfer-in",
+      shareAmount: Number(m.value) / 1e18,
+      usdAmount: 0,
+    });
+  }
+  return out;
+}
+
+export { readRegistry, updateRegistry, acquisitionsFromMovements, parseTransferSingle, parseTransferBatch, computeNetUsd, fetchTransferLogs, fetchAllShareMovements, fetchBlock, fetchReceipt, rpc, hexToNum, NFL_TOKEN_SET, PAIR_LC, FOOTBALLFUN_LC, LOGS_CHUNK_BLOCKS, ERC1155_TRANSFER_SINGLE, ERC1155_TRANSFER_BATCH };
 
 async function main() {
   const startWall = Date.now();
@@ -392,19 +464,29 @@ async function main() {
     console.error(`Scanning blocks ${r.from} → ${r.to} (${r.to - r.from + 1} blocks) [${r.kind.toUpperCase()}]`);
   }
 
-  // Step 1: collect all TransferSingle logs from the player share contract.
+  // Step 1: collect all TransferSingle logs from the player share
+  // contract, plus every share movement (TransferSingle AND
+  // TransferBatch, all token ids) for the wallet registry. Trades are
+  // still derived from TransferSingle only — the AMM does not emit
+  // batch events for trades — but a wallet can RECEIVE shares in a
+  // batch or a plain transfer, and the registry has to see that or it
+  // dates the wallet's arrival from its first sale instead.
   const allLogs = [];
+  const allMovements = [];
   for (const range of ranges) {
     for (let cursor = range.from; cursor <= range.to; cursor += LOGS_CHUNK_BLOCKS) {
       const end = Math.min(cursor + LOGS_CHUNK_BLOCKS - 1, range.to);
-      const logs = await fetchTransferLogs(cursor, end);
-      allLogs.push(...logs);
+      const movements = await fetchAllShareMovements(cursor, end);
+      allMovements.push(...movements);
+      for (const m of movements) {
+        if (m.log.topics[0] === ERC1155_TRANSFER_SINGLE) allLogs.push(m.log);
+      }
       if (process.env.GRIDIRON_VERBOSE) {
-        console.error(`  [${range.kind}] ${cursor}..${end}: +${logs.length} logs (total ${allLogs.length})`);
+        console.error(`  [${range.kind}] ${cursor}..${end}: +${movements.length} movements (total ${allMovements.length})`);
       }
     }
   }
-  console.error(`Found ${allLogs.length} TransferSingle logs`);
+  console.error(`Found ${allLogs.length} TransferSingle logs, ${allMovements.length} share movements`);
 
   // Filter to NFL tokens + non-noise (skip 0x0 mint/burn, skip
   // contract-internal moves where neither side is a user wallet).
@@ -542,12 +624,37 @@ async function main() {
   const store = { lastIndexedBlock: newLastIndexed, trades };
   const json = JSON.stringify(store, null, 2) + "\n";
 
-  // Wallet registry: first-ever NFL trade per wallet. Fed by every
+  // Wallet registry: each wallet's first NFL acquisition. Fed by every
   // run so it keeps growing even though trade-history.json only
-  // retains 30 days.
+  // retains 30 days. Acquisitions come from every share movement in the
+  // scanned ranges, so a wallet that was airdropped or sent shares is
+  // dated from that moment rather than from its first sale.
   const registryPath = path.join(repoRoot, "data", "wallet-registry.json");
   const registry = await readRegistry(registryPath);
-  const added = updateRegistry(registry, trades);
+  // blockTimeCache only covers blocks that produced trades. Fill in the
+  // rest so a transfer-only block still dates its acquisitions; capped
+  // so a huge backfill range can't turn into thousands of extra calls.
+  const AMM_ADDRS = new Set([PAIR_LC, FOOTBALLFUN_LC]);
+  const needBlocks = new Set();
+  for (const m of allMovements) {
+    if (AMM_ADDRS.has(m.to)) continue;
+    const bn = hexToNum(m.log.blockNumber);
+    if (!blockTimeCache.has(bn)) needBlocks.add(bn);
+  }
+  let filled = 0;
+  for (const bn of needBlocks) {
+    if (filled >= 500) break;
+    try {
+      const block = await fetchBlock("0x" + bn.toString(16));
+      blockTimeCache.set(bn, Number(BigInt(block.timestamp)) * 1000);
+      filled++;
+    } catch { /* leave unset; a later run re-scans */ }
+  }
+  const acquisitions = acquisitionsFromMovements(
+    allMovements,
+    (blockNumber) => blockTimeCache.get(blockNumber) ?? 0,
+  );
+  const added = updateRegistry(registry, [...trades, ...acquisitions]);
   const durationMs = Date.now() - startWall;
 
   const write = process.argv.includes("--write");

@@ -2,16 +2,27 @@
 /*
  * One-time seed for data/wallet-registry.json.
  *
- * Scans every TransferSingle event on FOOTBALLFUN_CONTRACT from a start
- * block (default: the contract's deployment block, 2025-11-07) to the
- * chain tip and records each wallet's FIRST NFL trade. Only the first
- * tx per wallet gets a receipt + block lookup, so the expensive part
- * scales with wallet count, not trade count.
+ * Records, for every wallet, the first time it ACQUIRED an NFL player
+ * share — the date it joined the market. Scans the full history of
+ * FOOTBALLFUN_CONTRACT from its deployment block (2025-11-07) to the
+ * chain tip.
  *
- * After this runs once and the file is committed to the `data`
- * branch, scripts/index-trades.mjs keeps it current on every cron
- * run. Re-running is safe: existing entries are only replaced by a
- * strictly earlier trade.
+ * Two rules make this match "first NFL position" rather than "first
+ * trade we happened to see":
+ *
+ *   1. Both event shapes count. ERC-1155 emits TransferSingle AND
+ *      TransferBatch; reading only the former missed every wallet that
+ *      received shares in bulk.
+ *   2. Every inbound leg counts, not just AMM buys — mints, AMM buys,
+ *      swap-ins, and plain wallet-to-wallet transfers. A wallet that
+ *      was sent shares holds an NFL position from that moment.
+ *
+ * It also does NOT filter to the current 76-token roster. The contract
+ * is NFL-only, so a delisted player's shares are still an NFL position,
+ * and skipping them would date a wallet's arrival too late.
+ *
+ * Only each wallet's first tx gets a receipt lookup (for USD), so the
+ * expensive pass scales with wallet count, not trade count.
  *
  *   node scripts/seed-wallet-registry.mjs            # dry run, prints summary
  *   node scripts/seed-wallet-registry.mjs --write    # writes data/wallet-registry.json
@@ -22,9 +33,9 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  readRegistry, updateRegistry, parseTransferSingle, computeNetUsd,
-  fetchTransferLogs, fetchBlock, fetchReceipt, rpc, hexToNum,
-  NFL_TOKEN_SET, PAIR_LC, FOOTBALLFUN_LC, LOGS_CHUNK_BLOCKS,
+  readRegistry, updateRegistry, computeNetUsd, fetchAllShareMovements,
+  fetchBlock, fetchReceipt, rpc, hexToNum,
+  PAIR_LC, FOOTBALLFUN_LC, LOGS_CHUNK_BLOCKS, ERC1155_TRANSFER_BATCH,
 } from "./index-trades.mjs";
 
 // Block in which 0x2EeF…5b56 was deployed (found by bisecting eth_getCode).
@@ -36,15 +47,13 @@ const isAmm = (addr) => addr === PAIR_LC || addr === FOOTBALLFUN_LC;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function mapLimit(items, limit, fn) {
-  const out = new Array(items.length);
   let next = 0;
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
     while (next < items.length) {
       const i = next++;
-      out[i] = await fn(items[i], i);
+      await fn(items[i], i);
     }
   }));
-  return out;
 }
 
 async function main() {
@@ -59,115 +68,99 @@ async function main() {
   }
   console.error(`Scanning ${head - FROM_BLOCK + 1} blocks (${FROM_BLOCK} → ${head}) in ${chunks.length} chunks, concurrency ${CONCURRENCY}`);
 
-  // Pass 1: every NFL share transfer, grouped by tx, keeping only the
-  // earliest tx per wallet as we go (memory stays flat).
-  const earliestTxByWallet = new Map(); // wallet → { txHash, blockNumber, logIndex }
-  const txEntries = new Map();          // txHash → [{ log, parsed }]
-  let done = 0;
-  let totalLogs = 0;
+  // Pass 1: earliest acquisition per wallet. Memory stays flat — one
+  // record per wallet, plus the legs of the txs that produced them.
+  const earliest = new Map();   // wallet → { txHash, blockNumber, logIndex, tokenId, shares, fromAmm }
+  const txLegs = new Map();     // txHash → [movement]
+  let done = 0, totalMovements = 0, batchLegs = 0;
   const failed = [];
-  const ingest = (logs) => {
-    totalLogs += logs.length;
-    for (const log of logs) {
-      const parsed = parseTransferSingle(log);
-      if (!NFL_TOKEN_SET.has(parsed.tokenId)) continue;
-      if (parsed.from === ZERO || parsed.to === ZERO) continue;
-      // Only trade legs count (one side is the AMM). A wallet-to-wallet
-      // transfer must not become a wallet's "first trade": pass 2 would
-      // find no trade leg in that tx and the wallet would be dropped
-      // from the registry entirely.
-      if (!isAmm(parsed.from) && !isAmm(parsed.to)) continue;
-      const candidate = isAmm(parsed.from) ? parsed.to : parsed.from;
-      if (isAmm(candidate)) continue;
-      const blockNumber = hexToNum(log.blockNumber);
-      const logIndex = hexToNum(log.logIndex);
-      const tx = log.transactionHash;
-      const cur = earliestTxByWallet.get(candidate);
+
+  const ingest = (movements) => {
+    totalMovements += movements.length;
+    for (const m of movements) {
+      if (m.to === ZERO || isAmm(m.to)) continue;   // burns and AMM-side legs
+      if (m.to === m.from) continue;
+      if (m.log.topics[0] === ERC1155_TRANSFER_BATCH) batchLegs++;
+      const blockNumber = hexToNum(m.log.blockNumber);
+      const logIndex = hexToNum(m.log.logIndex);
+      const cur = earliest.get(m.to);
       if (!cur || blockNumber < cur.blockNumber || (blockNumber === cur.blockNumber && logIndex < cur.logIndex)) {
-        earliestTxByWallet.set(candidate, { txHash: tx, blockNumber, logIndex });
+        earliest.set(m.to, {
+          txHash: m.log.transactionHash,
+          blockNumber,
+          logIndex,
+          tokenId: m.tokenId,
+          shares: Number(m.value) / 1e18,
+          fromAmm: isAmm(m.from) || m.from === ZERO,
+        });
       }
-      if (!txEntries.has(tx)) txEntries.set(tx, []);
-      txEntries.get(tx).push({ log, parsed });
+      const legs = txLegs.get(m.log.transactionHash);
+      if (legs) legs.push(m); else txLegs.set(m.log.transactionHash, [m]);
     }
   };
+
   await mapLimit(chunks, CONCURRENCY, async ([from, to]) => {
     try {
-      ingest(await fetchTransferLogs(from, to));
+      ingest(await fetchAllShareMovements(from, to));
     } catch (err) {
       failed.push([from, to]);
       console.error(`  chunk ${from}..${to} failed: ${err.message}`);
     }
     done++;
     if (done % 250 === 0) {
-      console.error(`  ${done}/${chunks.length} chunks · ${totalLogs} logs · ${earliestTxByWallet.size} wallets so far`);
+      console.error(`  ${done}/${chunks.length} chunks · ${totalMovements} movements · ${earliest.size} wallets so far`);
     }
   });
-  // Failed chunks were almost always rate limits under concurrency.
-  // Walk them again one at a time with a pause; a chunk that still
-  // fails leaves a gap that a later re-run fills.
+
+  // Failed chunks are almost always rate limits under concurrency.
+  // Walk them again one at a time; anything still failing leaves a gap
+  // that a later re-run fills.
   let unrecovered = 0;
   for (const [from, to] of failed) {
     await sleep(1500);
     try {
-      ingest(await fetchTransferLogs(from, to));
+      ingest(await fetchAllShareMovements(from, to));
       console.error(`  recovered chunk ${from}..${to}`);
     } catch (err) {
       unrecovered++;
       console.error(`  chunk ${from}..${to} failed again: ${err.message}`);
     }
   }
-  console.error(`Pass 1 done: ${totalLogs} logs, ${earliestTxByWallet.size} wallets, ${failed.length} chunks retried, ${unrecovered} unrecovered`);
-  if (unrecovered > 0) {
-    console.error("Some chunks failed — re-run to fill gaps (existing entries are kept unless an earlier trade is found).");
-  }
+  console.error(`Pass 1: ${totalMovements} movements, ${earliest.size} wallets, ${failed.length} chunks retried, ${unrecovered} unrecovered`);
 
-  // Pass 2: receipt + block for each wallet's first tx only. A tx can
-  // carry legs for several wallets (batch distributions), so legs are
-  // grouped per wallet rather than attributed to the first one seen.
-  const firstTxs = Array.from(new Set(Array.from(earliestTxByWallet.values()).map((e) => e.txHash)));
-  console.error(`Pass 2: fetching ${firstTxs.length} receipts`);
+  // Pass 2: block timestamp for every first acquisition, plus a receipt
+  // for AMM buys so the first trade carries a USD amount.
+  const firstTxs = Array.from(new Set(Array.from(earliest.values()).map((e) => e.txHash)));
+  console.error(`Pass 2: resolving ${firstTxs.length} transactions`);
   const blockTimeCache = new Map();
-  const trades = [];
+  const usdByTxWallet = new Map();
   let processed = 0;
   const failedTxs = [];
+
   const processTx = async (txHash) => {
-    const entries = txEntries.get(txHash) ?? [];
-    const receipt = await fetchReceipt(txHash);
-    if (!receipt) throw new Error("no receipt");
-    const blockNumber = hexToNum(receipt.blockNumber);
-    let blockTime = blockTimeCache.get(blockNumber);
-    if (!blockTime) {
-      const block = await fetchBlock(receipt.blockNumber);
-      blockTime = Number(BigInt(block.timestamp)) * 1000;
-      if (!blockTime) throw new Error("block timestamp missing");
-      blockTimeCache.set(blockNumber, blockTime);
+    const legs = txLegs.get(txHash) ?? [];
+    const anyFromAmm = legs.some((m) => isAmm(m.from) || m.from === ZERO);
+    let receipt = null;
+    if (anyFromAmm) {
+      receipt = await fetchReceipt(txHash);
+      if (!receipt) throw new Error("no receipt");
     }
-    const legsByWallet = new Map();
-    for (const e of entries) {
-      const w = isAmm(e.parsed.from) ? e.parsed.to : e.parsed.from;
-      if (!legsByWallet.has(w)) legsByWallet.set(w, []);
-      legsByWallet.get(w).push(e);
+    const blockNumber = receipt
+      ? hexToNum(receipt.blockNumber)
+      : hexToNum(legs[0].log.blockNumber);
+    if (!blockTimeCache.has(blockNumber)) {
+      const block = await fetchBlock("0x" + blockNumber.toString(16));
+      const ts = Number(BigInt(block.timestamp)) * 1000;
+      if (!ts) throw new Error("block timestamp missing");
+      blockTimeCache.set(blockNumber, ts);
     }
-    for (const [userWallet, legs] of legsByWallet) {
-      const isSwap = legs.length > 1;
-      for (const { log, parsed } of legs) {
-        const side = isAmm(parsed.from)
-          ? (isSwap ? "swap-in" : "buy")
-          : (isSwap ? "swap-out" : "sell");
-        trades.push({
-          txId: txHash,
-          blockNumber,
-          blockTime,
-          logIndex: hexToNum(log.logIndex),
-          tokenIdSuffix: parsed.tokenId,
-          wallet: userWallet,
-          side,
-          shareAmount: Number(parsed.value) / 1e18,
-          usdAmount: isSwap ? 0 : Math.abs(computeNetUsd(userWallet, receipt.logs)),
-        });
+    if (receipt) {
+      for (const wallet of new Set(legs.map((m) => m.to))) {
+        usdByTxWallet.set(`${txHash}:${wallet}`, Math.abs(computeNetUsd(wallet, receipt.logs)));
       }
     }
   };
+
   await mapLimit(firstTxs, CONCURRENCY, async (txHash) => {
     try {
       await processTx(txHash);
@@ -176,7 +169,7 @@ async function main() {
       console.error(`  tx ${txHash} failed: ${err.message}`);
     }
     processed++;
-    if (processed % 250 === 0) console.error(`  ${processed}/${firstTxs.length} receipts`);
+    if (processed % 250 === 0) console.error(`  ${processed}/${firstTxs.length} transactions`);
   });
   let unrecoveredTxs = 0;
   for (const txHash of failedTxs) {
@@ -189,23 +182,58 @@ async function main() {
       console.error(`  tx ${txHash} failed again: ${err.message}`);
     }
   }
-  console.error(`Pass 2 done: ${failedTxs.length} txs retried, ${unrecoveredTxs} unrecovered`);
+  console.error(`Pass 2: ${failedTxs.length} txs retried, ${unrecoveredTxs} unrecovered`);
 
-  const registry = await readRegistry(registryPath);
-  const added = updateRegistry(registry, trades);
+  const events = [];
+  for (const [wallet, e] of earliest) {
+    const blockTime = blockTimeCache.get(e.blockNumber) ?? 0;
+    if (!blockTime) continue;
+    events.push({
+      wallet,
+      blockNumber: e.blockNumber,
+      blockTime,
+      logIndex: e.logIndex,
+      txId: e.txHash,
+      tokenIdSuffix: e.tokenId,
+      side: e.fromAmm ? "buy" : "transfer-in",
+      shareAmount: e.shares,
+      usdAmount: e.fromAmm ? (usdByTxWallet.get(`${e.txHash}:${wallet}`) ?? 0) : 0,
+    });
+  }
+
+  // A full seed is authoritative — it read every share movement on the
+  // contract, a superset of what any previous run saw — so it REPLACES
+  // the registry rather than merging into it. Merging would keep the
+  // old, too-late dates produced before batch events and transfers
+  // counted. Entries for wallets this scan never saw are carried over
+  // only as gap insurance (a chunk that failed both attempts).
+  const prior = await readRegistry(registryPath);
+  const before = Object.keys(prior.wallets).length;
+  const registry = { updatedAt: 0, seededFromBlock: prior.seededFromBlock, wallets: {} };
+  const added = updateRegistry(registry, events);
+  let carried = 0;
+  for (const [addr, e] of Object.entries(prior.wallets)) {
+    if (!registry.wallets[addr]) { registry.wallets[addr] = e; carried++; }
+  }
+  if (carried > 0) console.error(`Carried ${carried} wallets from the prior registry (not seen in this scan)`);
   registry.seededFromBlock = registry.seededFromBlock > 0
     ? Math.min(registry.seededFromBlock, FROM_BLOCK)
     : FROM_BLOCK;
 
   const total = Object.keys(registry.wallets).length;
+  const sides = {};
+  for (const e of Object.values(registry.wallets)) sides[e.firstSide] = (sides[e.firstSide] ?? 0) + 1;
   const durationMs = Date.now() - start;
+
   if (process.argv.includes("--write")) {
     await fs.mkdir(path.dirname(registryPath), { recursive: true });
     await fs.writeFile(registryPath, JSON.stringify(registry, null, 2) + "\n", "utf8");
-    console.error(`Wrote ${total} wallets (+${added}) to ${registryPath} in ${durationMs}ms`);
+    console.error(`Wrote ${total} wallets (was ${before}, +${added}) in ${durationMs}ms`);
+    console.error(`First-acquisition kinds: ${JSON.stringify(sides)}`);
   } else {
-    const sample = Object.entries(registry.wallets).sort((a, b) => a[1].firstSeenAt - b[1].firstSeenAt).slice(0, 3);
-    console.log(JSON.stringify({ total, added, unrecoveredChunks: unrecovered, unrecoveredTxs, durationMs, earliest: sample }, null, 2));
+    console.log(JSON.stringify({
+      total, before, added, carried, batchLegs, unrecoveredChunks: unrecovered, unrecoveredTxs, sides, durationMs,
+    }, null, 2));
   }
 }
 
