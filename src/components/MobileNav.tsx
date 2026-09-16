@@ -15,6 +15,7 @@ const LINKS: Array<{ href: string; label: string; highlight?: boolean; icon?: Re
   { href: "/", label: "Overview" },
   { href: "/#players", label: "Players" },
   { href: "/#trades", label: "Live Feed" },
+  { href: "/scoring", label: "Weekly Scoring" },
   { href: "/wallets", label: "Top Wallets" },
   { href: "/new-wallets", label: "New Wallets" },
   { href: "/tournament-matrix", label: "2025 Data" },

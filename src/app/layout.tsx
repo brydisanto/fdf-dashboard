@@ -111,6 +111,7 @@ function SiteHeader() {
           <NavLink href="/">Overview</NavLink>
           <NavLink href="/#players">Players</NavLink>
           <NavLink href="/#trades">Live Feed</NavLink>
+          <NavLink href="/scoring">Scoring</NavLink>
           <NavLink href="/wallets">Top Wallets</NavLink>
           <NavLink href="/new-wallets">New Wallets</NavLink>
           <NavLink href="/tournament-matrix">2025 Data</NavLink>
