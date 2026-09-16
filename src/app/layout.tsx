@@ -117,7 +117,6 @@ function SiteHeader() {
           <NavLink href="/on-fire" icon={<Flame className="h-3.5 w-3.5" strokeWidth={2} />}>
             On Fire
           </NavLink>
-          <NavLinkHighlighted href="/value">Value Plays</NavLinkHighlighted>
           <span className="mx-1 h-5 w-px bg-[var(--color-line)]" aria-hidden />
           <ThemeToggle />
         </nav>
@@ -141,33 +140,6 @@ function NavLink({
     <Link
       href={href}
       className="inline-flex items-center gap-1.5 rounded-[var(--r-8)] px-3 py-1.5 text-[13px] font-bold text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bench)] transition-colors"
-    >
-      {icon}
-      <span>{children}</span>
-    </Link>
-  );
-}
-
-// Accent-filled chip variant — used to make a single nav item stand out
-// as the primary call-to-action (Value Tool right now).
-function NavLinkHighlighted({
-  href,
-  icon,
-  children,
-}: {
-  href: string;
-  icon?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      className="ml-1 inline-flex items-center gap-1.5 rounded-[var(--r-8)] border px-3 py-1.5 text-[13px] font-bold transition-colors"
-      style={{
-        borderColor: "var(--accent-line)",
-        background: "var(--accent-tint)",
-        color: "var(--accent-soft)",
-      }}
     >
       {icon}
       <span>{children}</span>

@@ -82,8 +82,3 @@ export const NewWalletsActivityChart = dynamic(
   () => import("./NewWalletsChart").then((m) => m.NewWalletsActivityChart),
   { ssr: false, loading: () => <Box height={240} /> },
 );
-
-export const ValueScatter = dynamic(
-  () => import("./ValueScatter").then((m) => m.ValueScatter),
-  { ssr: false, loading: () => <Box height={320} /> },
-);

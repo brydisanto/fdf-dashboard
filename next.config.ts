@@ -2,6 +2,11 @@ import path from "node:path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Value Plays is parked. Temporary (307) so browsers and search
+  // engines don't cache it, which keeps the path free to bring back.
+  async redirects() {
+    return [{ source: "/value", destination: "/", permanent: false }];
+  },
   turbopack: {
     root: path.join(__dirname),
   },
