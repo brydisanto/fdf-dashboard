@@ -6,9 +6,11 @@ import {
 import { fmtUsd } from "@/lib/format";
 import type { BuybackDay } from "@/lib/data/buyback";
 
-// Daily USDC deployed (bars) against the running total (line). The
-// wallet buys in bursts with long quiet stretches, so the cumulative
-// line is what makes the shape readable.
+// Daily USDC deployed and treasury funding (bars) against the running
+// total deployed (line). The wallet buys in bursts with long quiet
+// stretches, so the cumulative line is what makes the shape readable.
+// Shares retired track dollars deployed almost exactly, so they are
+// reported as stats rather than a redundant second series.
 export function BuybackChart({ daily }: { daily: BuybackDay[] }) {
   return (
     <div className="h-[260px]">

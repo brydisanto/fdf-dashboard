@@ -12,7 +12,7 @@ import { fmtNum, fmtTimeAgo, fmtUsd, shortAddr } from "@/lib/format";
 export const metadata = {
   title: "Buyback Tracker · FDF Box Score",
   description:
-    "Live tracking of the FDF buyback wallet: USDC deployed over time, treasury funding, every basket purchase, and the player positions it has accumulated.",
+    "Live tracking of the FDF buyback-and-burn wallet: USDC deployed over time, treasury funding, every basket purchase, and the player shares permanently retired.",
 };
 
 // The index refreshes on a cron; 60s keeps the page close to it without
@@ -82,9 +82,9 @@ export default function BuybackPage() {
             Buyback Tracker
           </h1>
           <p className="m-0 max-w-[80ch] text-[var(--color-text-muted)]" style={{ fontSize: "15px" }}>
-            The wallet is funded with USDC from the treasury, then spends it into the FDF pool.
-            Each purchase buys a basket of player shares in one transaction, and the wallet holds
-            what it buys rather than selling it back.
+            The treasury funds this wallet with USDC. It buys baskets of player shares from the
+            pool, then sends them to the share contract and gets nothing back, retiring them for
+            good. Its balance is only what is waiting to be burned, not a position it is building.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <a
@@ -135,11 +135,13 @@ async function load() {
 async function StatusPill() {
   const r = await load();
   if (!r.available) return <Pill tone="warn">Index not built yet</Pill>;
-  const idleMs = Date.now() - r.lastBuyAt;
-  const active = idleMs < 3 * 24 * 60 * 60 * 1000;
+  // A seed still in progress can have funding but no buys yet, and
+  // fmtTimeAgo(0) would read as decades.
+  if (!r.lastBuyAt) return <Pill tone="muted">No buys indexed yet</Pill>;
   return (
-    <Pill tone={active ? "gain" : "muted"}>
-      {active ? "Actively buying" : "Idle"} · last buy {fmtTimeAgo(r.lastBuyAt)}
+    <Pill tone={r.activeRecently ? "gain" : "muted"}>
+      {r.activeRecently ? "Actively buying" : "Idle"} · last buy{" "}
+      {fmtTimeAgo(r.lastBuyAt, r.generatedAt)}
     </Pill>
   );
 }
@@ -170,14 +172,14 @@ async function Body() {
           sub={`${fmtNum(r.buyCount)} buys · avg ${fmtUsd(r.avgBuyUsd, { digits: 0 })}`}
         />
         <StatCell
-          label="Shares Bought"
-          value={fmtNum(r.totalShares, { compact: true })}
-          sub={`${fmtNum(r.holdings.length)} players held`}
+          label="Shares Retired"
+          value={fmtNum(r.totalBurned, { compact: true })}
+          sub={`${fmtNum(r.burnCount)} burns · ${fmtNum(r.totalShares, { compact: true })} bought`}
         />
         <StatCell
-          label="Position Value"
-          value={fmtUsd(r.holdingsValueUsd, { compact: true })}
-          sub="Holdings at current spot"
+          label="Avg Cost / Share"
+          value={r.costPerShare > 0 ? `$${r.costPerShare.toFixed(5)}` : "—"}
+          sub="Deployed ÷ shares bought"
         />
         <StatCell
           label="USDC Remaining"
@@ -186,11 +188,35 @@ async function Body() {
         />
       </div>
 
-      <div className="stat-strip mt-3 grid grid-cols-3">
+      <div className="stat-strip mt-3 grid grid-cols-2 md:grid-cols-4">
         <StatCell label="Deployed · 24h" value={fmtUsd(r.deployed24h, { compact: true })} />
         <StatCell label="Deployed · 7d" value={fmtUsd(r.deployed7d, { compact: true })} />
         <StatCell label="Deployed · 30d" value={fmtUsd(r.deployed30d, { compact: true })} />
+        <StatCell
+          label="Awaiting Burn"
+          value={fmtNum(r.heldShares, { compact: true })}
+          sub={`${fmtNum(r.holdings.length)} players · ${fmtUsd(r.holdingsValueUsd, { compact: true })}`}
+        />
       </div>
+
+      {/* Bought minus burned should equal the live balance. A gap means
+          a share path the indexer has not accounted for, which is worth
+          surfacing rather than hiding. */}
+      {Math.abs(r.floatShares - r.heldShares) > Math.max(50, r.heldShares * 0.05) ? (
+        <p
+          className="mt-3"
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10.5,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            color: "var(--color-flag)",
+          }}
+        >
+          Reconciliation gap: bought minus burned is {fmtNum(r.floatShares, { compact: true })}, on-chain balance is{" "}
+          {fmtNum(r.heldShares, { compact: true })}
+        </p>
+      ) : null}
 
       <div className="mt-4">
         <SectionHead
@@ -208,8 +234,8 @@ async function Body() {
       <div className="mt-6 grid gap-4 lg:grid-cols-5">
         <div className="lg:col-span-3">
           <SectionHead
-            title="Positions Accumulated"
-            hint="Every player the wallet holds, valued at current spot"
+            title="Awaiting Burn"
+            hint="Shares bought but not yet retired, valued at current spot"
             right={<Pill tone="muted">{fmtNum(r.holdings.length)} players</Pill>}
           />
           <Card variant="press" padded={false}>
@@ -327,6 +353,42 @@ async function Body() {
               </table>
             </div>
           </Card>
+
+          {r.recentBurns.length > 0 ? (
+            <div className="mt-4">
+              <SectionHead
+                title="Recent Burns"
+                hint="Shares sent to the contract, nothing returned"
+                right={<Pill tone="loss">{fmtNum(r.burnCount)} total</Pill>}
+              />
+              <Card variant="press" padded={false}>
+                <table className="w-full text-[13px]">
+                  <tbody>
+                    {r.recentBurns.slice(0, 8).map((b) => (
+                      <tr key={b.tx} style={{ borderBottom: "1px solid var(--color-line)" }}>
+                        <Td align="left" className="pl-5" dim>
+                          <a
+                            href={`https://basescan.org/tx/${b.tx}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="hover:text-[var(--accent-soft)]"
+                          >
+                            {fmtTimeAgo(b.ts)}
+                          </a>
+                        </Td>
+                        <Td align="center" mono>{b.tokens} players</Td>
+                        <Td align="center" mono className="pr-5">
+                          <span style={{ color: "var(--color-penalty)" }}>
+                            −{fmtNum(b.shares, { digits: 0 })}
+                          </span>
+                        </Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+            </div>
+          ) : null}
 
           {r.funding.length > 0 ? (
             <div className="mt-4">
