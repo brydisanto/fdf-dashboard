@@ -68,6 +68,11 @@ export const CompositionPie = dynamic(
   },
 );
 
+export const BuybackChart = dynamic(
+  () => import("./BuybackChart").then((m) => m.BuybackChart),
+  { ssr: false, loading: () => <Box height={260} /> },
+);
+
 export const NewWalletsJoinsChart = dynamic(
   () => import("./NewWalletsChart").then((m) => m.NewWalletsJoinsChart),
   { ssr: false, loading: () => <Box height={240} /> },

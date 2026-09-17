@@ -1,0 +1,111 @@
+name: Index Buyback Wallet
+
+# Tracks the FDF buyback wallet: USDC funding in, USDC deployed into the
+# pool, the player shares each purchase returns, and the resulting
+# positions. Commits data/buyback.json to the `data` branch, which
+# /buyback reads via raw.githubusercontent.com.
+#
+# Every 30 minutes: the wallet trades in bursts, and an incremental run
+# only scans the blocks since the last one, so this is cheap.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      from_block:
+        description: "Re-scan from this block instead of resuming (blank for a normal incremental run). Events are deduped by tx hash, so re-scanning is safe."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: index-buyback
+  cancel-in-progress: false
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: data
+          fetch-depth: 0
+        continue-on-error: true
+
+      - name: Configure git identity
+        shell: bash
+        run: |
+          git config --global user.name "Gridiron Indexer"
+          git config --global user.email "indexer@users.noreply.github.com"
+
+      - name: Bootstrap data branch if missing, then overlay main scripts
+        shell: bash
+        run: |
+          set -e
+          if [ ! -f "scripts/index-buyback.mjs" ]; then
+            echo "data branch missing the script — bootstrapping"
+            git init -b data
+            git remote remove origin 2>/dev/null || true
+            git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+            git fetch origin main
+            git fetch origin data 2>/dev/null || true
+            if git show-ref --verify --quiet refs/remotes/origin/data; then
+              git reset --hard origin/data
+              git checkout origin/main -- scripts/ .github/workflows/ src/lib/data/roster.ts 2>/dev/null || true
+              git add -A
+              if ! git diff --staged --quiet; then
+                git commit -m "Sync scripts from main"
+              fi
+            else
+              git reset --hard origin/main
+            fi
+          fi
+
+      - name: Sync latest scripts from main into the data branch
+        shell: bash
+        run: |
+          git fetch origin main
+          git merge origin/main --no-edit -X theirs --allow-unrelated-histories || true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run indexer
+        env:
+          FROM_BLOCK: ${{ github.event.inputs.from_block }}
+        run: node scripts/index-buyback.mjs --write
+
+      - name: Commit snapshot to data branch
+        shell: bash
+        run: |
+          set -e
+          git add data/buyback.json
+          if git diff --staged --quiet; then
+            echo "No buyback changes."
+            exit 0
+          fi
+          git commit -m "Buyback index $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          # Race-safe push: the indexers all target `data` and each owns
+          # a different file, so a rejection means someone landed first.
+          attempt=0
+          max=6
+          until git push origin HEAD:data; do
+            attempt=$((attempt + 1))
+            if [ $attempt -ge $max ]; then
+              echo "Push still failing after $max attempts — giving up."
+              exit 1
+            fi
+            echo "Push rejected (attempt $attempt) — rebasing onto origin/data"
+            git fetch origin data
+            if ! git rebase origin/data; then
+              git rebase --abort || true
+              exit 1
+            fi
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
