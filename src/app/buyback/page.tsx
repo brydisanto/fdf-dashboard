@@ -5,6 +5,7 @@ import { getPlayers } from "@/lib/data";
 import { getBuyback, BUYBACK_WALLET } from "@/lib/data/buyback";
 import { Card, Pill } from "@/components/ui";
 import { BuybackChart } from "@/components/LazyCharts";
+import { BuybackPlayersTable } from "@/components/BuybackPlayersTable";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
 import { Sk, SkBlock } from "@/components/PageSkeleton";
 import { fmtNum, fmtTimeAgo, fmtUsd, shortAddr } from "@/lib/format";
@@ -228,6 +229,28 @@ async function Body() {
           <div className="p-5">
             <BuybackChart daily={r.daily} />
           </div>
+        </Card>
+      </div>
+
+      <div className="mt-6">
+        <SectionHead
+          title="Buybacks by Player"
+          hint="All-time totals per player · dollars are what each basket actually paid for that player"
+          right={
+            r.byPlayerComplete ? (
+              <Pill tone="muted">{fmtNum(r.byPlayer.length)} players</Pill>
+            ) : null
+          }
+        />
+        <Card variant="press" padded={false}>
+          {r.byPlayerComplete && r.byPlayer.length > 0 ? (
+            <BuybackPlayersTable rows={r.byPlayer} now={r.generatedAt} />
+          ) : (
+            <p className="m-0 p-5 text-[var(--color-text-muted)]" style={{ fontSize: 14 }}>
+              Per-player totals appear once the buyback index has been rebuilt with player-level
+              tracking. Partial figures are held back rather than shown as complete.
+            </p>
+          )}
         </Card>
       </div>
 

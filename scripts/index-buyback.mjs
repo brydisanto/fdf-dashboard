@@ -47,6 +47,12 @@ const ERC20_TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a
 // buys while the shared constant was already fixed.
 const TRANSFER_SINGLE = ERC1155_TRANSFER_SINGLE;
 const TRANSFER_BATCH = ERC1155_TRANSFER_BATCH;
+// Emitted by the pair for every basket trade. Its data is five parallel
+// arrays, one entry per player in the basket: token id, shares, USDC
+// paid for that player (6dp), a small pool fee, and the protocol fee.
+// The USDC array sums exactly to the buy's net spend, so it gives the
+// real cost per player rather than an estimate. Buyer is topic 1.
+const PAIR_TRADE_EVENT = "0x687289c2856f43779157318472d0a835253d93a290e03ee79b9e27b0e403493d";
 
 const CHUNK = 2000;
 // The public Base RPC caps eth_getLogs at 2,000 blocks and rate-limits
@@ -139,7 +145,7 @@ async function main() {
 
   const touch = (hash, block) => {
     let t = txs.get(hash);
-    if (!t) txs.set(hash, (t = { hash, block, usdcOut: 0, usdcIn: 0, usdcFromPair: 0, funders: new Set(), shares: 0, tokens: 0, sharesOut: 0, tokensOut: 0 }));
+    if (!t) txs.set(hash, (t = { hash, block, usdcOut: 0, usdcIn: 0, usdcFromPair: 0, funders: new Set(), shares: 0, tokens: 0, sharesOut: 0, tokensOut: 0, perToken: null }));
     return t;
   };
 
@@ -158,6 +164,19 @@ async function main() {
     // sign, so they only occur inside nonce-active ranges.
     const batchOut = full ? await rpc("eth_getLogs", [{ ...range, address: PROXY, topics: [TRANSFER_BATCH, null, topicAddr(BUYBACK_WALLET), null] }]) : [];
     const singleOut = full ? await rpc("eth_getLogs", [{ ...range, address: PROXY, topics: [TRANSFER_SINGLE, null, topicAddr(BUYBACK_WALLET), null] }]) : [];
+    // Buys are wallet-signed, so the per-player breakdown is only needed
+    // inside nonce-active ranges.
+    const trades = full ? await rpc("eth_getLogs", [{ ...range, address: PAIR, topics: [PAIR_TRADE_EVENT, topicAddr(BUYBACK_WALLET)] }]) : [];
+    for (const l of trades) {
+      const t = touch(l.transactionHash, hexToNum(l.blockNumber));
+      const per = t.perToken ?? (t.perToken = new Map());
+      for (const leg of parsePairTrade(l)) {
+        const cur = per.get(leg.tokenId) ?? { shares: 0, usd: 0 };
+        cur.shares += leg.shares;
+        cur.usd += leg.usd;
+        per.set(leg.tokenId, cur);
+      }
+    }
     for (const l of out) {
       const t = touch(l.transactionHash, hexToNum(l.blockNumber));
       t.usdcOut += Number(BigInt(l.data)) / 1e6;
@@ -277,9 +296,35 @@ async function main() {
     }
   }
 
+  const known = new Set(store.events.map((e) => e.tx));
   const merged = new Map(store.events.map((e) => [e.tx, e.kind === "burn" ? { ...e, kind: "return" } : e]));
   for (const e of fresh) merged.set(e.tx, e);
   const events = [...merged.values()].sort((a, b) => a.block - b.block);
+
+  // Cumulative buybacks per player. Kept as a running aggregate rather
+  // than per-buy legs: ~4,600 baskets x ~28 players would push the file
+  // past the 2MB fetch-cache ceiling. Only txs this run has not seen
+  // before are added, so re-scanning an overlapping range is safe.
+  //
+  // An index written before this existed has buys but no aggregate, and
+  // can never be completed incrementally; it is flagged incomplete so
+  // the page can say so instead of showing partial totals as the truth.
+  const hadAggregate = store.players && typeof store.players === "object";
+  const players = hadAggregate ? structuredClone(store.players) : {};
+  const playersComplete = hadAggregate ? store.playersComplete !== false : store.events.length === 0;
+  for (const e of fresh) {
+    if (e.kind !== "buy" || known.has(e.tx)) continue;
+    const per = txs.get(e.tx)?.perToken;
+    if (!per) continue;
+    for (const [tokenId, leg] of per) {
+      const p = players[tokenId] ?? (players[tokenId] = { shares: 0, usd: 0, baskets: 0, firstTs: e.ts, lastTs: e.ts });
+      p.shares = round(p.shares + leg.shares, 4);
+      p.usd = round(p.usd + leg.usd, 4);
+      p.baskets += 1;
+      if (e.ts < p.firstTs) p.firstTs = e.ts;
+      if (e.ts > p.lastTs) p.lastTs = e.ts;
+    }
+  }
 
   // Holdings are read AT the block we indexed through, not at "latest".
   // Reading the tip instead compares a balance against events that stop
@@ -297,6 +342,8 @@ async function main() {
     updatedAt: Date.now(),
     usdcBalance: await usdcBalance("0x" + head.toString(16)),
     holdings,
+    players,
+    playersComplete,
     events,
   };
 
@@ -330,6 +377,11 @@ async function main() {
       buys.reduce((a, e) => a + e.netUsd, 0),
     ),
     usdcNow: out.usdcBalance,
+    // Per-player totals must add back up to the buy totals.
+    playersComplete,
+    players: Object.keys(players).length,
+    playerSharesSum: round(Object.values(players).reduce((a, p) => a + p.shares, 0), 1),
+    playerUsdSum: round(Object.values(players).reduce((a, p) => a + p.usd, 0)),
     playersHeld: holdings.length,
     durationMs: Date.now() - started,
   };
@@ -385,6 +437,27 @@ async function activeRanges(from, head) {
     }
   }
   return ranges;
+}
+
+/**
+ * Decode the pair's basket-trade event. Data is five ABI-encoded
+ * dynamic uint256 arrays of equal length: token ids, shares (18dp),
+ * USDC paid per player (6dp), pool fee, protocol fee.
+ */
+function parsePairTrade(log) {
+  const d = log.data.slice(2);
+  const word = (i) => BigInt("0x" + d.slice(i * 64, (i + 1) * 64));
+  const heads = [0, 1, 2].map((i) => Number(word(i)) / 32);
+  const read = (h) => {
+    const n = Number(word(h));
+    return Array.from({ length: n }, (_, k) => word(h + 1 + k));
+  };
+  const [ids, shares, usd] = heads.map(read);
+  return ids.map((id, k) => ({
+    tokenId: id.toString(),
+    shares: Number(shares[k] ?? 0n) / 1e18,
+    usd: Number(usd[k] ?? 0n) / 1e6,
+  }));
 }
 
 function round(n, dp = 2) {

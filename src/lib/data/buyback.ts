@@ -1,7 +1,7 @@
 import "server-only";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { ROSTER_BY_ID } from "./roster";
+import { ROSTER_BY_ID, ROSTER_BY_TOKEN, FOOTBALLFUN_CONTRACT } from "./roster";
 import type { NflPlayer } from "./roster";
 
 // Reader for the buyback wallet index produced by
@@ -55,13 +55,37 @@ export interface BuybackHolding {
   shares: number;
 }
 
+interface PlayerAggregate {
+  shares: number;
+  usd: number;       // USDC paid for this player, from the pair's own per-player breakdown
+  baskets: number;   // how many buyback baskets included this player
+  firstTs: number;
+  lastTs: number;
+}
+
 interface BuybackStore {
   wallet: string;
   lastIndexedBlock: number;
   updatedAt: number;
   usdcBalance: number;
   holdings: BuybackHolding[];
+  // Cumulative buybacks per player, keyed by token id. Absent on
+  // indexes written before per-player tracking existed.
+  players?: Record<string, PlayerAggregate>;
+  playersComplete?: boolean;
   events: BuybackEvent[];
+}
+
+export interface BuybackPlayerRow {
+  tokenIdSuffix: string;
+  player: NflPlayer | null;     // null for a token no longer on the roster
+  shares: number;
+  usd: number;
+  avgPrice: number;             // usd / shares
+  pctOfSpend: number;           // share of all buyback dollars
+  baskets: number;
+  firstTs: number;
+  lastTs: number;
 }
 
 export interface BuybackDay {
@@ -108,6 +132,8 @@ export interface BuybackReport {
   holdingsValueUsd: number;
   recent: BuybackBuy[];
   funding: BuybackFunding[];
+  byPlayer: BuybackPlayerRow[];   // highest spend first
+  byPlayerComplete: boolean;      // false until a full rebuild has run
   available: boolean;
 }
 
@@ -158,7 +184,7 @@ export async function getBuyback(
       firstBuyAt: 0, lastBuyAt: 0, deployed24h: 0, deployed7d: 0, deployed30d: 0,
       activeDays: 0, avgBuyUsd: 0, activeRecently: false, generatedAt: now,
       daily: [], holdings: [], holdingsValueUsd: 0,
-      recent: [], funding: [], available: false,
+      recent: [], funding: [], byPlayer: [], byPlayerComplete: false, available: false,
     };
   }
 
@@ -225,6 +251,25 @@ export async function getBuyback(
     };
   }).sort((a, b) => b.valueUsd - a.valueUsd || b.shares - a.shares);
 
+  // Cumulative buybacks per player. Dollars come from the pair's own
+  // per-player breakdown of each basket, so they are what was actually
+  // paid for that player, not an allocation.
+  const aggregate = store.players ?? {};
+  const aggregateUsd = Object.values(aggregate).reduce((a, p) => a + p.usd, 0);
+  const byPlayer: BuybackPlayerRow[] = Object.entries(aggregate)
+    .map(([tokenIdSuffix, p]) => ({
+      tokenIdSuffix,
+      player: ROSTER_BY_TOKEN.get(`${FOOTBALLFUN_CONTRACT}:${tokenIdSuffix}`) ?? null,
+      shares: p.shares,
+      usd: p.usd,
+      avgPrice: p.shares > 0 ? p.usd / p.shares : 0,
+      pctOfSpend: aggregateUsd > 0 ? (p.usd / aggregateUsd) * 100 : 0,
+      baskets: p.baskets,
+      firstTs: p.firstTs,
+      lastTs: p.lastTs,
+    }))
+    .sort((a, b) => b.usd - a.usd);
+
   return {
     wallet: store.wallet ?? BUYBACK_WALLET,
     updatedAt: store.updatedAt ?? 0,
@@ -252,6 +297,8 @@ export async function getBuyback(
     holdingsValueUsd: holdings.reduce((a, h) => a + h.valueUsd, 0),
     recent: buys.slice().sort((a, b) => b.ts - a.ts).slice(0, 40),
     funding: funding.slice().sort((a, b) => b.ts - a.ts),
+    byPlayer,
+    byPlayerComplete: !!store.players && store.playersComplete !== false,
     available: true,
   };
 }
