@@ -34,9 +34,13 @@ import {
 } from "./index-trades.mjs";
 
 const BUYBACK_WALLET = "0xd9dd74e1109fa6fb8772706594bcabfbedfb706d";
-// First block in which the wallet had a nonce (found by bisecting
-// eth_getTransactionCount). Nothing to scan before this.
-const DEPLOY_BLOCK = 38_903_380;
+// First block in which the wallet held any USDC (found by bisecting its
+// balance). NOT its first transaction: a wallet can be funded before it
+// ever sends anything, and this one received $10,010 from the treasury
+// between 2025-11-24 and its first tx at block 38,903,380. Starting the
+// scan at the first tx left that funding out, so funded minus deployed
+// came up exactly $10,010 short of the real balance.
+const FIRST_FUNDED_BLOCK = 38_610_049;
 
 const USDC = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 const PAIR = "0x4fdce033b9f30019337ddc5cc028dc023580585e";
@@ -97,11 +101,14 @@ async function main() {
   // totals, not per-buy legs), so a changed start date means rebuilding
   // it: rescan from the first known event on or after the new start.
   // Events are deduped by tx, so revisiting those blocks is harmless.
-  const aggregateStale = store.events.length > 0 && store.playersSince !== PLAYER_TRACKING_START;
+  // Also rebuild an aggregate a previous run left incomplete (e.g. one
+  // written by a FROM_BLOCK backfill), or it would stay incomplete for good.
+  const aggregateStale = store.events.length > 0 &&
+    (store.playersSince !== PLAYER_TRACKING_START || store.playersComplete === false);
   const rebuildFrom = aggregateStale
     ? store.events.filter((e) => e.ts >= PLAYER_TRACKING_START).reduce((m, e) => Math.min(m, e.block), Infinity)
     : Infinity;
-  const resumeFrom = store.lastIndexedBlock > 0 ? store.lastIndexedBlock + 1 : DEPLOY_BLOCK;
+  const resumeFrom = store.lastIndexedBlock > 0 ? store.lastIndexedBlock + 1 : FIRST_FUNDED_BLOCK;
   const from = process.env.FROM_BLOCK
     ? Number(process.env.FROM_BLOCK)
     : Math.min(resumeFrom, rebuildFrom);
@@ -355,16 +362,20 @@ async function main() {
   // earlier, and while the wallet is actively buying that difference
   // looks exactly like missing data — it cost several full rescans to
   // realise the numbers were fine and the comparison was not.
-  const holdings = await readHoldings(repoRoot, "0x" + head.toString(16));
+  //
+  // Never move the indexed-through pointer backwards: a backfill of an
+  // older window (FROM_BLOCK/TO_BLOCK behind the tip) must leave coverage
+  // of later blocks intact, and must read balances at the true tip of the
+  // index, not at the end of the window it happened to scan.
+  const indexedThrough = Math.max(store.lastIndexedBlock, unrecovered > 0 ? from - 1 : head);
+  const holdings = await readHoldings(repoRoot, "0x" + indexedThrough.toString(16));
 
   const out = {
     wallet: BUYBACK_WALLET,
     seededFromBlock: store.seededFromBlock > 0 ? Math.min(store.seededFromBlock, from) : from,
-    // Only claim coverage we actually scanned. A staged seed advances
-    // to its TO_BLOCK; the next stage resumes from there.
-    lastIndexedBlock: unrecovered > 0 ? Math.max(store.lastIndexedBlock, from - 1) : head,
+    lastIndexedBlock: indexedThrough,
     updatedAt: Date.now(),
-    usdcBalance: await usdcBalance("0x" + head.toString(16)),
+    usdcBalance: await usdcBalance("0x" + indexedThrough.toString(16)),
     holdings,
     players,
     playersSince: PLAYER_TRACKING_START,
