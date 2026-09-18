@@ -2,21 +2,21 @@
 /*
  * Indexer for the FDF buyback wallet.
  *
- * The cycle is buy-and-burn, in three steps:
+ * The cycle, in three steps:
  *   1. a treasury address sends the wallet USDC
- *   2. the wallet spends it into the FDF pair, buying a BASKET of
+ *   2. the wallet spends it into the FDF pair, buying back a BASKET of
  *      player shares that arrive as one ERC-1155 TransferBatch
- *   3. the wallet sends those shares to the share contract and gets
- *      NOTHING back — no USDC, no other token — which retires them
+ *   3. the wallet returns those shares to the treasury (the share
+ *      contract), with no USDC coming back
  *
- * Step 3 is easy to misread as accumulation: the wallet's balance only
- * ever holds the float between a buy and the next burn, so its holdings
- * are a tiny fraction of what it has actually bought.
+ * The shares are returned, not burned. The wallet's own balance is only
+ * what it holds between a buy and the next return, so it is a small
+ * fraction of what it has bought back.
  *
  * Three record types come out of a scan:
  *   funding — USDC into the wallet from anywhere other than the pair
  *   buy     — USDC out to the pair, refund netted off, shares received
- *   burn    — shares out to the share contract with no USDC in return
+ *   return  — shares sent back to the treasury, no USDC in return
  *
  * Output: data/buyback.json on the `data` branch, read by /buyback.
  *
@@ -47,6 +47,16 @@ const ERC20_TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a
 // buys while the shared constant was already fixed.
 const TRANSFER_SINGLE = ERC1155_TRANSFER_SINGLE;
 const TRANSFER_BATCH = ERC1155_TRANSFER_BATCH;
+// Emitted by the pair for every basket trade. Its data is five parallel
+// arrays, one entry per player in the basket: token id, shares, USDC
+// paid for that player (6dp), a small pool fee, and the protocol fee.
+// The USDC array sums exactly to the buy's net spend, so it gives the
+// real cost per player rather than an estimate. Buyer is topic 1.
+// Per-player buyback totals only count baskets from this moment on.
+// Changing it makes the next run discard the aggregate and rebuild it
+// from the first buy at or after the new start.
+const PLAYER_TRACKING_START = Date.UTC(2026, 8, 1); // 2026-09-01 00:00 UTC
+const PAIR_TRADE_EVENT = "0x687289c2856f43779157318472d0a835253d93a290e03ee79b9e27b0e403493d";
 
 const CHUNK = 2000;
 // The public Base RPC caps eth_getLogs at 2,000 blocks and rate-limits
@@ -83,11 +93,25 @@ async function main() {
   const store = await readStore(outPath);
 
   const chainHead = hexToNum(await rpc("eth_blockNumber", [])) - SAFETY_LAG;
+  // The per-player aggregate can't be filtered after the fact (it keeps
+  // totals, not per-buy legs), so a changed start date means rebuilding
+  // it: rescan from the first known event on or after the new start.
+  // Events are deduped by tx, so revisiting those blocks is harmless.
+  const aggregateStale = store.events.length > 0 && store.playersSince !== PLAYER_TRACKING_START;
+  const rebuildFrom = aggregateStale
+    ? store.events.filter((e) => e.ts >= PLAYER_TRACKING_START).reduce((m, e) => Math.min(m, e.block), Infinity)
+    : Infinity;
+  const resumeFrom = store.lastIndexedBlock > 0 ? store.lastIndexedBlock + 1 : DEPLOY_BLOCK;
   const from = process.env.FROM_BLOCK
     ? Number(process.env.FROM_BLOCK)
-    : store.lastIndexedBlock > 0
-      ? store.lastIndexedBlock + 1
-      : DEPLOY_BLOCK;
+    : Math.min(resumeFrom, rebuildFrom);
+  if (aggregateStale) {
+    console.error(
+      `Per-player totals were built for a different start date; rebuilding from ` +
+      `${new Date(PLAYER_TRACKING_START).toISOString().slice(0, 10)}` +
+      (Number.isFinite(rebuildFrom) ? ` (block ${rebuildFrom})` : " (no buys since then yet)"),
+    );
+  }
   // TO_BLOCK lets a cold seed run in stages that each save, so a long
   // backfill survives being interrupted. Normal runs leave it unset.
   const head = process.env.TO_BLOCK
@@ -99,21 +123,35 @@ async function main() {
     return;
   }
 
-  // Nonce probing only proves when the wallet SENT a transaction. It
-  // cannot see blocks where the wallet merely received shares, so it is
-  // an approximation — FULL_SCAN=1 forces every block and is what a
-  // trustworthy cold seed should use.
-  const ranges = process.env.FULL_SCAN !== "1" && (head - from) > 10 * NONCE_PROBE_BLOCKS
-    ? await activeRanges(from, head)
-    : [[from, head]];
+  // Split the scan by what the wallet must sign.
+  //
+  // OUTFLOWS (USDC spent, shares returned) need a transaction from the
+  // wallet, so its nonce moves. Probing the nonce finds every block range
+  // where that can have happened, and the rest can be skipped safely.
+  //
+  // INFLOWS (treasury funding, shares sent in) need nothing from the
+  // wallet — its nonce stays put. Skipping by nonce once hid ~$29K of
+  // funding this way, so inflows are always scanned across every block.
+  // That costs three queries per chunk instead of seven, which keeps a
+  // cold seed affordable.
+  const useProbe = process.env.FULL_SCAN !== "1" && (head - from) > 10 * NONCE_PROBE_BLOCKS;
+  const active = useProbe ? await activeRanges(from, head) : [[from, head]];
   const chunks = [];
-  for (const [a, b] of ranges) {
-    for (let f = a; f <= b; f += CHUNK) chunks.push([f, Math.min(f + CHUNK - 1, b)]);
+  const pushChunks = (a, b, mode) => {
+    for (let f = a; f <= b; f += CHUNK) chunks.push([f, Math.min(f + CHUNK - 1, b), mode]);
+  };
+  let cursor = from;
+  for (const [a, b] of active) {
+    if (a > cursor) pushChunks(cursor, a - 1, "inflow");
+    pushChunks(a, b, "full");
+    cursor = b + 1;
   }
-  const scanned = ranges.reduce((a, [x, y]) => a + (y - x + 1), 0);
+  if (cursor <= head) pushChunks(cursor, head, "inflow");
+  const fullChunks = chunks.filter((c) => c[2] === "full").length;
   console.error(
-    `Scanning ${scanned} of ${head - from + 1} blocks (${from} → ${head}) ` +
-    `in ${chunks.length} chunks across ${ranges.length} active range(s)`,
+    `Scanning ${head - from + 1} blocks (${from} → ${head}): ` +
+    `${fullChunks} full chunks across ${active.length} active range(s), ` +
+    `${chunks.length - fullChunks} inflow-only chunks`,
   );
 
   // Pass 1: every USDC leg touching the wallet, plus the share batches
@@ -125,25 +163,38 @@ async function main() {
 
   const touch = (hash, block) => {
     let t = txs.get(hash);
-    if (!t) txs.set(hash, (t = { hash, block, usdcOut: 0, usdcIn: 0, usdcFromPair: 0, funders: new Set(), shares: 0, tokens: 0, sharesOut: 0, tokensOut: 0 }));
+    if (!t) txs.set(hash, (t = { hash, block, usdcOut: 0, usdcIn: 0, usdcFromPair: 0, funders: new Set(), shares: 0, tokens: 0, sharesOut: 0, tokensOut: 0, perToken: null }));
     return t;
   };
 
-  const ingest = async ([a, b]) => {
+  const ingest = async ([a, b, mode]) => {
     const range = { fromBlock: "0x" + a.toString(16), toBlock: "0x" + b.toString(16) };
-    // Sequential, not Promise.all: four parallel getLogs per chunk times
-    // the worker count overwhelmed the public RPC and every chunk came
-    // back rate-limited.
-    const out = await rpc("eth_getLogs", [{ ...range, address: USDC, topics: [ERC20_TRANSFER, topicAddr(BUYBACK_WALLET), null] }]);
+    const full = mode !== "inflow";
+    // Sequential, not Promise.all: several parallel getLogs per chunk
+    // times the worker count overwhelmed the public RPC and every chunk
+    // came back rate-limited.
+    const out = full ? await rpc("eth_getLogs", [{ ...range, address: USDC, topics: [ERC20_TRANSFER, topicAddr(BUYBACK_WALLET), null] }]) : [];
     const inc = await rpc("eth_getLogs", [{ ...range, address: USDC, topics: [ERC20_TRANSFER, null, topicAddr(BUYBACK_WALLET)] }]);
-    // Share deliveries only ever accompany a spend, so skip both 1155
-    // queries for chunks where the wallet moved no USDC at all.
     const batch = await rpc("eth_getLogs", [{ ...range, address: PROXY, topics: [TRANSFER_BATCH, null, null, topicAddr(BUYBACK_WALLET)] }]);
     const single = await rpc("eth_getLogs", [{ ...range, address: PROXY, topics: [TRANSFER_SINGLE, null, null, topicAddr(BUYBACK_WALLET)] }]);
-    // Burns carry no USDC at all, so they can only be found by asking
-    // for share movements OUT of the wallet.
-    const batchOut = await rpc("eth_getLogs", [{ ...range, address: PROXY, topics: [TRANSFER_BATCH, null, topicAddr(BUYBACK_WALLET), null] }]);
-    const singleOut = await rpc("eth_getLogs", [{ ...range, address: PROXY, topics: [TRANSFER_SINGLE, null, topicAddr(BUYBACK_WALLET), null] }]);
+    // Returns carry no USDC at all, so they can only be found by asking
+    // for share movements OUT of the wallet. Outflows need the wallet to
+    // sign, so they only occur inside nonce-active ranges.
+    const batchOut = full ? await rpc("eth_getLogs", [{ ...range, address: PROXY, topics: [TRANSFER_BATCH, null, topicAddr(BUYBACK_WALLET), null] }]) : [];
+    const singleOut = full ? await rpc("eth_getLogs", [{ ...range, address: PROXY, topics: [TRANSFER_SINGLE, null, topicAddr(BUYBACK_WALLET), null] }]) : [];
+    // Buys are wallet-signed, so the per-player breakdown is only needed
+    // inside nonce-active ranges.
+    const trades = full ? await rpc("eth_getLogs", [{ ...range, address: PAIR, topics: [PAIR_TRADE_EVENT, topicAddr(BUYBACK_WALLET)] }]) : [];
+    for (const l of trades) {
+      const t = touch(l.transactionHash, hexToNum(l.blockNumber));
+      const per = t.perToken ?? (t.perToken = new Map());
+      for (const leg of parsePairTrade(l)) {
+        const cur = per.get(leg.tokenId) ?? { shares: 0, usd: 0 };
+        cur.shares += leg.shares;
+        cur.usd += leg.usd;
+        per.set(leg.tokenId, cur);
+      }
+    }
     for (const l of out) {
       const t = touch(l.transactionHash, hexToNum(l.blockNumber));
       t.usdcOut += Number(BigInt(l.data)) / 1e6;
@@ -213,9 +264,9 @@ async function main() {
     const ts = times.get(t.block);
     if (!ts) continue;
     if (t.usdcOut === 0 && t.usdcIn === 0 && t.sharesOut > 0) {
-      // Shares leave, nothing comes back: the retire step.
+      // Shares go back to the treasury and no USDC moves.
       fresh.push({
-        kind: "burn",
+        kind: "return",
         block: t.block,
         ts,
         tx: t.hash,
@@ -240,7 +291,7 @@ async function main() {
       // Shares arrive with no USDC moving: someone transferred them in
       // rather than the wallet buying them. Without this branch such a
       // tx matches nothing and is silently dropped, which makes shares
-      // bought minus burned disagree with the on-chain balance.
+      // bought minus returned disagree with the on-chain balance.
       fresh.push({
         kind: "inflow",
         block: t.block,
@@ -263,9 +314,41 @@ async function main() {
     }
   }
 
-  const merged = new Map(store.events.map((e) => [e.tx, e]));
+  const known = new Set(store.events.map((e) => e.tx));
+  const merged = new Map(store.events.map((e) => [e.tx, e.kind === "burn" ? { ...e, kind: "return" } : e]));
   for (const e of fresh) merged.set(e.tx, e);
   const events = [...merged.values()].sort((a, b) => a.block - b.block);
+
+  // Cumulative buybacks per player. Kept as a running aggregate rather
+  // than per-buy legs: ~4,600 baskets x ~28 players would push the file
+  // past the 2MB fetch-cache ceiling. Only txs this run has not seen
+  // before are added, so re-scanning an overlapping range is safe.
+  //
+  // An index written before this existed has buys but no aggregate, and
+  // can never be completed incrementally; it is flagged incomplete so
+  // the page can say so instead of showing partial totals as the truth.
+  const hadAggregate = !aggregateStale && store.players && typeof store.players === "object";
+  const players = hadAggregate ? structuredClone(store.players) : {};
+  // Complete when carried forward intact, or when this run rebuilt it:
+  // a rebuild rescans every block holding a buy since the start date.
+  const playersComplete = hadAggregate
+    ? store.playersComplete !== false
+    : store.events.length === 0 || (aggregateStale && !process.env.FROM_BLOCK && unrecovered === 0);
+  for (const e of fresh) {
+    if (e.kind !== "buy" || e.ts < PLAYER_TRACKING_START) continue;
+    // Skip txs already counted, except when rebuilding from scratch.
+    if (hadAggregate && known.has(e.tx)) continue;
+    const per = txs.get(e.tx)?.perToken;
+    if (!per) continue;
+    for (const [tokenId, leg] of per) {
+      const p = players[tokenId] ?? (players[tokenId] = { shares: 0, usd: 0, baskets: 0, firstTs: e.ts, lastTs: e.ts });
+      p.shares = round(p.shares + leg.shares, 4);
+      p.usd = round(p.usd + leg.usd, 4);
+      p.baskets += 1;
+      if (e.ts < p.firstTs) p.firstTs = e.ts;
+      if (e.ts > p.lastTs) p.lastTs = e.ts;
+    }
+  }
 
   // Holdings are read AT the block we indexed through, not at "latest".
   // Reading the tip instead compares a balance against events that stop
@@ -283,29 +366,47 @@ async function main() {
     updatedAt: Date.now(),
     usdcBalance: await usdcBalance("0x" + head.toString(16)),
     holdings,
+    players,
+    playersSince: PLAYER_TRACKING_START,
+    playersComplete,
     events,
   };
 
   const buys = events.filter((e) => e.kind === "buy");
-  const burns = events.filter((e) => e.kind === "burn");
+  // "burn" is the label earlier runs wrote for the same event.
+  const returns = events.filter((e) => e.kind === "return" || e.kind === "burn");
   const inflows = events.filter((e) => e.kind === "inflow");
   const sharesBought = buys.reduce((a, e) => a + e.shares, 0);
-  const sharesBurned = burns.reduce((a, e) => a + e.shares, 0);
+  const sharesReturned = returns.reduce((a, e) => a + e.shares, 0);
   const sharesIn = inflows.reduce((a, e) => a + e.shares, 0);
   const summary = {
     events: events.length,
     buys: buys.length,
-    burns: burns.length,
+    returns: returns.length,
     funding: events.filter((e) => e.kind === "funding").length,
     deployedUsd: round(buys.reduce((a, e) => a + e.netUsd, 0)),
     inflows: inflows.length,
     sharesBought: round(sharesBought, 1),
-    sharesBurned: round(sharesBurned, 1),
+    sharesReturned: round(sharesReturned, 1),
     sharesTransferredIn: round(sharesIn, 1),
     // Should land close to the live holdings read; a big gap means a
     // share path the scan is still missing.
-    impliedFloat: round(sharesBought + sharesIn - sharesBurned, 1),
+    impliedFloat: round(sharesBought + sharesIn - sharesReturned, 1),
     heldNow: round(holdings.reduce((a, h) => a + h.shares, 0), 1),
+    // The same check on the dollar side: every USDC funded minus every
+    // USDC deployed should be what the wallet still holds at this block.
+    // This is the check that exposed the funding the nonce skip missed.
+    fundedUsd: round(events.filter((e) => e.kind === "funding").reduce((a, e) => a + e.usdcIn, 0)),
+    impliedUsdc: round(
+      events.filter((e) => e.kind === "funding").reduce((a, e) => a + e.usdcIn, 0) -
+      buys.reduce((a, e) => a + e.netUsd, 0),
+    ),
+    usdcNow: out.usdcBalance,
+    // Per-player totals must add back up to the buy totals.
+    playersComplete,
+    players: Object.keys(players).length,
+    playerSharesSum: round(Object.values(players).reduce((a, p) => a + p.shares, 0), 1),
+    playerUsdSum: round(Object.values(players).reduce((a, p) => a + p.usd, 0)),
     playersHeld: holdings.length,
     durationMs: Date.now() - started,
   };
@@ -361,6 +462,27 @@ async function activeRanges(from, head) {
     }
   }
   return ranges;
+}
+
+/**
+ * Decode the pair's basket-trade event. Data is five ABI-encoded
+ * dynamic uint256 arrays of equal length: token ids, shares (18dp),
+ * USDC paid per player (6dp), pool fee, protocol fee.
+ */
+function parsePairTrade(log) {
+  const d = log.data.slice(2);
+  const word = (i) => BigInt("0x" + d.slice(i * 64, (i + 1) * 64));
+  const heads = [0, 1, 2].map((i) => Number(word(i)) / 32);
+  const read = (h) => {
+    const n = Number(word(h));
+    return Array.from({ length: n }, (_, k) => word(h + 1 + k));
+  };
+  const [ids, shares, usd] = heads.map(read);
+  return ids.map((id, k) => ({
+    tokenId: id.toString(),
+    shares: Number(shares[k] ?? 0n) / 1e18,
+    usd: Number(usd[k] ?? 0n) / 1e6,
+  }));
 }
 
 function round(n, dp = 2) {

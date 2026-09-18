@@ -5,14 +5,14 @@ import { getPlayers } from "@/lib/data";
 import { getBuyback, BUYBACK_WALLET } from "@/lib/data/buyback";
 import { Card, Pill } from "@/components/ui";
 import { BuybackChart } from "@/components/LazyCharts";
-import { PlayerAvatar } from "@/components/PlayerAvatar";
+import { BuybackPlayersTable } from "@/components/BuybackPlayersTable";
 import { Sk, SkBlock } from "@/components/PageSkeleton";
 import { fmtNum, fmtTimeAgo, fmtUsd, shortAddr } from "@/lib/format";
 
 export const metadata = {
   title: "Buyback Tracker · FDF Box Score",
   description:
-    "Live tracking of the FDF buyback-and-burn wallet: USDC deployed over time, treasury funding, every basket purchase, and the player shares permanently retired.",
+    "Live tracking of the FDF buyback wallet: USDC deployed over time, treasury funding, every basket of player shares bought back, and what it currently holds.",
 };
 
 // The index refreshes on a cron; 60s keeps the page close to it without
@@ -82,9 +82,9 @@ export default function BuybackPage() {
             Buyback Tracker
           </h1>
           <p className="m-0 max-w-[80ch] text-[var(--color-text-muted)]" style={{ fontSize: "15px" }}>
-            The treasury funds this wallet with USDC. It buys baskets of player shares from the
-            pool, then sends them to the share contract and gets nothing back, retiring them for
-            good. Its balance is only what is waiting to be burned, not a position it is building.
+            The treasury funds this wallet with USDC, and it uses that to buy back player shares
+            from the pool, a basket of players per transaction. The shares it buys are then
+            returned to the treasury, so its own balance is only what it holds in between.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <a
@@ -162,6 +162,12 @@ async function Body() {
 
   const unspent = r.usdcBalance;
   const deployedPct = r.totalFundedUsd > 0 ? (r.totalDeployedUsd / r.totalFundedUsd) * 100 : 0;
+  const sinceLabel = new Date(r.byPlayerSince || Date.UTC(2026, 8, 1)).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 
   return (
     <>
@@ -172,9 +178,9 @@ async function Body() {
           sub={`${fmtNum(r.buyCount)} buys · avg ${fmtUsd(r.avgBuyUsd, { digits: 0 })}`}
         />
         <StatCell
-          label="Shares Retired"
-          value={fmtNum(r.totalBurned, { compact: true })}
-          sub={`${fmtNum(r.burnCount)} burns · ${fmtNum(r.totalShares, { compact: true })} bought`}
+          label="Shares Bought Back"
+          value={fmtNum(r.totalShares, { compact: true })}
+          sub="Player shares, all time"
         />
         <StatCell
           label="Avg Cost / Share"
@@ -193,15 +199,15 @@ async function Body() {
         <StatCell label="Deployed · 7d" value={fmtUsd(r.deployed7d, { compact: true })} />
         <StatCell label="Deployed · 30d" value={fmtUsd(r.deployed30d, { compact: true })} />
         <StatCell
-          label="Awaiting Burn"
+          label="Held Right Now"
           value={fmtNum(r.heldShares, { compact: true })}
           sub={`${fmtNum(r.holdings.length)} players · ${fmtUsd(r.holdingsValueUsd, { compact: true })}`}
         />
       </div>
 
-      {/* Bought minus burned should equal the live balance. A gap means
-          a share path the indexer has not accounted for, which is worth
-          surfacing rather than hiding. */}
+      {/* Bought minus returned should equal the balance at the indexed
+          block. A gap means a share path the indexer has not accounted
+          for, which is worth surfacing rather than hiding. */}
       {Math.abs(r.floatShares - r.heldShares) > Math.max(50, r.heldShares * 0.05) ? (
         <p
           className="mt-3"
@@ -213,7 +219,7 @@ async function Body() {
             color: "var(--color-flag)",
           }}
         >
-          Reconciliation gap: bought minus burned is {fmtNum(r.floatShares, { compact: true })}, on-chain balance is{" "}
+          Reconciliation gap: bought minus returned is {fmtNum(r.floatShares, { compact: true })}, on-chain balance is{" "}
           {fmtNum(r.heldShares, { compact: true })}
         </p>
       ) : null}
@@ -221,7 +227,7 @@ async function Body() {
       <div className="mt-4">
         <SectionHead
           title="Deployment Over Time"
-          hint="Amber bars: USDC spent buying that day · Blue bars: treasury funding in · Green line: running total deployed"
+          hint="Amber bars: USDC spent buying that day · Blue bars: treasury funding in · Green line: running total for the selected range"
           right={<Pill tone="muted">{fmtNum(r.activeDays)} active days</Pill>}
         />
         <Card variant="press" padded={false}>
@@ -231,94 +237,36 @@ async function Body() {
         </Card>
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-5">
-        <div className="lg:col-span-3">
-          <SectionHead
-            title="Awaiting Burn"
-            hint="Shares bought but not yet retired, valued at current spot"
-            right={<Pill tone="muted">{fmtNum(r.holdings.length)} players</Pill>}
-          />
-          <Card variant="press" padded={false}>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[520px] text-[13px]">
-                <thead style={{ background: "color-mix(in oklab, var(--color-press) 50%, transparent)" }}>
-                  <tr className="border-b border-[var(--color-line)]">
-                    <Th align="left" className="pl-5">#</Th>
-                    <Th align="left">Player</Th>
-                    <Th align="center">Shares</Th>
-                    <Th align="center">% of Supply</Th>
-                    <Th align="center" className="pr-5">Value</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {r.holdings.map((h, i) => (
-                    <tr
-                      key={h.tokenIdSuffix}
-                      className="transition-colors hover:bg-[var(--color-bench)]"
-                      style={{ borderBottom: "1px solid var(--color-line)" }}
-                    >
-                      <Td align="left" className="pl-5" dim>{i + 1}</Td>
-                      <td style={{ padding: "var(--row-pad-y) 12px" }}>
-                        <div className="flex items-center gap-2.5">
-                          {h.player ? <PlayerAvatar player={h.player} size="xs" /> : null}
-                          <div className="min-w-0">
-                            {h.player ? (
-                              <Link
-                                href={`/player/${h.player.id}`}
-                                className="font-bold text-[var(--color-text)] hover:text-[var(--accent-soft)]"
-                              >
-                                {h.player.displayName}
-                              </Link>
-                            ) : (
-                              <span className="font-bold text-[var(--color-text)]">
-                                Token {h.tokenIdSuffix}
-                              </span>
-                            )}
-                            {h.player ? (
-                              <div
-                                style={{
-                                  fontFamily: "var(--font-mono)",
-                                  fontSize: 10,
-                                  letterSpacing: "0.12em",
-                                  color: "var(--color-text-dim)",
-                                  textTransform: "uppercase",
-                                }}
-                              >
-                                {h.player.position} · {h.player.team}
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-                      </td>
-                      <Td align="center" mono>{fmtNum(h.shares, { digits: 0 })}</Td>
-                      <Td align="center" mono>
-                        {h.shareOfSupply !== null ? (
-                          <span style={{ color: h.shareOfSupply >= 1 ? "var(--accent-soft)" : "var(--color-text-muted)" }}>
-                            {h.shareOfSupply.toFixed(2)}%
-                          </span>
-                        ) : (
-                          <span style={{ color: "var(--color-text-dim)" }}>—</span>
-                        )}
-                      </Td>
-                      <Td align="center" mono className="pr-5">
-                        {h.valueUsd > 0 ? fmtUsd(h.valueUsd, { digits: 0 }) : "—"}
-                      </Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        </div>
+      <div className="mt-6">
+        <SectionHead
+          title="Buybacks by Player"
+          hint={`Bought back since ${sinceLabel} next to what the wallet holds now, before it goes back to the treasury · dollars are what each basket paid for that player`}
+          right={<Pill tone="muted">{fmtNum(r.byPlayer.length)} players</Pill>}
+        />
+        <Card variant="press" padded={false}>
+          {r.byPlayer.length > 0 ? (
+            <BuybackPlayersTable
+              rows={r.byPlayer}
+              cumulativeReady={r.byPlayerComplete}
+              sinceLabel={sinceLabel}
+            />
+          ) : (
+            <p className="m-0 p-5 text-[var(--color-text-muted)]" style={{ fontSize: 14 }}>
+              No player buybacks since {sinceLabel} yet.
+            </p>
+          )}
+        </Card>
+      </div>
 
-        <div className="lg:col-span-2">
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <div>
           <SectionHead
             title="Recent Buys"
             hint="Newest first · each row is one basket purchase"
             right={<Pill tone="muted">{fmtNum(r.recent.length)} shown</Pill>}
           />
           <Card variant="press" padded={false}>
-            <div className="max-h-[520px] overflow-y-auto">
+            <div className="max-h-[440px] overflow-y-auto">
               <table className="w-full text-[13px]">
                 <thead
                   className="sticky top-0"
@@ -341,7 +289,7 @@ async function Body() {
                           rel="noreferrer"
                           className="hover:text-[var(--accent-soft)]"
                         >
-                          {fmtTimeAgo(b.ts)}
+                          {fmtTimeAgo(b.ts, r.generatedAt)}
                         </a>
                       </Td>
                       <Td align="center" mono>{b.tokens || "—"}</Td>
@@ -353,63 +301,50 @@ async function Body() {
               </table>
             </div>
           </Card>
+        </div>
 
-          {r.recentBurns.length > 0 ? (
-            <div className="mt-4">
-              <SectionHead
-                title="Recent Burns"
-                hint="Shares sent to the contract, nothing returned"
-                right={<Pill tone="loss">{fmtNum(r.burnCount)} total</Pill>}
-              />
-              <Card variant="press" padded={false}>
-                <table className="w-full text-[13px]">
-                  <tbody>
-                    {r.recentBurns.slice(0, 8).map((b) => (
-                      <tr key={b.tx} style={{ borderBottom: "1px solid var(--color-line)" }}>
-                        <Td align="left" className="pl-5" dim>
-                          <a
-                            href={`https://basescan.org/tx/${b.tx}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="hover:text-[var(--accent-soft)]"
-                          >
-                            {fmtTimeAgo(b.ts)}
-                          </a>
-                        </Td>
-                        <Td align="center" mono>{b.tokens} players</Td>
-                        <Td align="center" mono className="pr-5">
-                          <span style={{ color: "var(--color-penalty)" }}>
-                            −{fmtNum(b.shares, { digits: 0 })}
-                          </span>
-                        </Td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </Card>
+        <div>
+          <SectionHead
+            title="Treasury Funding"
+            hint="USDC sent to the wallet, newest first"
+            right={<Pill tone="muted">{fmtUsd(r.totalFundedUsd, { compact: true })} total</Pill>}
+          />
+          <Card variant="press" padded={false}>
+            <div className="max-h-[440px] overflow-y-auto">
+              <table className="w-full text-[13px]">
+                <thead
+                  className="sticky top-0"
+                  style={{ background: "color-mix(in oklab, var(--color-press) 92%, transparent)" }}
+                >
+                  <tr className="border-b border-[var(--color-line)]">
+                    <Th align="left" className="pl-5">When</Th>
+                    <Th align="left">From</Th>
+                    <Th align="center" className="pr-5">Amount</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {r.funding.map((f) => (
+                    <tr key={f.tx} style={{ borderBottom: "1px solid var(--color-line)" }}>
+                      <Td align="left" className="pl-5" dim>
+                        <a
+                          href={`https://basescan.org/tx/${f.tx}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="hover:text-[var(--accent-soft)]"
+                        >
+                          {fmtTimeAgo(f.ts, r.generatedAt)}
+                        </a>
+                      </Td>
+                      <Td align="left" dim>{shortAddr(f.from)}</Td>
+                      <Td align="center" mono className="pr-5">
+                        <span style={{ color: "var(--color-turf)" }}>+{fmtUsd(f.usdcIn, { compact: true })}</span>
+                      </Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ) : null}
-
-          {r.funding.length > 0 ? (
-            <div className="mt-4">
-              <SectionHead title="Treasury Funding" hint="USDC sent to the wallet" />
-              <Card variant="press" padded={false}>
-                <table className="w-full text-[13px]">
-                  <tbody>
-                    {r.funding.slice(0, 8).map((f) => (
-                      <tr key={f.tx} style={{ borderBottom: "1px solid var(--color-line)" }}>
-                        <Td align="left" className="pl-5" dim>{fmtTimeAgo(f.ts)}</Td>
-                        <Td align="left" dim>{shortAddr(f.from)}</Td>
-                        <Td align="center" mono className="pr-5">
-                          <span style={{ color: "var(--color-turf)" }}>+{fmtUsd(f.usdcIn, { compact: true })}</span>
-                        </Td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </Card>
-            </div>
-          ) : null}
+          </Card>
         </div>
       </div>
 
