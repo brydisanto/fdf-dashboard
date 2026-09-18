@@ -7,14 +7,13 @@ import type { NflPlayer } from "./roster";
 // Reader for the buyback wallet index produced by
 // scripts/index-buyback.mjs and committed to the `data` branch.
 //
-// The cycle is buy-and-burn: the treasury funds the wallet with USDC,
-// the wallet buys baskets of player shares from the pair, then sends
-// those shares to the share contract and receives nothing back, which
-// retires them.
+// The cycle: the treasury funds the wallet with USDC, the wallet buys
+// back baskets of player shares from the pair, then returns those
+// shares to the treasury (the share contract) with no USDC coming back.
 //
 // So the wallet's balance is NOT the position it has built — it is only
-// the float between a buy and the next burn. Read `sharesBurned` for
-// supply actually removed, and `holdings` for what is waiting to be.
+// what it holds between a buy and the next return. `totalReturned` is
+// kept for reconciliation; the page itself focuses on the buyback.
 
 export const BUYBACK_WALLET = "0xd9dd74e1109fa6fb8772706594bcabfbedfb706d";
 
@@ -39,8 +38,8 @@ export interface BuybackFunding {
   from: string;
 }
 
-export interface BuybackBurn {
-  kind: "burn";
+export interface BuybackReturn {
+  kind: "return";
   block: number;
   ts: number;
   tx: string;
@@ -48,7 +47,7 @@ export interface BuybackBurn {
   tokens: number;
 }
 
-export type BuybackEvent = BuybackBuy | BuybackFunding | BuybackBurn;
+export type BuybackEvent = BuybackBuy | BuybackFunding | BuybackReturn;
 
 export interface BuybackHolding {
   playerId: string;
@@ -69,10 +68,8 @@ export interface BuybackDay {
   t: number;              // unix ms at UTC midnight
   netUsd: number;         // deployed that day
   shares: number;         // shares bought
-  burned: number;         // shares retired
   buys: number;
   cumulativeUsd: number;
-  cumulativeBurned: number;
   fundedUsd: number;      // treasury top-ups that day
 }
 
@@ -89,10 +86,9 @@ export interface BuybackReport {
   usdcBalance: number;
   totalDeployedUsd: number;
   totalFundedUsd: number;
-  totalShares: number;        // bought
-  totalBurned: number;        // retired
-  burnCount: number;
-  floatShares: number;        // bought − burned, the working balance
+  totalShares: number;        // bought back
+  totalReturned: number;      // sent back to the treasury
+  floatShares: number;        // bought − returned, the working balance
   heldShares: number;         // live balance, should track floatShares
   costPerShare: number;       // deployed / shares bought
   buyCount: number;
@@ -111,7 +107,6 @@ export interface BuybackReport {
   holdings: BuybackHoldingRow[];
   holdingsValueUsd: number;
   recent: BuybackBuy[];
-  recentBurns: BuybackBurn[];
   funding: BuybackFunding[];
   available: boolean;
 }
@@ -158,32 +153,36 @@ export async function getBuyback(
   if (!store) {
     return {
       wallet: BUYBACK_WALLET, updatedAt: 0, lastIndexedBlock: 0, usdcBalance: 0,
-      totalDeployedUsd: 0, totalFundedUsd: 0, totalShares: 0, totalBurned: 0,
-      burnCount: 0, floatShares: 0, heldShares: 0, costPerShare: 0, buyCount: 0,
+      totalDeployedUsd: 0, totalFundedUsd: 0, totalShares: 0, totalReturned: 0,
+      floatShares: 0, heldShares: 0, costPerShare: 0, buyCount: 0,
       firstBuyAt: 0, lastBuyAt: 0, deployed24h: 0, deployed7d: 0, deployed30d: 0,
       activeDays: 0, avgBuyUsd: 0, activeRecently: false, generatedAt: now,
       daily: [], holdings: [], holdingsValueUsd: 0,
-      recent: [], recentBurns: [], funding: [], available: false,
+      recent: [], funding: [], available: false,
     };
   }
 
   const buys = store.events.filter((e): e is BuybackBuy => e.kind === "buy");
   const funding = store.events.filter((e): e is BuybackFunding => e.kind === "funding");
-  const burns = store.events.filter((e): e is BuybackBurn => e.kind === "burn");
+  // Earlier index runs labelled the return step "burn"; treat both the
+  // same so already-published data keeps reading correctly.
+  const returns = store.events.filter(
+    (e) => (e.kind as string) === "return" || (e.kind as string) === "burn",
+  ) as BuybackReturn[];
 
   const totalDeployedUsd = buys.reduce((a, b) => a + b.netUsd, 0);
   const totalShares = buys.reduce((a, b) => a + b.shares, 0);
-  const totalBurned = burns.reduce((a, b) => a + b.shares, 0);
+  const totalReturned = returns.reduce((a, b) => a + b.shares, 0);
   const since = (ms: number) => buys.filter((b) => now - b.ts < ms).reduce((a, b) => a + b.netUsd, 0);
 
   // Daily series spanning first buy → today, so quiet stretches show as
   // gaps rather than being collapsed away.
   const dayOf = (t: number) => Math.floor(t / DAY_MS) * DAY_MS;
-  const perDay = new Map<number, { netUsd: number; shares: number; burned: number; buys: number; fundedUsd: number }>();
+  const perDay = new Map<number, { netUsd: number; shares: number; buys: number; fundedUsd: number }>();
   const bump = (t: number) => {
     const k = dayOf(t);
     let d = perDay.get(k);
-    if (!d) perDay.set(k, (d = { netUsd: 0, shares: 0, burned: 0, buys: 0, fundedUsd: 0 }));
+    if (!d) perDay.set(k, (d = { netUsd: 0, shares: 0, buys: 0, fundedUsd: 0 }));
     return d;
   };
   for (const b of buys) {
@@ -192,7 +191,6 @@ export async function getBuyback(
     d.shares += b.shares;
     d.buys++;
   }
-  for (const b of burns) bump(b.ts).burned += b.shares;
   for (const f of funding) bump(f.ts).fundedUsd += f.usdcIn;
 
   const firstBuyAt = buys.length ? Math.min(...buys.map((b) => b.ts)) : 0;
@@ -201,20 +199,16 @@ export async function getBuyback(
   const daily: BuybackDay[] = [];
   if (buys.length) {
     let cumulative = 0;
-    let cumulativeBurned = 0;
     for (let t = dayOf(firstBuyAt); t <= dayOf(now); t += DAY_MS) {
       const d = perDay.get(t);
       cumulative += d?.netUsd ?? 0;
-      cumulativeBurned += d?.burned ?? 0;
       daily.push({
         t,
         netUsd: d?.netUsd ?? 0,
         shares: d?.shares ?? 0,
-        burned: d?.burned ?? 0,
         buys: d?.buys ?? 0,
         fundedUsd: d?.fundedUsd ?? 0,
         cumulativeUsd: cumulative,
-        cumulativeBurned,
       });
     }
   }
@@ -239,9 +233,8 @@ export async function getBuyback(
     totalDeployedUsd,
     totalFundedUsd: funding.reduce((a, f) => a + f.usdcIn, 0),
     totalShares,
-    totalBurned,
-    burnCount: burns.length,
-    floatShares: totalShares - totalBurned,
+    totalReturned,
+    floatShares: totalShares - totalReturned,
     heldShares: store.holdings.reduce((a, h) => a + h.shares, 0),
     costPerShare: totalShares > 0 ? totalDeployedUsd / totalShares : 0,
     buyCount: buys.length,
@@ -258,7 +251,6 @@ export async function getBuyback(
     holdings,
     holdingsValueUsd: holdings.reduce((a, h) => a + h.valueUsd, 0),
     recent: buys.slice().sort((a, b) => b.ts - a.ts).slice(0, 40),
-    recentBurns: burns.slice().sort((a, b) => b.ts - a.ts).slice(0, 40),
     funding: funding.slice().sort((a, b) => b.ts - a.ts),
     available: true,
   };

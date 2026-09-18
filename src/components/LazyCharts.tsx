@@ -70,7 +70,8 @@ export const CompositionPie = dynamic(
 
 export const BuybackChart = dynamic(
   () => import("./BuybackChart").then((m) => m.BuybackChart),
-  { ssr: false, loading: () => <Box height={260} /> },
+  // 260px chart + the range toggle row above it.
+  { ssr: false, loading: () => <Box height={300} /> },
 );
 
 export const NewWalletsJoinsChart = dynamic(

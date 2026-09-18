@@ -12,7 +12,7 @@ import { fmtNum, fmtTimeAgo, fmtUsd, shortAddr } from "@/lib/format";
 export const metadata = {
   title: "Buyback Tracker · FDF Box Score",
   description:
-    "Live tracking of the FDF buyback-and-burn wallet: USDC deployed over time, treasury funding, every basket purchase, and the player shares permanently retired.",
+    "Live tracking of the FDF buyback wallet: USDC deployed over time, treasury funding, every basket of player shares bought back, and what it currently holds.",
 };
 
 // The index refreshes on a cron; 60s keeps the page close to it without
@@ -82,9 +82,9 @@ export default function BuybackPage() {
             Buyback Tracker
           </h1>
           <p className="m-0 max-w-[80ch] text-[var(--color-text-muted)]" style={{ fontSize: "15px" }}>
-            The treasury funds this wallet with USDC. It buys baskets of player shares from the
-            pool, then sends them to the share contract and gets nothing back, retiring them for
-            good. Its balance is only what is waiting to be burned, not a position it is building.
+            The treasury funds this wallet with USDC, and it uses that to buy back player shares
+            from the pool, a basket of players per transaction. The shares it buys are then
+            returned to the treasury, so its own balance is only what it holds in between.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <a
@@ -172,9 +172,9 @@ async function Body() {
           sub={`${fmtNum(r.buyCount)} buys · avg ${fmtUsd(r.avgBuyUsd, { digits: 0 })}`}
         />
         <StatCell
-          label="Shares Retired"
-          value={fmtNum(r.totalBurned, { compact: true })}
-          sub={`${fmtNum(r.burnCount)} burns · ${fmtNum(r.totalShares, { compact: true })} bought`}
+          label="Shares Bought Back"
+          value={fmtNum(r.totalShares, { compact: true })}
+          sub="Player shares, all time"
         />
         <StatCell
           label="Avg Cost / Share"
@@ -193,15 +193,15 @@ async function Body() {
         <StatCell label="Deployed · 7d" value={fmtUsd(r.deployed7d, { compact: true })} />
         <StatCell label="Deployed · 30d" value={fmtUsd(r.deployed30d, { compact: true })} />
         <StatCell
-          label="Awaiting Burn"
+          label="Held Right Now"
           value={fmtNum(r.heldShares, { compact: true })}
           sub={`${fmtNum(r.holdings.length)} players · ${fmtUsd(r.holdingsValueUsd, { compact: true })}`}
         />
       </div>
 
-      {/* Bought minus burned should equal the live balance. A gap means
-          a share path the indexer has not accounted for, which is worth
-          surfacing rather than hiding. */}
+      {/* Bought minus returned should equal the balance at the indexed
+          block. A gap means a share path the indexer has not accounted
+          for, which is worth surfacing rather than hiding. */}
       {Math.abs(r.floatShares - r.heldShares) > Math.max(50, r.heldShares * 0.05) ? (
         <p
           className="mt-3"
@@ -213,7 +213,7 @@ async function Body() {
             color: "var(--color-flag)",
           }}
         >
-          Reconciliation gap: bought minus burned is {fmtNum(r.floatShares, { compact: true })}, on-chain balance is{" "}
+          Reconciliation gap: bought minus returned is {fmtNum(r.floatShares, { compact: true })}, on-chain balance is{" "}
           {fmtNum(r.heldShares, { compact: true })}
         </p>
       ) : null}
@@ -221,7 +221,7 @@ async function Body() {
       <div className="mt-4">
         <SectionHead
           title="Deployment Over Time"
-          hint="Amber bars: USDC spent buying that day · Blue bars: treasury funding in · Green line: running total deployed"
+          hint="Amber bars: USDC spent buying that day · Blue bars: treasury funding in · Green line: running total for the selected range"
           right={<Pill tone="muted">{fmtNum(r.activeDays)} active days</Pill>}
         />
         <Card variant="press" padded={false}>
@@ -234,8 +234,8 @@ async function Body() {
       <div className="mt-6 grid gap-4 lg:grid-cols-5">
         <div className="lg:col-span-3">
           <SectionHead
-            title="Awaiting Burn"
-            hint="Shares bought but not yet retired, valued at current spot"
+            title="Currently Held"
+            hint="Shares bought back and not yet returned to the treasury, at current spot"
             right={<Pill tone="muted">{fmtNum(r.holdings.length)} players</Pill>}
           />
           <Card variant="press" padded={false}>
@@ -354,41 +354,6 @@ async function Body() {
             </div>
           </Card>
 
-          {r.recentBurns.length > 0 ? (
-            <div className="mt-4">
-              <SectionHead
-                title="Recent Burns"
-                hint="Shares sent to the contract, nothing returned"
-                right={<Pill tone="loss">{fmtNum(r.burnCount)} total</Pill>}
-              />
-              <Card variant="press" padded={false}>
-                <table className="w-full text-[13px]">
-                  <tbody>
-                    {r.recentBurns.slice(0, 8).map((b) => (
-                      <tr key={b.tx} style={{ borderBottom: "1px solid var(--color-line)" }}>
-                        <Td align="left" className="pl-5" dim>
-                          <a
-                            href={`https://basescan.org/tx/${b.tx}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="hover:text-[var(--accent-soft)]"
-                          >
-                            {fmtTimeAgo(b.ts)}
-                          </a>
-                        </Td>
-                        <Td align="center" mono>{b.tokens} players</Td>
-                        <Td align="center" mono className="pr-5">
-                          <span style={{ color: "var(--color-penalty)" }}>
-                            −{fmtNum(b.shares, { digits: 0 })}
-                          </span>
-                        </Td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </Card>
-            </div>
-          ) : null}
 
           {r.funding.length > 0 ? (
             <div className="mt-4">
