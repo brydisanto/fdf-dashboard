@@ -72,6 +72,7 @@ interface BuybackStore {
   // Cumulative buybacks per player, keyed by token id. Absent on
   // indexes written before per-player tracking existed.
   players?: Record<string, PlayerAggregate>;
+  playersSince?: number;          // unix ms the per-player totals count from
   playersComplete?: boolean;
   events: BuybackEvent[];
 }
@@ -79,6 +80,8 @@ interface BuybackStore {
 export interface BuybackPlayerRow {
   tokenIdSuffix: string;
   player: NflPlayer | null;     // null for a token no longer on the roster
+  // Bought back since the tracking start date (zero until the per-player
+  // totals are built for that date).
   shares: number;
   usd: number;
   avgPrice: number;             // usd / shares
@@ -86,6 +89,9 @@ export interface BuybackPlayerRow {
   baskets: number;
   firstTs: number;
   lastTs: number;
+  // In the wallet right now, before being returned to the treasury.
+  heldShares: number;
+  heldUsd: number;              // at current spot
 }
 
 export interface BuybackDay {
@@ -133,7 +139,8 @@ export interface BuybackReport {
   recent: BuybackBuy[];
   funding: BuybackFunding[];
   byPlayer: BuybackPlayerRow[];   // highest spend first
-  byPlayerComplete: boolean;      // false until a full rebuild has run
+  byPlayerSince: number;          // unix ms the per-player totals count from
+  byPlayerComplete: boolean;      // false until built for the current start date
   available: boolean;
 }
 
@@ -184,7 +191,7 @@ export async function getBuyback(
       firstBuyAt: 0, lastBuyAt: 0, deployed24h: 0, deployed7d: 0, deployed30d: 0,
       activeDays: 0, avgBuyUsd: 0, activeRecently: false, generatedAt: now,
       daily: [], holdings: [], holdingsValueUsd: 0,
-      recent: [], funding: [], byPlayer: [], byPlayerComplete: false, available: false,
+      recent: [], funding: [], byPlayer: [], byPlayerSince: 0, byPlayerComplete: false, available: false,
     };
   }
 
@@ -254,12 +261,24 @@ export async function getBuyback(
   // Cumulative buybacks per player. Dollars come from the pair's own
   // per-player breakdown of each basket, so they are what was actually
   // paid for that player, not an allocation.
-  const aggregate = store.players ?? {};
+  //
+  // One row per player, joining what was bought back since the start
+  // date with what the wallet holds right now. Cumulative figures are
+  // only used when they were built for the current start date; until
+  // then rows carry holdings alone and the page labels them as pending.
+  const byPlayerComplete = !!store.players && !!store.playersSince && store.playersComplete !== false;
+  const aggregate = byPlayerComplete ? (store.players ?? {}) : {};
   const aggregateUsd = Object.values(aggregate).reduce((a, p) => a + p.usd, 0);
-  const byPlayer: BuybackPlayerRow[] = Object.entries(aggregate)
-    .map(([tokenIdSuffix, p]) => ({
-      tokenIdSuffix,
-      player: ROSTER_BY_TOKEN.get(`${FOOTBALLFUN_CONTRACT}:${tokenIdSuffix}`) ?? null,
+  const rows = new Map<string, BuybackPlayerRow>();
+  const blank = (tokenIdSuffix: string): BuybackPlayerRow => ({
+    tokenIdSuffix,
+    player: ROSTER_BY_TOKEN.get(`${FOOTBALLFUN_CONTRACT}:${tokenIdSuffix}`) ?? null,
+    shares: 0, usd: 0, avgPrice: 0, pctOfSpend: 0, baskets: 0, firstTs: 0, lastTs: 0,
+    heldShares: 0, heldUsd: 0,
+  });
+  for (const [tokenIdSuffix, p] of Object.entries(aggregate)) {
+    rows.set(tokenIdSuffix, {
+      ...blank(tokenIdSuffix),
       shares: p.shares,
       usd: p.usd,
       avgPrice: p.shares > 0 ? p.usd / p.shares : 0,
@@ -267,8 +286,15 @@ export async function getBuyback(
       baskets: p.baskets,
       firstTs: p.firstTs,
       lastTs: p.lastTs,
-    }))
-    .sort((a, b) => b.usd - a.usd);
+    });
+  }
+  for (const h of holdings) {
+    const row = rows.get(h.tokenIdSuffix) ?? blank(h.tokenIdSuffix);
+    row.heldShares = h.shares;
+    row.heldUsd = h.valueUsd;
+    rows.set(h.tokenIdSuffix, row);
+  }
+  const byPlayer = [...rows.values()].sort((a, b) => b.usd - a.usd || b.heldUsd - a.heldUsd);
 
   return {
     wallet: store.wallet ?? BUYBACK_WALLET,
@@ -298,7 +324,11 @@ export async function getBuyback(
     recent: buys.slice().sort((a, b) => b.ts - a.ts).slice(0, 40),
     funding: funding.slice().sort((a, b) => b.ts - a.ts),
     byPlayer,
-    byPlayerComplete: !!store.players && store.playersComplete !== false,
+    byPlayerSince: store.playersSince ?? 0,
+    // Totals without a recorded start date were built before the
+    // September cutoff and include older baskets, so they are held back
+    // rather than shown under a "since" label they don't match.
+    byPlayerComplete,
     available: true,
   };
 }

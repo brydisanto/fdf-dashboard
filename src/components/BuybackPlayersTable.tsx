@@ -4,23 +4,31 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { PlayerAvatar } from "./PlayerAvatar";
-import { fmtNum, fmtTimeAgo, fmtUsd } from "@/lib/format";
+import { fmtNum, fmtUsd } from "@/lib/format";
 import type { BuybackPlayerRow } from "@/lib/data/buyback";
 import type { Position } from "@/lib/types";
 
-// Cumulative buybacks per player: dollars spent, shares bought back,
-// the average price paid, and how often the player appeared in a
-// basket. Filterable by position and sortable on every numeric column.
+// One row per player: shares and dollars bought back since the tracking
+// start date, next to what the wallet holds right now before returning
+// it to the treasury. Filterable by position, sortable on every number.
 
 type PosFilter = "ALL" | Position;
-type SortKey = "usd" | "shares" | "avgPrice" | "baskets" | "lastTs";
+type SortKey = "shares" | "usd" | "heldShares" | "heldUsd";
 
 const POSITIONS: PosFilter[] = ["ALL", "QB", "RB", "WR", "TE"];
 const PAGE = 25;
 
-export function BuybackPlayersTable({ rows, now }: { rows: BuybackPlayerRow[]; now: number }) {
+export function BuybackPlayersTable({
+  rows,
+  cumulativeReady,
+  sinceLabel,
+}: {
+  rows: BuybackPlayerRow[];
+  cumulativeReady: boolean;   // false until per-player totals are built
+  sinceLabel: string;         // e.g. "Sep 1"
+}) {
   const [pos, setPos] = useState<PosFilter>("ALL");
-  const [sortKey, setSortKey] = useState<SortKey>("usd");
+  const [sortKey, setSortKey] = useState<SortKey>(cumulativeReady ? "usd" : "heldUsd");
   const [dir, setDir] = useState<"asc" | "desc">("desc");
   const [showAll, setShowAll] = useState(false);
 
@@ -31,7 +39,10 @@ export function BuybackPlayersTable({ rows, now }: { rows: BuybackPlayerRow[]; n
   }, [rows, pos, sortKey, dir]);
 
   const visible = showAll ? filtered : filtered.slice(0, PAGE);
-  const filteredUsd = filtered.reduce((a, r) => a + r.usd, 0);
+  const totals = filtered.reduce(
+    (a, r) => ({ usd: a.usd + r.usd, heldUsd: a.heldUsd + r.heldUsd }),
+    { usd: 0, heldUsd: 0 },
+  );
 
   const onSort = (k: SortKey) => {
     if (k === sortKey) setDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -40,6 +51,8 @@ export function BuybackPlayersTable({ rows, now }: { rows: BuybackPlayerRow[]; n
       setDir("desc");
     }
   };
+
+  const pending = <span style={{ color: "var(--color-text-dim)" }}>—</span>;
 
   return (
     <div>
@@ -89,22 +102,37 @@ export function BuybackPlayersTable({ rows, now }: { rows: BuybackPlayerRow[]; n
             color: "var(--color-text-dim)",
           }}
         >
-          {filtered.length} players · {fmtUsd(filteredUsd, { compact: true })}
+          {filtered.length} players
+          {cumulativeReady ? ` · ${fmtUsd(totals.usd, { compact: true })} bought back` : ""}
+          {` · ${fmtUsd(totals.heldUsd, { compact: true })} held`}
         </span>
       </div>
 
+      {!cumulativeReady ? (
+        <p
+          className="m-0 border-b border-[var(--color-line)] px-5 py-3"
+          style={{ fontSize: 12.5, color: "var(--color-text-muted)" }}
+        >
+          Bought-back totals since {sinceLabel} fill in once the buyback index finishes rebuilding.
+          Holdings are live now.
+        </p>
+      ) : null}
+
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[860px] text-[13px]">
+        <table className="w-full min-w-[760px] text-[13px]">
           <thead style={{ background: "color-mix(in oklab, var(--color-press) 50%, transparent)" }}>
+            <tr>
+              <th colSpan={2} />
+              <GroupTh span={2}>Bought back since {sinceLabel}</GroupTh>
+              <GroupTh span={2}>Held now</GroupTh>
+            </tr>
             <tr className="border-b border-[var(--color-line)]">
-              <Th className="pl-5">#</Th>
-              <Th>Player</Th>
+              <Th left className="pl-5">#</Th>
+              <Th left>Player</Th>
+              <Th sortKey="shares" current={sortKey} dir={dir} onSort={onSort} divider>Shares</Th>
               <Th sortKey="usd" current={sortKey} dir={dir} onSort={onSort}>Spent</Th>
-              <Th sortKey="shares" current={sortKey} dir={dir} onSort={onSort}>Shares</Th>
-              <Th sortKey="avgPrice" current={sortKey} dir={dir} onSort={onSort}>Avg Price</Th>
-              <Th>% of Spend</Th>
-              <Th sortKey="baskets" current={sortKey} dir={dir} onSort={onSort}>Baskets</Th>
-              <Th sortKey="lastTs" current={sortKey} dir={dir} onSort={onSort} className="pr-5">Last Bought</Th>
+              <Th sortKey="heldShares" current={sortKey} dir={dir} onSort={onSort} divider>Shares</Th>
+              <Th sortKey="heldUsd" current={sortKey} dir={dir} onSort={onSort} className="pr-5">Value</Th>
             </tr>
           </thead>
           <tbody>
@@ -114,7 +142,7 @@ export function BuybackPlayersTable({ rows, now }: { rows: BuybackPlayerRow[]; n
                 className="transition-colors hover:bg-[var(--color-bench)]"
                 style={{ borderBottom: "1px solid var(--color-line)" }}
               >
-                <Td className="pl-5" dim>{i + 1}</Td>
+                <Td left className="pl-5" dim>{i + 1}</Td>
                 <td style={{ padding: "var(--row-pad-y) 12px" }}>
                   <div className="flex items-center gap-2.5">
                     {r.player ? <PlayerAvatar player={r.player} size="xs" /> : null}
@@ -145,26 +173,10 @@ export function BuybackPlayersTable({ rows, now }: { rows: BuybackPlayerRow[]; n
                     </div>
                   </div>
                 </td>
-                <Td mono strong>{fmtUsd(r.usd, { digits: 0 })}</Td>
-                <Td mono>{fmtNum(r.shares, { compact: true })}</Td>
-                <Td mono>${r.avgPrice.toFixed(5)}</Td>
-                <Td mono>
-                  <span className="inline-flex items-center justify-center gap-2">
-                    <span
-                      aria-hidden
-                      className="hidden sm:block rounded-full"
-                      style={{
-                        width: Math.max(2, Math.min(56, r.pctOfSpend * 8)),
-                        height: 4,
-                        background: "var(--accent)",
-                        opacity: 0.6,
-                      }}
-                    />
-                    {r.pctOfSpend.toFixed(1)}%
-                  </span>
-                </Td>
-                <Td mono>{fmtNum(r.baskets)}</Td>
-                <Td mono dim className="pr-5">{fmtTimeAgo(r.lastTs, now)}</Td>
+                <Td divider>{cumulativeReady ? fmtNum(r.shares, { compact: true }) : pending}</Td>
+                <Td strong>{cumulativeReady ? fmtUsd(r.usd, { digits: 0 }) : pending}</Td>
+                <Td divider>{r.heldShares > 0 ? fmtNum(r.heldShares, { compact: true }) : pending}</Td>
+                <Td strong className="pr-5">{r.heldUsd > 0 ? fmtUsd(r.heldUsd, { digits: 0 }) : pending}</Td>
               </tr>
             ))}
           </tbody>
@@ -193,9 +205,37 @@ export function BuybackPlayersTable({ rows, now }: { rows: BuybackPlayerRow[]; n
   );
 }
 
+const MONO: React.CSSProperties = {
+  fontFamily: "var(--font-mono)",
+  letterSpacing: "0.18em",
+  textTransform: "uppercase",
+  whiteSpace: "nowrap",
+};
+
+function GroupTh({ children, span }: { children: React.ReactNode; span: number }) {
+  return (
+    <th
+      colSpan={span}
+      style={{
+        ...MONO,
+        fontSize: 9.5,
+        fontWeight: 700,
+        padding: "10px 12px 2px",
+        textAlign: "center",
+        color: "var(--color-text-muted)",
+        borderLeft: "1px solid var(--color-line)",
+      }}
+    >
+      {children}
+    </th>
+  );
+}
+
 function Th({
   children,
   className,
+  left,
+  divider,
   sortKey,
   current,
   dir,
@@ -203,6 +243,8 @@ function Th({
 }: {
   children: React.ReactNode;
   className?: string;
+  left?: boolean;
+  divider?: boolean;
   sortKey?: SortKey;
   current?: SortKey;
   dir?: "asc" | "desc";
@@ -219,15 +261,13 @@ function Th({
     <th
       className={className}
       style={{
-        textAlign: children === "Player" ? "left" : className?.includes("pl-5") ? "left" : "center",
-        padding: "12px",
-        fontFamily: "var(--font-mono)",
+        ...MONO,
         fontSize: 10,
         fontWeight: 600,
-        letterSpacing: "0.18em",
-        textTransform: "uppercase",
-        whiteSpace: "nowrap",
+        padding: "8px 12px 12px",
+        textAlign: left ? "left" : "center",
         color: active ? "var(--color-text-muted)" : "var(--color-text-dim)",
+        borderLeft: divider ? "1px solid var(--color-line)" : undefined,
       }}
     >
       {sortKey && onSort ? (
@@ -244,28 +284,31 @@ function Th({
 function Td({
   children,
   className,
-  mono,
+  left,
   dim,
   strong,
+  divider,
 }: {
   children: React.ReactNode;
   className?: string;
-  mono?: boolean;
+  left?: boolean;
   dim?: boolean;
   strong?: boolean;
+  divider?: boolean;
 }) {
   return (
     <td
       className={className}
       style={{
         padding: "var(--row-pad-y) 12px",
-        textAlign: className?.includes("pl-5") ? "left" : "center",
+        textAlign: left ? "left" : "center",
         whiteSpace: "nowrap",
-        fontFamily: mono || dim ? "var(--font-mono)" : undefined,
+        fontFamily: "var(--font-mono)",
         fontVariantNumeric: "tabular-nums",
         fontSize: 12.5,
         fontWeight: strong ? 700 : undefined,
         color: dim ? "var(--color-text-dim)" : strong ? "var(--color-text)" : undefined,
+        borderLeft: divider ? "1px solid var(--color-line)" : undefined,
       }}
     >
       {children}

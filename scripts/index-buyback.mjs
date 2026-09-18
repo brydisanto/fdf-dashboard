@@ -52,6 +52,10 @@ const TRANSFER_BATCH = ERC1155_TRANSFER_BATCH;
 // paid for that player (6dp), a small pool fee, and the protocol fee.
 // The USDC array sums exactly to the buy's net spend, so it gives the
 // real cost per player rather than an estimate. Buyer is topic 1.
+// Per-player buyback totals only count baskets from this moment on.
+// Changing it makes the next run discard the aggregate and rebuild it
+// from the first buy at or after the new start.
+const PLAYER_TRACKING_START = Date.UTC(2026, 8, 1); // 2026-09-01 00:00 UTC
 const PAIR_TRADE_EVENT = "0x687289c2856f43779157318472d0a835253d93a290e03ee79b9e27b0e403493d";
 
 const CHUNK = 2000;
@@ -89,11 +93,25 @@ async function main() {
   const store = await readStore(outPath);
 
   const chainHead = hexToNum(await rpc("eth_blockNumber", [])) - SAFETY_LAG;
+  // The per-player aggregate can't be filtered after the fact (it keeps
+  // totals, not per-buy legs), so a changed start date means rebuilding
+  // it: rescan from the first known event on or after the new start.
+  // Events are deduped by tx, so revisiting those blocks is harmless.
+  const aggregateStale = store.events.length > 0 && store.playersSince !== PLAYER_TRACKING_START;
+  const rebuildFrom = aggregateStale
+    ? store.events.filter((e) => e.ts >= PLAYER_TRACKING_START).reduce((m, e) => Math.min(m, e.block), Infinity)
+    : Infinity;
+  const resumeFrom = store.lastIndexedBlock > 0 ? store.lastIndexedBlock + 1 : DEPLOY_BLOCK;
   const from = process.env.FROM_BLOCK
     ? Number(process.env.FROM_BLOCK)
-    : store.lastIndexedBlock > 0
-      ? store.lastIndexedBlock + 1
-      : DEPLOY_BLOCK;
+    : Math.min(resumeFrom, rebuildFrom);
+  if (aggregateStale) {
+    console.error(
+      `Per-player totals were built for a different start date; rebuilding from ` +
+      `${new Date(PLAYER_TRACKING_START).toISOString().slice(0, 10)}` +
+      (Number.isFinite(rebuildFrom) ? ` (block ${rebuildFrom})` : " (no buys since then yet)"),
+    );
+  }
   // TO_BLOCK lets a cold seed run in stages that each save, so a long
   // backfill survives being interrupted. Normal runs leave it unset.
   const head = process.env.TO_BLOCK
@@ -309,11 +327,17 @@ async function main() {
   // An index written before this existed has buys but no aggregate, and
   // can never be completed incrementally; it is flagged incomplete so
   // the page can say so instead of showing partial totals as the truth.
-  const hadAggregate = store.players && typeof store.players === "object";
+  const hadAggregate = !aggregateStale && store.players && typeof store.players === "object";
   const players = hadAggregate ? structuredClone(store.players) : {};
-  const playersComplete = hadAggregate ? store.playersComplete !== false : store.events.length === 0;
+  // Complete when carried forward intact, or when this run rebuilt it:
+  // a rebuild rescans every block holding a buy since the start date.
+  const playersComplete = hadAggregate
+    ? store.playersComplete !== false
+    : store.events.length === 0 || (aggregateStale && !process.env.FROM_BLOCK && unrecovered === 0);
   for (const e of fresh) {
-    if (e.kind !== "buy" || known.has(e.tx)) continue;
+    if (e.kind !== "buy" || e.ts < PLAYER_TRACKING_START) continue;
+    // Skip txs already counted, except when rebuilding from scratch.
+    if (hadAggregate && known.has(e.tx)) continue;
     const per = txs.get(e.tx)?.perToken;
     if (!per) continue;
     for (const [tokenId, leg] of per) {
@@ -343,6 +367,7 @@ async function main() {
     usdcBalance: await usdcBalance("0x" + head.toString(16)),
     holdings,
     players,
+    playersSince: PLAYER_TRACKING_START,
     playersComplete,
     events,
   };
