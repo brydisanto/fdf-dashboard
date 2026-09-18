@@ -2,16 +2,21 @@
 /*
  * Indexer for the FDF buyback wallet.
  *
- * The wallet (an EOA) is funded with USDC from a treasury address, then
- * spends it into the FDF pair. Each spend is a single call that buys a
- * BASKET of player shares — they arrive as one ERC-1155 TransferBatch,
- * which is why a scanner that only reads TransferSingle sees nothing.
- * The shares are accumulated, not flipped.
+ * The cycle is buy-and-burn, in three steps:
+ *   1. a treasury address sends the wallet USDC
+ *   2. the wallet spends it into the FDF pair, buying a BASKET of
+ *      player shares that arrive as one ERC-1155 TransferBatch
+ *   3. the wallet sends those shares to the share contract and gets
+ *      NOTHING back — no USDC, no other token — which retires them
  *
- * Two record types come out of a scan:
+ * Step 3 is easy to misread as accumulation: the wallet's balance only
+ * ever holds the float between a buy and the next burn, so its holdings
+ * are a tiny fraction of what it has actually bought.
+ *
+ * Three record types come out of a scan:
  *   funding — USDC into the wallet from anywhere other than the pair
- *   buy     — USDC out to the pair, with the refund netted off and the
- *             shares received in the same tx
+ *   buy     — USDC out to the pair, refund netted off, shares received
+ *   burn    — shares out to the share contract with no USDC in return
  *
  * Output: data/buyback.json on the `data` branch, read by /buyback.
  *
@@ -23,7 +28,10 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { rpc, hexToNum, parseTransferBatch, parseTransferSingle } from "./index-trades.mjs";
+import {
+  rpc, hexToNum, parseTransferBatch, parseTransferSingle,
+  ERC1155_TRANSFER_SINGLE, ERC1155_TRANSFER_BATCH,
+} from "./index-trades.mjs";
 
 const BUYBACK_WALLET = "0xd9dd74e1109fa6fb8772706594bcabfbedfb706d";
 // First block in which the wallet had a nonce (found by bisecting
@@ -34,11 +42,21 @@ const USDC = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 const PAIR = "0x4fdce033b9f30019337ddc5cc028dc023580585e";
 const PROXY = "0x2eef466e802ab2835ab81be63eebc55167d35b56";
 const ERC20_TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
-const TRANSFER_SINGLE = "0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62";
-const TRANSFER_BATCH = "0x4a39dc06d4c0dbc64b50af327290419e7f3a59c70ce5e23b9c0aef89ae40b0a3";
+// Imported rather than redeclared: a local copy of the batch hash is
+// exactly how this scan silently recorded zero shares for months of
+// buys while the shared constant was already fixed.
+const TRANSFER_SINGLE = ERC1155_TRANSFER_SINGLE;
+const TRANSFER_BATCH = ERC1155_TRANSFER_BATCH;
 
 const CHUNK = 2000;
-const CONCURRENCY = Number(process.env.CONCURRENCY || 6);
+// The public Base RPC caps eth_getLogs at 2,000 blocks and rate-limits
+// hard, and every alternative endpoint is worse (50-block caps, no
+// archive access, or getLogs unsupported). Keep few requests in flight.
+const CONCURRENCY = Number(process.env.CONCURRENCY || 3);
+// Cold seeds sample the wallet's nonce to find the stretches where it
+// was actually transacting. It has sat idle for months at a time, and
+// skipping those blocks removes most of the scan.
+const NONCE_PROBE_BLOCKS = 50_000;
 const SAFETY_LAG = 15;
 const topicAddr = (a) => "0x" + "0".repeat(24) + a.slice(2);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -64,21 +82,39 @@ async function main() {
   const outPath = path.join(repoRoot, "data", "buyback.json");
   const store = await readStore(outPath);
 
-  const head = hexToNum(await rpc("eth_blockNumber", [])) - SAFETY_LAG;
+  const chainHead = hexToNum(await rpc("eth_blockNumber", [])) - SAFETY_LAG;
   const from = process.env.FROM_BLOCK
     ? Number(process.env.FROM_BLOCK)
     : store.lastIndexedBlock > 0
       ? store.lastIndexedBlock + 1
       : DEPLOY_BLOCK;
+  // TO_BLOCK lets a cold seed run in stages that each save, so a long
+  // backfill survives being interrupted. Normal runs leave it unset.
+  const head = process.env.TO_BLOCK
+    ? Math.min(Number(process.env.TO_BLOCK), chainHead)
+    : chainHead;
 
   if (from > head) {
     console.error(`Nothing to scan: indexed through ${store.lastIndexedBlock}, head ${head}.`);
     return;
   }
 
+  // Nonce probing only proves when the wallet SENT a transaction. It
+  // cannot see blocks where the wallet merely received shares, so it is
+  // an approximation — FULL_SCAN=1 forces every block and is what a
+  // trustworthy cold seed should use.
+  const ranges = process.env.FULL_SCAN !== "1" && (head - from) > 10 * NONCE_PROBE_BLOCKS
+    ? await activeRanges(from, head)
+    : [[from, head]];
   const chunks = [];
-  for (let f = from; f <= head; f += CHUNK) chunks.push([f, Math.min(f + CHUNK - 1, head)]);
-  console.error(`Scanning ${head - from + 1} blocks (${from} → ${head}) in ${chunks.length} chunks`);
+  for (const [a, b] of ranges) {
+    for (let f = a; f <= b; f += CHUNK) chunks.push([f, Math.min(f + CHUNK - 1, b)]);
+  }
+  const scanned = ranges.reduce((a, [x, y]) => a + (y - x + 1), 0);
+  console.error(
+    `Scanning ${scanned} of ${head - from + 1} blocks (${from} → ${head}) ` +
+    `in ${chunks.length} chunks across ${ranges.length} active range(s)`,
+  );
 
   // Pass 1: every USDC leg touching the wallet, plus the share batches
   // it received. Grouped by tx so a buy's spend, refund and shares end
@@ -89,18 +125,25 @@ async function main() {
 
   const touch = (hash, block) => {
     let t = txs.get(hash);
-    if (!t) txs.set(hash, (t = { hash, block, usdcOut: 0, usdcIn: 0, usdcFromPair: 0, funders: new Set(), shares: 0, tokens: 0 }));
+    if (!t) txs.set(hash, (t = { hash, block, usdcOut: 0, usdcIn: 0, usdcFromPair: 0, funders: new Set(), shares: 0, tokens: 0, sharesOut: 0, tokensOut: 0 }));
     return t;
   };
 
   const ingest = async ([a, b]) => {
     const range = { fromBlock: "0x" + a.toString(16), toBlock: "0x" + b.toString(16) };
-    const [out, inc, batch, single] = await Promise.all([
-      rpc("eth_getLogs", [{ ...range, address: USDC, topics: [ERC20_TRANSFER, topicAddr(BUYBACK_WALLET), null] }]),
-      rpc("eth_getLogs", [{ ...range, address: USDC, topics: [ERC20_TRANSFER, null, topicAddr(BUYBACK_WALLET)] }]),
-      rpc("eth_getLogs", [{ ...range, address: PROXY, topics: [TRANSFER_BATCH, null, null, topicAddr(BUYBACK_WALLET)] }]),
-      rpc("eth_getLogs", [{ ...range, address: PROXY, topics: [TRANSFER_SINGLE, null, null, topicAddr(BUYBACK_WALLET)] }]),
-    ]);
+    // Sequential, not Promise.all: four parallel getLogs per chunk times
+    // the worker count overwhelmed the public RPC and every chunk came
+    // back rate-limited.
+    const out = await rpc("eth_getLogs", [{ ...range, address: USDC, topics: [ERC20_TRANSFER, topicAddr(BUYBACK_WALLET), null] }]);
+    const inc = await rpc("eth_getLogs", [{ ...range, address: USDC, topics: [ERC20_TRANSFER, null, topicAddr(BUYBACK_WALLET)] }]);
+    // Share deliveries only ever accompany a spend, so skip both 1155
+    // queries for chunks where the wallet moved no USDC at all.
+    const batch = await rpc("eth_getLogs", [{ ...range, address: PROXY, topics: [TRANSFER_BATCH, null, null, topicAddr(BUYBACK_WALLET)] }]);
+    const single = await rpc("eth_getLogs", [{ ...range, address: PROXY, topics: [TRANSFER_SINGLE, null, null, topicAddr(BUYBACK_WALLET)] }]);
+    // Burns carry no USDC at all, so they can only be found by asking
+    // for share movements OUT of the wallet.
+    const batchOut = await rpc("eth_getLogs", [{ ...range, address: PROXY, topics: [TRANSFER_BATCH, null, topicAddr(BUYBACK_WALLET), null] }]);
+    const singleOut = await rpc("eth_getLogs", [{ ...range, address: PROXY, topics: [TRANSFER_SINGLE, null, topicAddr(BUYBACK_WALLET), null] }]);
     for (const l of out) {
       const t = touch(l.transactionHash, hexToNum(l.blockNumber));
       t.usdcOut += Number(BigInt(l.data)) / 1e6;
@@ -125,6 +168,18 @@ async function main() {
       const p = parseTransferSingle(l);
       const shares = Number(p.value) / 1e18;
       if (shares > 0) { t.shares += shares; t.tokens++; }
+    }
+    for (const l of batchOut) {
+      const t = touch(l.transactionHash, hexToNum(l.blockNumber));
+      for (const leg of parseTransferBatch(l)) {
+        const shares = Number(leg.value) / 1e18;
+        if (shares > 0) { t.sharesOut += shares; t.tokensOut++; }
+      }
+    }
+    for (const l of singleOut) {
+      const t = touch(l.transactionHash, hexToNum(l.blockNumber));
+      const shares = Number(parseTransferSingle(l).value) / 1e18;
+      if (shares > 0) { t.sharesOut += shares; t.tokensOut++; }
     }
   };
 
@@ -157,7 +212,17 @@ async function main() {
   for (const t of txs.values()) {
     const ts = times.get(t.block);
     if (!ts) continue;
-    if (t.usdcOut > 0) {
+    if (t.usdcOut === 0 && t.usdcIn === 0 && t.sharesOut > 0) {
+      // Shares leave, nothing comes back: the retire step.
+      fresh.push({
+        kind: "burn",
+        block: t.block,
+        ts,
+        tx: t.hash,
+        shares: round(t.sharesOut, 4),
+        tokens: t.tokensOut,
+      });
+    } else if (t.usdcOut > 0) {
       // A spend into the pair. The refund is change from the basket
       // quote, so the real outlay is spend minus refund.
       fresh.push({
@@ -171,7 +236,22 @@ async function main() {
         shares: round(t.shares, 4),
         tokens: t.tokens,
       });
-    } else if (t.usdcIn > 0 && t.funders.size > 0) {
+    } else if (t.usdcOut === 0 && t.usdcIn === 0 && t.shares > 0) {
+      // Shares arrive with no USDC moving: someone transferred them in
+      // rather than the wallet buying them. Without this branch such a
+      // tx matches nothing and is silently dropped, which makes shares
+      // bought minus burned disagree with the on-chain balance.
+      fresh.push({
+        kind: "inflow",
+        block: t.block,
+        ts,
+        tx: t.hash,
+        shares: round(t.shares, 4),
+        tokens: t.tokens,
+      });
+    } else if (t.usdcIn > 0.005 && t.funders.size > 0) {
+      // Above a cent: zero-value USDC transfers land here otherwise and
+      // show up as meaningless "+$0" funding rows.
       fresh.push({
         kind: "funding",
         block: t.block,
@@ -187,27 +267,45 @@ async function main() {
   for (const e of fresh) merged.set(e.tx, e);
   const events = [...merged.values()].sort((a, b) => a.block - b.block);
 
-  // Current holdings, read live so the page always shows a real
-  // position rather than one derived from summed events.
-  const holdings = await readHoldings(repoRoot);
+  // Holdings are read AT the block we indexed through, not at "latest".
+  // Reading the tip instead compares a balance against events that stop
+  // earlier, and while the wallet is actively buying that difference
+  // looks exactly like missing data — it cost several full rescans to
+  // realise the numbers were fine and the comparison was not.
+  const holdings = await readHoldings(repoRoot, "0x" + head.toString(16));
 
   const out = {
     wallet: BUYBACK_WALLET,
     seededFromBlock: store.seededFromBlock > 0 ? Math.min(store.seededFromBlock, from) : from,
+    // Only claim coverage we actually scanned. A staged seed advances
+    // to its TO_BLOCK; the next stage resumes from there.
     lastIndexedBlock: unrecovered > 0 ? Math.max(store.lastIndexedBlock, from - 1) : head,
     updatedAt: Date.now(),
-    usdcBalance: await usdcBalance(),
+    usdcBalance: await usdcBalance("0x" + head.toString(16)),
     holdings,
     events,
   };
 
   const buys = events.filter((e) => e.kind === "buy");
+  const burns = events.filter((e) => e.kind === "burn");
+  const inflows = events.filter((e) => e.kind === "inflow");
+  const sharesBought = buys.reduce((a, e) => a + e.shares, 0);
+  const sharesBurned = burns.reduce((a, e) => a + e.shares, 0);
+  const sharesIn = inflows.reduce((a, e) => a + e.shares, 0);
   const summary = {
     events: events.length,
     buys: buys.length,
-    funding: events.length - buys.length,
+    burns: burns.length,
+    funding: events.filter((e) => e.kind === "funding").length,
     deployedUsd: round(buys.reduce((a, e) => a + e.netUsd, 0)),
-    sharesBought: round(buys.reduce((a, e) => a + e.shares, 0), 1),
+    inflows: inflows.length,
+    sharesBought: round(sharesBought, 1),
+    sharesBurned: round(sharesBurned, 1),
+    sharesTransferredIn: round(sharesIn, 1),
+    // Should land close to the live holdings read; a big gap means a
+    // share path the scan is still missing.
+    impliedFloat: round(sharesBought + sharesIn - sharesBurned, 1),
+    heldNow: round(holdings.reduce((a, h) => a + h.shares, 0), 1),
     playersHeld: holdings.length,
     durationMs: Date.now() - started,
   };
@@ -222,19 +320,62 @@ async function main() {
   }
 }
 
+/**
+ * Block ranges in which the wallet's nonce actually moved. Probing the
+ * nonce is one cheap call per sample and lets a cold seed skip the long
+ * dormant stretches instead of paying 2,000-block getLogs across them.
+ * Boundary samples are kept so a range always covers the transactions
+ * that fall between two probes.
+ */
+async function activeRanges(from, head) {
+  const points = [];
+  for (let b = from; b < head; b += NONCE_PROBE_BLOCKS) points.push(b);
+  points.push(head);
+
+  const nonces = new Array(points.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: CONCURRENCY }, async () => {
+    while (next < points.length) {
+      const i = next++;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          nonces[i] = hexToNum(await rpc("eth_getTransactionCount", [BUYBACK_WALLET, "0x" + points[i].toString(16)]));
+          break;
+        } catch { await sleep(500 * (attempt + 1)); }
+      }
+    }
+  }));
+
+  const ranges = [];
+  for (let i = 1; i < points.length; i++) {
+    const a = nonces[i - 1];
+    const b = nonces[i];
+    // Unknown nonce (probe failed) is treated as active so a failed
+    // probe can never silently drop a block range.
+    if (a === undefined || b === undefined || b > a) {
+      const start = points[i - 1];
+      const end = Math.min(points[i], head);
+      const last = ranges[ranges.length - 1];
+      if (last && start <= last[1] + 1) last[1] = end;
+      else ranges.push([start, end]);
+    }
+  }
+  return ranges;
+}
+
 function round(n, dp = 2) {
   const f = 10 ** dp;
   return Math.round(n * f) / f;
 }
 
-async function usdcBalance() {
+async function usdcBalance(blockTag = "latest") {
   const data = "0x70a08231" + "0".repeat(24) + BUYBACK_WALLET.slice(2);
-  const res = await rpc("eth_call", [{ to: USDC, data }, "latest"]);
+  const res = await rpc("eth_call", [{ to: USDC, data }, blockTag]);
   return round(Number(BigInt(res || "0x0")) / 1e6);
 }
 
 // balanceOfBatch across the whole roster in one call.
-async function readHoldings(repoRoot) {
+async function readHoldings(repoRoot, blockTag = "latest") {
   const rosterPath = path.join(repoRoot, "src", "lib", "data", "roster.ts");
   const src = await fs.readFile(rosterPath, "utf8");
   const rows = [...src.matchAll(/\[\s*"([a-z0-9-]+)",\s*"([^"]+)",\s*"(QB|RB|WR|TE)",\s*"([A-Z]+)",[^\]]*?"(\d+)"\s*\]/g)]
@@ -247,7 +388,7 @@ async function readHoldings(repoRoot) {
   data += enc(BigInt(rows.length));
   for (const r of rows) data += enc(BigInt(r.tokenIdSuffix));
 
-  const res = await rpc("eth_call", [{ to: PROXY, data }, "latest"]);
+  const res = await rpc("eth_call", [{ to: PROXY, data }, blockTag]);
   const body = res.slice(2 + 128);
   const out = [];
   rows.forEach((r, i) => {
