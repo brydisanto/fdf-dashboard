@@ -1,17 +1,13 @@
 {
   "current": {
-    "ts": 1789933197476,
+    "ts": 1789943878066,
     "count": 2837,
-    "largestPoolHolderCount": 628,
+    "largestPoolHolderCount": 630,
     "pools": 76,
-    "durationMs": 965765,
+    "durationMs": 882192,
     "fullScan": false
   },
   "history": [
-    {
-      "ts": 1784053802755,
-      "count": 2740
-    },
     {
       "ts": 1784061228393,
       "count": 2664
@@ -2886,6 +2882,10 @@
     },
     {
       "ts": 1789933197476,
+      "count": 2837
+    },
+    {
+      "ts": 1789943878066,
       "count": 2837
     }
   ]
