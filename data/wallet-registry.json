@@ -1,5 +1,5 @@
 {
-  "updatedAt": 1790091920697,
+  "updatedAt": 1790104754789,
   "seededFromBlock": 37869067,
   "wallets": {
     "0x9f2a925715f8df7ef91fff969120394339ab6b06": {
@@ -38711,6 +38711,16 @@
       "firstSide": "buy",
       "firstShares": 1476.0147601476017,
       "firstUsd": 0
+    },
+    "0x7e6cf0e734af944c59a3738212abe8bffdbd0813": {
+      "firstSeenAt": 1790100233000,
+      "firstBlock": 51655443,
+      "firstLogIndex": 295,
+      "firstTx": "0xc2759a455d04d86c83e0e7b63ba9ddb3c9e111fcd342632723ab47fbf0aeedd1",
+      "firstToken": "67997479",
+      "firstSide": "sell",
+      "firstShares": 2500,
+      "firstUsd": 34.390483
     }
   }
 }
