@@ -1,34 +1,49 @@
 {
   "wallet": "0xd9dd74e1109fa6fb8772706594bcabfbedfb706d",
   "seededFromBlock": 38610049,
-  "lastIndexedBlock": 51653780,
-  "updatedAt": 1790096942524,
-  "usdcBalance": 22359.73,
+  "lastIndexedBlock": 51659575,
+  "updatedAt": 1790108529977,
+  "usdcBalance": 22044.23,
   "holdings": [
     {
       "playerId": "khalil-shakir",
       "tokenIdSuffix": "1631265816",
-      "shares": 1170.5803
+      "shares": 2611.7164
     },
     {
       "playerId": "bo-nix",
       "tokenIdSuffix": "833812969",
-      "shares": 851.0308
+      "shares": 2365.4395
     },
     {
       "playerId": "emeka-egbuka",
       "tokenIdSuffix": "363339787",
-      "shares": 680.49
+      "shares": 2358.8497
     },
     {
       "playerId": "rashee-rice",
       "tokenIdSuffix": "350071857",
-      "shares": 530.9958
+      "shares": 1828.3722
+    },
+    {
+      "playerId": "hunter-henry",
+      "tokenIdSuffix": "946323199",
+      "shares": 1498.0118
+    },
+    {
+      "playerId": "javonte-williams",
+      "tokenIdSuffix": "1072658622",
+      "shares": 710.1509
     },
     {
       "playerId": "jalen-hurts",
       "tokenIdSuffix": "79420307",
-      "shares": 252.0115
+      "shares": 478.2739
+    },
+    {
+      "playerId": "ashton-jeanty",
+      "tokenIdSuffix": "1229893067",
+      "shares": 178.0321
     }
   ],
   "players": {
@@ -47,11 +62,11 @@
       "lastTs": 1789995003000
     },
     "79420307": {
-      "shares": 65549.5651,
-      "usd": 269.6032,
-      "baskets": 268,
+      "shares": 70795.1323,
+      "usd": 290.6032,
+      "baskets": 289,
       "firstTs": 1789655883000,
-      "lastTs": 1790096823000
+      "lastTs": 1790107983000
     },
     "88065636": {
       "shares": 227605.2584,
@@ -103,18 +118,18 @@
       "lastTs": 1789995003000
     },
     "350071857": {
-      "shares": 200368.8957,
-      "usd": 565.8222,
-      "baskets": 518,
+      "shares": 225427.4334,
+      "usd": 631.8237,
+      "baskets": 563,
       "firstTs": 1789651203000,
-      "lastTs": 1790096823000
+      "lastTs": 1790107983000
     },
     "363339787": {
-      "shares": 197531.7499,
-      "usd": 551.511,
-      "baskets": 485,
+      "shares": 230050.29,
+      "usd": 626.5125,
+      "baskets": 530,
       "firstTs": 1789651203000,
-      "lastTs": 1790096823000
+      "lastTs": 1790107983000
     },
     "383785792": {
       "shares": 218699.2003,
@@ -215,11 +230,11 @@
       "lastTs": 1789991163000
     },
     "833812969": {
-      "shares": 119144.4978,
-      "usd": 272.1212,
-      "baskets": 182,
+      "shares": 155978.213,
+      "usd": 357.6212,
+      "baskets": 227,
       "firstTs": 1789653663000,
-      "lastTs": 1790096823000
+      "lastTs": 1790107983000
     },
     "850942466": {
       "shares": 151526.5832,
@@ -243,11 +258,11 @@
       "lastTs": 1789995003000
     },
     "946323199": {
-      "shares": 58793.9585,
-      "usd": 93.74,
-      "baskets": 92,
+      "shares": 65329.1385,
+      "usd": 102.7407,
+      "baskets": 101,
       "firstTs": 1789654143000,
-      "lastTs": 1790095083000
+      "lastTs": 1790107623000
     },
     "972599423": {
       "shares": 151256.0605,
@@ -278,11 +293,11 @@
       "lastTs": 1789993923000
     },
     "1072658622": {
-      "shares": 47065.9936,
-      "usd": 158.9592,
-      "baskets": 157,
+      "shares": 57040.1383,
+      "usd": 189.9592,
+      "baskets": 188,
       "firstTs": 1789652703000,
-      "lastTs": 1790095803000
+      "lastTs": 1790107623000
     },
     "1094525731": {
       "shares": 130164.1701,
@@ -306,11 +321,11 @@
       "lastTs": 1789991823000
     },
     "1229893067": {
-      "shares": 170517.6157,
-      "usd": 987.1919,
-      "baskets": 974,
+      "shares": 171719.4562,
+      "usd": 994.1919,
+      "baskets": 981,
       "firstTs": 1789651203000,
-      "lastTs": 1790095743000
+      "lastTs": 1790107323000
     },
     "1257875488": {
       "shares": 36356.7236,
@@ -383,11 +398,11 @@
       "lastTs": 1789990623000
     },
     "1631265816": {
-      "shares": 108464.6393,
-      "usd": 95.6792,
-      "baskets": 95,
+      "shares": 134852.2502,
+      "usd": 116.6792,
+      "baskets": 116,
       "firstTs": 1789655283000,
-      "lastTs": 1790096823000
+      "lastTs": 1790107623000
     },
     "1634868202": {
       "shares": 19458.9828,
@@ -70272,6 +70287,525 @@
       "netUsd": 7.03,
       "shares": 3485.1085,
       "tokens": 5
+    },
+    {
+      "kind": "buy",
+      "block": 51653798,
+      "ts": 1790096943000,
+      "tx": "0x9b452a0e4cf2ad8d20a4ea35b7bc13c8857a6b22c57cbe6c95beecb2611820d6",
+      "usdcSpent": 6.09,
+      "usdcRefund": 0.06,
+      "netUsd": 6.03,
+      "shares": 2361.7029,
+      "tokens": 4
+    },
+    {
+      "kind": "buy",
+      "block": 51653858,
+      "ts": 1790097063000,
+      "tx": "0x0f59fbbf9e186d6dc11b28bac0fbf3fe10beeeecac31830209b3a8dbd0a76a04",
+      "usdcSpent": 7.1,
+      "usdcRefund": 0.07,
+      "netUsd": 7.03,
+      "shares": 2968.175,
+      "tokens": 5
+    },
+    {
+      "kind": "buy",
+      "block": 51653888,
+      "ts": 1790097123000,
+      "tx": "0x5ab75200d4ed3a93de25a1149f0ba74e6c2b0a6cbb335888062596173188771f",
+      "usdcSpent": 6.09,
+      "usdcRefund": 0.06,
+      "netUsd": 6.03,
+      "shares": 3230.2812,
+      "tokens": 4
+    },
+    {
+      "kind": "buy",
+      "block": 51654278,
+      "ts": 1790097903000,
+      "tx": "0xb35f5669895e1c0fc36785a804e9adfa9adda416b7bf8a4c21b02ed42a367374",
+      "usdcSpent": 6.09,
+      "usdcRefund": 0.06,
+      "netUsd": 6.03,
+      "shares": 2359.6559,
+      "tokens": 4
+    },
+    {
+      "kind": "buy",
+      "block": 51654338,
+      "ts": 1790098023000,
+      "tx": "0x9901afb841a50cc59fb5fdec565136416498db853757483af59d021153058c03",
+      "usdcSpent": 6.09,
+      "usdcRefund": 0.06,
+      "netUsd": 6.03,
+      "shares": 2310.4842,
+      "tokens": 4
+    },
+    {
+      "kind": "buy",
+      "block": 51654488,
+      "ts": 1790098323000,
+      "tx": "0x1c9dad5f8854146ca317580a38ce013124647e698184bbb1ce952bfcb009482f",
+      "usdcSpent": 5.08,
+      "usdcRefund": 0.05,
+      "netUsd": 5.03,
+      "shares": 2015.5237,
+      "tokens": 3
+    },
+    {
+      "kind": "buy",
+      "block": 51654638,
+      "ts": 1790098623000,
+      "tx": "0x0bd5c08129bf330f63c7af667fbf65ec89ac210038f753b203ba66374263e5f2",
+      "usdcSpent": 6.09,
+      "usdcRefund": 0.06,
+      "netUsd": 6.03,
+      "shares": 2315.0096,
+      "tokens": 4
+    },
+    {
+      "kind": "buy",
+      "block": 51654728,
+      "ts": 1790098803000,
+      "tx": "0x11b8489b4bf363dcdbbf6057defb231d584644b0d8df4dc19714eb92dfa23fd5",
+      "usdcSpent": 6.09,
+      "usdcRefund": 0.06,
+      "netUsd": 6.03,
+      "shares": 3183.6996,
+      "tokens": 4
+    },
+    {
+      "kind": "buy",
+      "block": 51654788,
+      "ts": 1790098923000,
+      "tx": "0x1b0861869349f0bfb7db38acfb231a96cd985046663968f1acd8b5bcbfcc7afd",
+      "usdcSpent": 8.11,
+      "usdcRefund": 0.08,
+      "netUsd": 8.03,
+      "shares": 2739.3264,
+      "tokens": 6
+    },
+    {
+      "kind": "buy",
+      "block": 51654878,
+      "ts": 1790099103000,
+      "tx": "0x04264f41ab5099883f3cc0cbf5020da7d125c8bc0e56b51b0e2b5875f067ff07",
+      "usdcSpent": 7.1,
+      "usdcRefund": 0.07,
+      "netUsd": 7.03,
+      "shares": 2564.4481,
+      "tokens": 5
+    },
+    {
+      "kind": "buy",
+      "block": 51654908,
+      "ts": 1790099163000,
+      "tx": "0x5c6d2a889a19c06fd47b7ec49e6076cc70556bb7b0406a0bfee91682d11a399b",
+      "usdcSpent": 7.1,
+      "usdcRefund": 0.07,
+      "netUsd": 7.03,
+      "shares": 3481.054,
+      "tokens": 5
+    },
+    {
+      "kind": "buy",
+      "block": 51655058,
+      "ts": 1790099463000,
+      "tx": "0x7add1e4448914c1782c2214570918fbc2c0f339dec1211d56990d6fabc4ed5a6",
+      "usdcSpent": 6.09,
+      "usdcRefund": 0.06,
+      "netUsd": 6.03,
+      "shares": 2310.9788,
+      "tokens": 4
+    },
+    {
+      "kind": "buy",
+      "block": 51655328,
+      "ts": 1790100003000,
+      "tx": "0x75fda5a72b3d08f2e5c54a651a8de1ce6715c57040e1825931affc70c0650873",
+      "usdcSpent": 6.09,
+      "usdcRefund": 0.06,
+      "netUsd": 6.03,
+      "shares": 3179.0195,
+      "tokens": 4
+    },
+    {
+      "kind": "return",
+      "block": 51655329,
+      "ts": 1790100005000,
+      "tx": "0x57abe2e790d95cdcc5df806b47432f81ea15fb0a57c4379ebe00f2893c3d4c69",
+      "shares": 35325.4476,
+      "tokens": 8
+    },
+    {
+      "kind": "buy",
+      "block": 51655538,
+      "ts": 1790100423000,
+      "tx": "0x0b310137124e94fdfe0245702c7609ac54ecd6f79f04ee6300422e0948ebcba9",
+      "usdcSpent": 7.1,
+      "usdcRefund": 0.07,
+      "netUsd": 7.03,
+      "shares": 2592.6312,
+      "tokens": 5
+    },
+    {
+      "kind": "buy",
+      "block": 51655838,
+      "ts": 1790101023000,
+      "tx": "0x7e1125541bc11ea9c3ea9b985caba9d89055f73cb591f91f883a08fa02b2a45c",
+      "usdcSpent": 7.1,
+      "usdcRefund": 0.07,
+      "netUsd": 7.03,
+      "shares": 3556.3756,
+      "tokens": 5
+    },
+    {
+      "kind": "buy",
+      "block": 51655898,
+      "ts": 1790101143000,
+      "tx": "0x915dfa235e2f9b00eebef59b0fa45456512e4250dc810e7fb4bbc2df7b91cb43",
+      "usdcSpent": 8.11,
+      "usdcRefund": 0.08,
+      "netUsd": 8.03,
+      "shares": 3833.8378,
+      "tokens": 6
+    },
+    {
+      "kind": "buy",
+      "block": 51655928,
+      "ts": 1790101203000,
+      "tx": "0x2fc2f8197b2f42e0ac6865968927b82d0c6b1901e64d18315e6221df7855060e",
+      "usdcSpent": 7.1,
+      "usdcRefund": 0.07,
+      "netUsd": 7.03,
+      "shares": 3553.4864,
+      "tokens": 5
+    },
+    {
+      "kind": "buy",
+      "block": 51656018,
+      "ts": 1790101383000,
+      "tx": "0x7990ad0d2ae969c978ad3f919bd5f629a5d067a25f99217f621912f4502add78",
+      "usdcSpent": 8.11,
+      "usdcRefund": 0.08,
+      "netUsd": 8.03,
+      "shares": 3198.3518,
+      "tokens": 6
+    },
+    {
+      "kind": "buy",
+      "block": 51656168,
+      "ts": 1790101683000,
+      "tx": "0x358bb26f084b39d18d491509c66a934614b13ab1bbb5dfb2519f9b8e609044ab",
+      "usdcSpent": 7.1,
+      "usdcRefund": 0.07,
+      "netUsd": 7.03,
+      "shares": 2685.8872,
+      "tokens": 5
+    },
+    {
+      "kind": "buy",
+      "block": 51656198,
+      "ts": 1790101743000,
+      "tx": "0x70c3c5e33d0daffe617b7466bdde4b5f1c541d1de0a5abad927c09aaf51733dc",
+      "usdcSpent": 7.1,
+      "usdcRefund": 0.07,
+      "netUsd": 7.03,
+      "shares": 3667.4894,
+      "tokens": 5
+    },
+    {
+      "kind": "buy",
+      "block": 51656258,
+      "ts": 1790101863000,
+      "tx": "0x6702fcd1accec5a3d77ab415f281fe3e5ad0cca037447e7812ba5f1c7a244d50",
+      "usdcSpent": 6.09,
+      "usdcRefund": 0.06,
+      "netUsd": 6.03,
+      "shares": 2413.7467,
+      "tokens": 4
+    },
+    {
+      "kind": "buy",
+      "block": 51656288,
+      "ts": 1790101923000,
+      "tx": "0xceccd01ed6eb50774c23ed1728095886b5562d36c75e9431077c63d57f7f52e0",
+      "usdcSpent": 6.09,
+      "usdcRefund": 0.06,
+      "netUsd": 6.03,
+      "shares": 2412.8747,
+      "tokens": 4
+    },
+    {
+      "kind": "buy",
+      "block": 51656318,
+      "ts": 1790101983000,
+      "tx": "0x3e985690b38c8cf7b2eb324cf77ae81b85d8157398025bc6e71c7d29b1c9799b",
+      "usdcSpent": 6.09,
+      "usdcRefund": 0.06,
+      "netUsd": 6.03,
+      "shares": 2412.0032,
+      "tokens": 4
+    },
+    {
+      "kind": "buy",
+      "block": 51656528,
+      "ts": 1790102403000,
+      "tx": "0xdefe2c3d531e1918a660f0e1cf9720d4b729f2fa41b8d0163c8e39e97c7333d8",
+      "usdcSpent": 9.12,
+      "usdcRefund": 0.09,
+      "netUsd": 9.03,
+      "shares": 4656.6001,
+      "tokens": 7
+    },
+    {
+      "kind": "buy",
+      "block": 51656678,
+      "ts": 1790102703000,
+      "tx": "0x36c890626e2ed54fd276b9d7fe535d97c2e4450b51cc488804271103e98dde99",
+      "usdcSpent": 7.1,
+      "usdcRefund": 0.07,
+      "netUsd": 7.03,
+      "shares": 3158.9127,
+      "tokens": 5
+    },
+    {
+      "kind": "buy",
+      "block": 51656828,
+      "ts": 1790103003000,
+      "tx": "0x25aa01ed2e910428b482ab3c53a4018786be33570c7f77e746fa248d47f19f13",
+      "usdcSpent": 7.1,
+      "usdcRefund": 0.07,
+      "netUsd": 7.03,
+      "shares": 3549.7986,
+      "tokens": 5
+    },
+    {
+      "kind": "buy",
+      "block": 51656918,
+      "ts": 1790103183000,
+      "tx": "0x6c1fca487ac5d7cf1a7d7e936fa8575101223b398aff0d29ad886903ddca5cd1",
+      "usdcSpent": 8.11,
+      "usdcRefund": 0.08,
+      "netUsd": 8.03,
+      "shares": 4458.4993,
+      "tokens": 6
+    },
+    {
+      "kind": "buy",
+      "block": 51656948,
+      "ts": 1790103243000,
+      "tx": "0xf508247d5af3988cac4489c3a09bc3ccfe447f68bc8fcc398c7cb02f1dfb5a88",
+      "usdcSpent": 6.09,
+      "usdcRefund": 0.06,
+      "netUsd": 6.03,
+      "shares": 2439.4419,
+      "tokens": 4
+    },
+    {
+      "kind": "buy",
+      "block": 51656978,
+      "ts": 1790103303000,
+      "tx": "0x113dafab4630299caa438c633be171d30055207f0c511ec3cd0d140a3a8abbe9",
+      "usdcSpent": 9.12,
+      "usdcRefund": 0.09,
+      "netUsd": 9.03,
+      "shares": 4124.1107,
+      "tokens": 7
+    },
+    {
+      "kind": "buy",
+      "block": 51657068,
+      "ts": 1790103483000,
+      "tx": "0x6d01af0f47d04dd40bfe930ac09e8481440521f1abf6e7fde73c48249e61e28e",
+      "usdcSpent": 7.1,
+      "usdcRefund": 0.07,
+      "netUsd": 7.03,
+      "shares": 2659.9806,
+      "tokens": 5
+    },
+    {
+      "kind": "buy",
+      "block": 51657098,
+      "ts": 1790103543000,
+      "tx": "0xf721b178cc160f5da4768c70564ee901ec2aa4c09f45a03a42dfb9db80b67a19",
+      "usdcSpent": 7.1,
+      "usdcRefund": 0.07,
+      "netUsd": 7.03,
+      "shares": 2659.0653,
+      "tokens": 5
+    },
+    {
+      "kind": "return",
+      "block": 51657129,
+      "ts": 1790103605000,
+      "tx": "0x739a97028f23620ed1b89cf185c85dc313d674ecc3f08927a3b57563d7b5237f",
+      "shares": 61212.1128,
+      "tokens": 8
+    },
+    {
+      "kind": "buy",
+      "block": 51657398,
+      "ts": 1790104143000,
+      "tx": "0x1fc5da18a1acee304d584cc40fe6a2507f77e7b5468a6634ae63d0bc8eaca977",
+      "usdcSpent": 8.11,
+      "usdcRefund": 0.08,
+      "netUsd": 8.03,
+      "shares": 3908.9031,
+      "tokens": 6
+    },
+    {
+      "kind": "buy",
+      "block": 51657818,
+      "ts": 1790104983000,
+      "tx": "0x0e15aefae8476bf0711c87882d890fecf181b572b62ab78bec8c25795cbca057",
+      "usdcSpent": 7.1,
+      "usdcRefund": 0.07,
+      "netUsd": 7.03,
+      "shares": 2706.9625,
+      "tokens": 5
+    },
+    {
+      "kind": "buy",
+      "block": 51658058,
+      "ts": 1790105463000,
+      "tx": "0x40dc7b90446371c5aeb62f6acaca32fa31bba0905a97c686050fd6a772a4a6f0",
+      "usdcSpent": 8.11,
+      "usdcRefund": 0.08,
+      "netUsd": 8.03,
+      "shares": 3449.2129,
+      "tokens": 6
+    },
+    {
+      "kind": "buy",
+      "block": 51658118,
+      "ts": 1790105583000,
+      "tx": "0x55a517c72554dee6f49b1ca4dbbe5a75888dc6c9aedb912ef443a93542f1b7a1",
+      "usdcSpent": 6.09,
+      "usdcRefund": 0.06,
+      "netUsd": 6.03,
+      "shares": 2531.2628,
+      "tokens": 4
+    },
+    {
+      "kind": "buy",
+      "block": 51658148,
+      "ts": 1790105643000,
+      "tx": "0x6f4bee72f8066d4f0172314ccedf3039808d91d2094d104dcb3608ed6c765fb8",
+      "usdcSpent": 7.1,
+      "usdcRefund": 0.07,
+      "netUsd": 7.03,
+      "shares": 3278.1179,
+      "tokens": 5
+    },
+    {
+      "kind": "buy",
+      "block": 51658418,
+      "ts": 1790106183000,
+      "tx": "0xd335afdcc97449661c3e3285b1029e817b7e044e3cdfc59f44e230f2245138ed",
+      "usdcSpent": 6.09,
+      "usdcRefund": 0.06,
+      "netUsd": 6.03,
+      "shares": 3497.3252,
+      "tokens": 4
+    },
+    {
+      "kind": "buy",
+      "block": 51658478,
+      "ts": 1790106303000,
+      "tx": "0x28c4da1e3e7c6d842e0d8467d9e3a0c0b458f5f873c3049e18d952813c395d27",
+      "usdcSpent": 6.09,
+      "usdcRefund": 0.06,
+      "netUsd": 6.03,
+      "shares": 3495.9515,
+      "tokens": 4
+    },
+    {
+      "kind": "buy",
+      "block": 51658510,
+      "ts": 1790106367000,
+      "tx": "0xf9dd7eef20a7d92e077b0711b4915b4bf1ee9ddafcf15c4d3145eddb09465ada",
+      "usdcSpent": 9.12,
+      "usdcRefund": 0.09,
+      "netUsd": 9.03,
+      "shares": 4260.4629,
+      "tokens": 7
+    },
+    {
+      "kind": "buy",
+      "block": 51658598,
+      "ts": 1790106543000,
+      "tx": "0xb38fee3719263b770a060bf1469202cc231ed22ea17b368b7b97e22338c0ffda",
+      "usdcSpent": 7.1,
+      "usdcRefund": 0.07,
+      "netUsd": 7.03,
+      "shares": 3731.5626,
+      "tokens": 5
+    },
+    {
+      "kind": "buy",
+      "block": 51658628,
+      "ts": 1790106603000,
+      "tx": "0xbfa11996fd552f59f015c9d2e19f5e92be7122055b7fe1477e2e3c9471375e6e",
+      "usdcSpent": 7.1,
+      "usdcRefund": 0.07,
+      "netUsd": 7.03,
+      "shares": 3730.1507,
+      "tokens": 5
+    },
+    {
+      "kind": "buy",
+      "block": 51658658,
+      "ts": 1790106663000,
+      "tx": "0x1b3309b01ecb157c109ad8636fbec33e000e3d42e4e13852c38993235414cb3d",
+      "usdcSpent": 8.11,
+      "usdcRefund": 0.08,
+      "netUsd": 8.03,
+      "shares": 4083.9258,
+      "tokens": 6
+    },
+    {
+      "kind": "return",
+      "block": 51658929,
+      "ts": 1790107205000,
+      "tx": "0x37cf028e9799aa4db6c19f3b3ef877511476d621e83b2f37a36f00ccaa1fdac8",
+      "shares": 38673.8378,
+      "tokens": 8
+    },
+    {
+      "kind": "buy",
+      "block": 51658988,
+      "ts": 1790107323000,
+      "tx": "0x515b1bdfcfbcc7b1ea1936a03125a6f26f1724b7560040bc9ee84fce7bf8432f",
+      "usdcSpent": 10.13,
+      "usdcRefund": 0.1,
+      "netUsd": 10.03,
+      "shares": 5010.5828,
+      "tokens": 8
+    },
+    {
+      "kind": "buy",
+      "block": 51659138,
+      "ts": 1790107623000,
+      "tx": "0xc6066d88594675b854187c14629c8fa3bdb793e508ab868ab1a279dab7c600b9",
+      "usdcSpent": 8.11,
+      "usdcRefund": 0.08,
+      "netUsd": 8.03,
+      "shares": 4595.2552,
+      "tokens": 6
+    },
+    {
+      "kind": "buy",
+      "block": 51659318,
+      "ts": 1790107983000,
+      "tx": "0x717cdddba9d352db38076a0836edde91e5b9302c2c9883a322218dce99962e02",
+      "usdcSpent": 6.09,
+      "usdcRefund": 0.06,
+      "netUsd": 6.03,
+      "shares": 2423.0084,
+      "tokens": 4
     }
   ]
 }
