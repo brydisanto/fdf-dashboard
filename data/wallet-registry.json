@@ -1,5 +1,5 @@
 {
-  "updatedAt": 1790278102418,
+  "updatedAt": 1790289761381,
   "seededFromBlock": 37869067,
   "wallets": {
     "0x9f2a925715f8df7ef91fff969120394339ab6b06": {
@@ -38781,6 +38781,36 @@
       "firstSide": "buy",
       "firstShares": 2098.361136016323,
       "firstUsd": 5
+    },
+    "0xb5664ce7ecbe3808923d2c122fd99dd2157fba07": {
+      "firstSeenAt": 1790282035000,
+      "firstBlock": 51746344,
+      "firstLogIndex": 552,
+      "firstTx": "0x28dcd268ccb130008d6f2a0a6bfc3ccf69dc3b492db5c2a06233b020f92b0e96",
+      "firstToken": "608240281",
+      "firstSide": "buy",
+      "firstShares": 8917.636087890005,
+      "firstUsd": 30
+    },
+    "0x05ec21a72b37474617d848d359b5327b255d1e3a": {
+      "firstSeenAt": 1790278607000,
+      "firstBlock": 51744630,
+      "firstLogIndex": 330,
+      "firstTx": "0xeb4cfece8f70f9c6eeba4b19c7f9a55e5f092519c1834db5927d429c491055ec",
+      "firstToken": "67997479",
+      "firstSide": "buy",
+      "firstShares": 757.7479730241722,
+      "firstUsd": 0
+    },
+    "0x1fc080d42ca9def586c67a1101dcf907bc754254": {
+      "firstSeenAt": 1790278627000,
+      "firstBlock": 51744640,
+      "firstLogIndex": 604,
+      "firstTx": "0xecc5f28e08a5f4412a81784eb991a094adc275b195cd3003708a243d57ed035f",
+      "firstToken": "1877680294",
+      "firstSide": "buy",
+      "firstShares": 3095.720747714847,
+      "firstUsd": 0
     }
   }
 }
