@@ -1,10 +1,86 @@
 {
   "wallet": "0xd9dd74e1109fa6fb8772706594bcabfbedfb706d",
   "seededFromBlock": 38610049,
-  "lastIndexedBlock": 51975974,
-  "updatedAt": 1790741330639,
-  "usdcBalance": 59215.25,
-  "holdings": [],
+  "lastIndexedBlock": 51987669,
+  "updatedAt": 1790764721589,
+  "usdcBalance": 58935.25,
+  "holdings": [
+    {
+      "playerId": "rashee-rice",
+      "tokenIdSuffix": "350071857",
+      "shares": 8220.7758
+    },
+    {
+      "playerId": "jalen-hurts",
+      "tokenIdSuffix": "79420307",
+      "shares": 8011.1692
+    },
+    {
+      "playerId": "ladd-mcconkey",
+      "tokenIdSuffix": "1957905857",
+      "shares": 7507.5742
+    },
+    {
+      "playerId": "dalton-kincaid",
+      "tokenIdSuffix": "1378093404",
+      "shares": 5774.6059
+    },
+    {
+      "playerId": "omarion-hampton",
+      "tokenIdSuffix": "1835372287",
+      "shares": 5385.2096
+    },
+    {
+      "playerId": "ashton-jeanty",
+      "tokenIdSuffix": "1229893067",
+      "shares": 5340.465
+    },
+    {
+      "playerId": "garrett-wilson",
+      "tokenIdSuffix": "2111895848",
+      "shares": 4823.7466
+    },
+    {
+      "playerId": "jonathan-taylor",
+      "tokenIdSuffix": "1045355498",
+      "shares": 4495.8636
+    },
+    {
+      "playerId": "james-cook",
+      "tokenIdSuffix": "532139037",
+      "shares": 4445.5393
+    },
+    {
+      "playerId": "ceedee-lamb",
+      "tokenIdSuffix": "850942466",
+      "shares": 4211.0431
+    },
+    {
+      "playerId": "chris-olave",
+      "tokenIdSuffix": "1094525731",
+      "shares": 4178.2794
+    },
+    {
+      "playerId": "patrick-mahomes",
+      "tokenIdSuffix": "646914359",
+      "shares": 3822.2326
+    },
+    {
+      "playerId": "sam-laporta",
+      "tokenIdSuffix": "202647757",
+      "shares": 3485.2242
+    },
+    {
+      "playerId": "saquon-barkley",
+      "tokenIdSuffix": "1613245508",
+      "shares": 3475.5266
+    },
+    {
+      "playerId": "amon-ra-st-brown",
+      "tokenIdSuffix": "1955323065",
+      "shares": 2093.4463
+    }
+  ],
   "players": {
     "33526712": {
       "shares": 82607.3965,
@@ -21,11 +97,11 @@
       "lastTs": 1790335983000
     },
     "79420307": {
-      "shares": 82071.9339,
-      "usd": 337.6032,
-      "baskets": 336,
+      "shares": 90083.1032,
+      "usd": 363.2701,
+      "baskets": 343,
       "firstTs": 1789655883000,
-      "lastTs": 1790138463000
+      "lastTs": 1790764683000
     },
     "88065636": {
       "shares": 586287.0516,
@@ -42,11 +118,11 @@
       "lastTs": 1789991103000
     },
     "202647757": {
-      "shares": 78811.4532,
-      "usd": 212.5387,
-      "baskets": 211,
+      "shares": 82296.6773,
+      "usd": 221.8718,
+      "baskets": 218,
       "firstTs": 1789651745000,
-      "lastTs": 1790068263000
+      "lastTs": 1790764683000
     },
     "268596935": {
       "shares": 134084.7425,
@@ -77,11 +153,11 @@
       "lastTs": 1789995003000
     },
     "350071857": {
-      "shares": 297090.9667,
-      "usd": 806.361,
-      "baskets": 682,
+      "shares": 305311.7425,
+      "usd": 820.361,
+      "baskets": 689,
       "firstTs": 1789651203000,
-      "lastTs": 1790143443000
+      "lastTs": 1790764683000
     },
     "363339787": {
       "shares": 759533.855,
@@ -119,11 +195,11 @@
       "lastTs": 1789995003000
     },
     "532139037": {
-      "shares": 259205.0978,
-      "usd": 1525.846,
-      "baskets": 1261,
+      "shares": 263650.6371,
+      "usd": 1546.846,
+      "baskets": 1268,
       "firstTs": 1789651203000,
-      "lastTs": 1790196183000
+      "lastTs": 1790764683000
     },
     "543182829": {
       "shares": 40724.2546,
@@ -154,11 +230,11 @@
       "lastTs": 1789988583000
     },
     "646914359": {
-      "shares": 125634.8593,
-      "usd": 520.2229,
-      "baskets": 519,
+      "shares": 129457.0919,
+      "usd": 538.8898,
+      "baskets": 526,
       "firstTs": 1789651385000,
-      "lastTs": 1789995003000
+      "lastTs": 1790764683000
     },
     "656282335": {
       "shares": 279006.4775,
@@ -196,11 +272,11 @@
       "lastTs": 1790143443000
     },
     "850942466": {
-      "shares": 151526.5832,
-      "usd": 925.1262,
-      "baskets": 922,
+      "shares": 155737.6263,
+      "usd": 951.9593,
+      "baskets": 929,
       "firstTs": 1789651203000,
-      "lastTs": 1789995003000
+      "lastTs": 1790764683000
     },
     "892204822": {
       "shares": 142514.0563,
@@ -238,11 +314,11 @@
       "lastTs": 1789990623000
     },
     "1045355498": {
-      "shares": 223019.4896,
-      "usd": 1291.6602,
-      "baskets": 1238,
+      "shares": 227515.3531,
+      "usd": 1317.3271,
+      "baskets": 1245,
       "firstTs": 1789651203000,
-      "lastTs": 1790190183000
+      "lastTs": 1790764683000
     },
     "1049357910": {
       "shares": 28732.0862,
@@ -259,11 +335,11 @@
       "lastTs": 1790196123000
     },
     "1094525731": {
-      "shares": 130164.1701,
-      "usd": 507.6836,
-      "baskets": 505,
+      "shares": 134342.4496,
+      "usd": 529.8505,
+      "baskets": 512,
       "firstTs": 1789651203000,
-      "lastTs": 1789994763000
+      "lastTs": 1790764683000
     },
     "1096457743": {
       "shares": 128058.993,
@@ -280,11 +356,11 @@
       "lastTs": 1789991823000
     },
     "1229893067": {
-      "shares": 324320.5113,
-      "usd": 1764.1819,
-      "baskets": 1501,
+      "shares": 329660.9764,
+      "usd": 1787.515,
+      "baskets": 1508,
       "firstTs": 1789651203000,
-      "lastTs": 1790335983000
+      "lastTs": 1790764683000
     },
     "1257875488": {
       "shares": 36356.7236,
@@ -308,11 +384,11 @@
       "lastTs": 1790203023000
     },
     "1378093404": {
-      "shares": 25754.3504,
-      "usd": 80,
-      "baskets": 80,
+      "shares": 31528.9562,
+      "usd": 98.6669,
+      "baskets": 87,
       "firstTs": 1789655163000,
-      "lastTs": 1789977423000
+      "lastTs": 1790764683000
     },
     "1511237082": {
       "shares": 149585.9329,
@@ -343,11 +419,11 @@
       "lastTs": 1790335863000
     },
     "1613245508": {
-      "shares": 123563.7352,
-      "usd": 457.0566,
-      "baskets": 354,
+      "shares": 127039.2617,
+      "usd": 466.3897,
+      "baskets": 361,
       "firstTs": 1789653663000,
-      "lastTs": 1790068443000
+      "lastTs": 1790764683000
     },
     "1627881947": {
       "shares": 93682.6243,
@@ -427,11 +503,11 @@
       "lastTs": 1790196123000
     },
     "1835372287": {
-      "shares": 162284.1487,
-      "usd": 586.9811,
-      "baskets": 585,
+      "shares": 167669.3583,
+      "usd": 598.648,
+      "baskets": 592,
       "firstTs": 1789651385000,
-      "lastTs": 1790201883000
+      "lastTs": 1790764683000
     },
     "1877680294": {
       "shares": 299369.0203,
@@ -469,18 +545,18 @@
       "lastTs": 1789990503000
     },
     "1955323065": {
-      "shares": 131699.209,
-      "usd": 1140.9126,
-      "baskets": 1053,
+      "shares": 133792.6553,
+      "usd": 1157.2457,
+      "baskets": 1060,
       "firstTs": 1789651203000,
-      "lastTs": 1790201463000
+      "lastTs": 1790764683000
     },
     "1957905857": {
-      "shares": 151486.7894,
-      "usd": 447.4718,
-      "baskets": 446,
+      "shares": 158994.3636,
+      "usd": 466.1387,
+      "baskets": 453,
       "firstTs": 1789651385000,
-      "lastTs": 1789994763000
+      "lastTs": 1790764683000
     },
     "1965487160": {
       "shares": 39363.7747,
@@ -525,11 +601,11 @@
       "lastTs": 1790203263000
     },
     "2111895848": {
-      "shares": 193330.179,
-      "usd": 596.0898,
-      "baskets": 594,
+      "shares": 198153.9256,
+      "usd": 614.7567,
+      "baskets": 601,
       "firstTs": 1789651203000,
-      "lastTs": 1790068263000
+      "lastTs": 1790764683000
     }
   },
   "playersSince": 1788220800000,
@@ -81494,6 +81570,83 @@
       "tx": "0x40b3e3257e0ee5fdaeddfb69f5d9c0b12f1a3bcc334fc4b7b355b5fd96774807",
       "usdcIn": 50000,
       "from": "0x241c8005c070924b6087ea88e55f8fdf7022aace"
+    },
+    {
+      "kind": "buy",
+      "block": 51986888,
+      "ts": 1790763123000,
+      "tx": "0x925e2425ce71744ce080c868b859b43a9b1d387d3ed63913c2bae415a1aebca3",
+      "usdcSpent": 40.4,
+      "usdcRefund": 0.4,
+      "netUsd": 40,
+      "shares": 10769.1788,
+      "tokens": 15
+    },
+    {
+      "kind": "buy",
+      "block": 51986918,
+      "ts": 1790763183000,
+      "tx": "0x77adb2c19b635d0c1056391e7703868ce33c1e513941a33134ba4a9ce7392116",
+      "usdcSpent": 40.4,
+      "usdcRefund": 0.4,
+      "netUsd": 40,
+      "shares": 10763.7645,
+      "tokens": 15
+    },
+    {
+      "kind": "buy",
+      "block": 51987008,
+      "ts": 1790763363000,
+      "tx": "0x23881f9a052898cdd35dbb96b0653c63e1d35ccae62d9f1942d30109a18037a4",
+      "usdcSpent": 40.4,
+      "usdcRefund": 0.4,
+      "netUsd": 40,
+      "shares": 10758.3545,
+      "tokens": 15
+    },
+    {
+      "kind": "buy",
+      "block": 51987128,
+      "ts": 1790763603000,
+      "tx": "0xef238584468cedae8dbf4182fc2312dd79be42a99ef889df6c575bdde3bdb290",
+      "usdcSpent": 40.4,
+      "usdcRefund": 0.4,
+      "netUsd": 40,
+      "shares": 10752.9488,
+      "tokens": 15
+    },
+    {
+      "kind": "buy",
+      "block": 51987248,
+      "ts": 1790763843000,
+      "tx": "0x1009f72f4c67eeefe15a945b7c9a3225cd1cc9fc34f7b2acea75fa2812c8c2f1",
+      "usdcSpent": 40.4,
+      "usdcRefund": 0.4,
+      "netUsd": 40,
+      "shares": 10747.5473,
+      "tokens": 15
+    },
+    {
+      "kind": "buy",
+      "block": 51987518,
+      "ts": 1790764383000,
+      "tx": "0xbcd2ebd783c245be6dbb9b545191663a60b9e4ab648dcb74434ac60991fa5227",
+      "usdcSpent": 40.4,
+      "usdcRefund": 0.4,
+      "netUsd": 40,
+      "shares": 10742.1501,
+      "tokens": 15
+    },
+    {
+      "kind": "buy",
+      "block": 51987668,
+      "ts": 1790764683000,
+      "tx": "0xc26935e5e32f43d3999a4a205661321450765e01f7bf57a4bfb7ce0256f5de94",
+      "usdcSpent": 40.4,
+      "usdcRefund": 0.4,
+      "netUsd": 40,
+      "shares": 10736.7572,
+      "tokens": 15
     }
   ]
 }
