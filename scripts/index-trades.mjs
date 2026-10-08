@@ -724,7 +724,7 @@ async function main() {
     await fs.mkdir(path.dirname(outPath), { recursive: true });
     await fs.writeFile(outPath, json, "utf8");
     await fs.writeFile(registryPath, JSON.stringify(registry, null, 2) + "\n", "utf8");
-    console.error(`Wrote ${trades.length} trades (chain tip ${latestBlock}, indexed through ${safeLatestBlock}) in ${durationMs}ms`);
+    console.error(`Wrote ${trades.length} trades (chain tip ${latestBlock}, indexed through ${newLastIndexed}${newLastIndexed < safeLatestBlock ? `, ${safeLatestBlock - newLastIndexed} blocks still behind` : ""}) in ${durationMs}ms`);
     console.error(`Registry: ${Object.keys(registry.wallets).length} wallets (+${added} new this run)`);
   } else {
     console.log(JSON.stringify({
