@@ -48,14 +48,18 @@ const BASE_BLOCK_TIME_MS = 2000;
 const MAX_TAIL_BLOCKS = 90 * 30; // ~90 min of blocks on Base (2s blocks)
 
 // Only RPCs that serve eth_getLogs anonymously belong here. publicnode
-// was removed: it answers every getLogs with "Archive requests require a
-// personal token" (InvalidParams), and because viem's fallback treats
-// that as a final answer rather than a transport failure, one rate-limit
-// blip on mainnet.base.org used to end the whole tail scan with that
-// error instead of retrying.
+// has no archive: older than a few thousand blocks it answers "Archive
+// requests require a personal token" (InvalidParams), which viem's
+// fallback treats as final rather than moving on. So it sits LAST, where
+// it is only reached after both others fail, and the tail's window
+// (MAX_TAIL_BLOCKS) stays inside the range it can serve.
 const BASE_RPCS = [
   "https://mainnet.base.org",
-  "https://base.llamarpc.com",
+  // Full history, 500-block logs; bursty rate limit, so second.
+  "https://base.gateway.tenderly.co",
+  // Recent blocks only (no archive) but no burst limit; the tail only
+  // ever reads the last few thousand blocks, so it fits here, last.
+  "https://base-rpc.publicnode.com",
 ];
 
 const client = createPublicClient({

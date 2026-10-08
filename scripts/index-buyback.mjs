@@ -29,7 +29,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  rpc, hexToNum, parseTransferBatch, parseTransferSingle, getLogsCapped, logChunkSize,
+  rpc, hexToNum, parseTransferBatch, parseTransferSingle, getLogsCapped, logChunkSize, minHeadBlock,
   ERC1155_TRANSFER_SINGLE, ERC1155_TRANSFER_BATCH,
 } from "./index-trades.mjs";
 
@@ -98,7 +98,9 @@ async function main() {
   const outPath = path.join(repoRoot, "data", "buyback.json");
   const store = await readStore(outPath);
 
-  const chainHead = hexToNum(await rpc("eth_blockNumber", [])) - SAFETY_LAG;
+  // Lowest height across all rotated endpoints, so a lagging provider
+  // can never make us skip blocks it has not indexed yet.
+  const chainHead = (await minHeadBlock()) - SAFETY_LAG;
   // The per-player aggregate can't be filtered after the fact (it keeps
   // totals, not per-buy legs), so a changed start date means rebuilding
   // it: rescan from the first known event on or after the new start.
@@ -254,11 +256,29 @@ async function main() {
     if (++done % 250 === 0) console.error(`  ${done}/${chunks.length} chunks · ${txs.size} txs`);
   });
   let unrecovered = 0;
+  let firstUnrecovered = Infinity;   // start block of the earliest chunk still missing
   for (const c of failed) {
     await sleep(1200);
-    try { await ingest(c); } catch { unrecovered++; console.error(`  chunk ${c[0]} failed twice`); }
+    try {
+      await ingest(c);
+    } catch (err) {
+      unrecovered++;
+      firstUnrecovered = Math.min(firstUnrecovered, c[0]);
+      console.error(`  chunk ${c[0]} failed twice: ${err.message}`);
+    }
   }
   console.error(`Pass 1: ${txs.size} txs, ${failed.length} chunks retried, ${unrecovered} unrecovered`);
+
+  //
+  // With failures, advance only through the unbroken run of chunks that
+  // succeeded, stopping just before the earliest missing one. Holding the
+  // pointer at the start instead meant one throttled chunk discarded a
+  // whole run's progress; events already recorded past that point are
+  // deduped by tx when the next run rescans them.
+  const indexedThrough = Math.max(
+    store.lastIndexedBlock,
+    unrecovered > 0 ? firstUnrecovered - 1 : head,
+  );
 
   // Pass 2: block timestamps, one lookup per distinct block.
   const blocks = [...new Set([...txs.values()].map((t) => t.block))];
@@ -331,7 +351,11 @@ async function main() {
 
   const known = new Set(store.events.map((e) => e.tx));
   const merged = new Map(store.events.map((e) => [e.tx, e.kind === "burn" ? { ...e, kind: "return" } : e]));
-  for (const e of fresh) merged.set(e.tx, e);
+  // Only keep what lies inside the range we now claim to cover. Events
+  // past the pointer come back on the next run's rescan; saving them now
+  // would make the holdings check (read at the pointer) disagree.
+  const accepted = fresh.filter((e) => e.block <= indexedThrough);
+  for (const e of accepted) merged.set(e.tx, e);
   const events = [...merged.values()].sort((a, b) => a.block - b.block);
 
   // Cumulative buybacks per player. Kept as a running aggregate rather
@@ -349,7 +373,7 @@ async function main() {
   const playersComplete = hadAggregate
     ? store.playersComplete !== false
     : store.events.length === 0 || (aggregateStale && !process.env.FROM_BLOCK && unrecovered === 0);
-  for (const e of fresh) {
+  for (const e of accepted) {
     if (e.kind !== "buy" || e.ts < PLAYER_TRACKING_START) continue;
     // Skip txs already counted, except when rebuilding from scratch.
     if (hadAggregate && known.has(e.tx)) continue;
@@ -375,7 +399,6 @@ async function main() {
   // older window (FROM_BLOCK/TO_BLOCK behind the tip) must leave coverage
   // of later blocks intact, and must read balances at the true tip of the
   // index, not at the end of the window it happened to scan.
-  const indexedThrough = Math.max(store.lastIndexedBlock, unrecovered > 0 ? from - 1 : head);
   const holdings = await readHoldings(repoRoot, "0x" + indexedThrough.toString(16));
 
   const out = {

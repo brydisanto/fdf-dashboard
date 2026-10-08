@@ -58,7 +58,21 @@ const ERC1155_TRANSFER_BATCH =
 const ERC20_TRANSFER =
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
-const RPC_URL = process.env.BASE_RPC_URL || "https://mainnet.base.org";
+// Public Base RPCs, rotated per request. No single free endpoint is
+// dependable on its own: in Oct 2026 the Base endpoint first cut its log
+// range to 500 blocks, then began answering "request limit reached",
+// stalling the indexers twice in a week. Round-robin spreads the load so
+// no one provider throttles us, and a refusal from one (rate limit,
+// archive token, outage) falls through to the next.
+//   - mainnet.base.org        500-block logs, full history
+//   - base.gateway.tenderly.co 500-block logs, full history, bursty limit
+//   - base-rpc.publicnode.com  recent blocks only (no archive), no burst limit
+// Override with BASE_RPC_URLS (comma-separated); BASE_RPC_URL still works
+// for a single dedicated endpoint, e.g. a keyed provider.
+const RPC_URLS = (process.env.BASE_RPC_URLS || process.env.BASE_RPC_URL ||
+  "https://mainnet.base.org,https://base.gateway.tenderly.co,https://base-rpc.publicnode.com")
+  .split(",").map((u) => u.trim()).filter(Boolean);
+let rpcCursor = 0;
 
 // Cold-start: 30 days × 24h × 1800 blocks/h (2s/block) = 1,296,000 blocks.
 // Matches HISTORY_LIMIT_MS so the cold-start fills the full retention
@@ -170,32 +184,62 @@ const NFL_TOKEN_SET = new Set(TOKEN_ID_SUFFIXES);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function rpc(method, params, attempt = 0) {
-  let json;
+async function rpcOnce(url, method, params) {
+  let res;
   try {
-    const res = await fetch(RPC_URL, {
+    res = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+      signal: AbortSignal.timeout(30_000),
     });
-    json = await res.json();
   } catch (err) {
-    // Network-level failure (socket reset, 5xx HTML body). Retry with
-    // the same backoff as an RPC error instead of failing the chunk.
-    if (attempt < 4) {
-      await sleep(500 * (attempt + 1) ** 2);
-      return rpc(method, params, attempt + 1);
-    }
-    throw new Error(`RPC ${method} failed: ${err.message}`);
+    throw new Error(`${new URL(url).host}: ${err.message}`);
   }
-  if (json.error) {
-    if (attempt < 4) {
-      await sleep(500 * (attempt + 1) ** 2);
-      return rpc(method, params, attempt + 1);
-    }
-    throw new Error(`RPC ${method} failed: ${json.error.message}`);
-  }
+  const json = await res.json().catch(() => null);
+  if (!json) throw new Error(`${new URL(url).host}: HTTP ${res.status}, non-JSON body`);
+  if (json.error) throw new Error(`${new URL(url).host}: ${json.error.message}`);
   return json.result;
+}
+
+/**
+ * JSON-RPC call, rotated across RPC_URLS. Each call starts at the next
+ * endpoint (spreading load); on failure it tries the others before
+ * backing off and cycling again. If any endpoint named a log-range
+ * limit, that error is the one thrown, so getLogsCapped can adapt.
+ */
+async function rpc(method, params) {
+  const errors = [];
+  for (let cycle = 0; cycle < 4; cycle++) {
+    for (let k = 0; k < RPC_URLS.length; k++) {
+      const i = (rpcCursor + k) % RPC_URLS.length;
+      try {
+        const result = await rpcOnce(RPC_URLS[i], method, params);
+        rpcCursor = (i + 1) % RPC_URLS.length;
+        return result;
+      } catch (err) {
+        errors.push(err.message);
+      }
+    }
+    await sleep(800 * (cycle + 1) ** 2);
+  }
+  const ranged = errors.find((m) => /limited to a [\d,]+ range/.test(m));
+  throw new Error(`RPC ${method} failed on every endpoint: ${ranged ?? errors[errors.length - 1]}`);
+}
+
+/**
+ * Lowest chain height any endpoint reports. Logs are read from rotating
+ * providers, and one that lags the tip would answer "no logs" for blocks
+ * it has not seen yet; taking the minimum keeps the indexer from moving
+ * its pointer past blocks some provider has not indexed.
+ */
+async function minHeadBlock() {
+  const heads = [];
+  for (const url of RPC_URLS) {
+    try { heads.push(hexToNum(await rpcOnce(url, "eth_blockNumber", []))); } catch { /* skip */ }
+  }
+  if (heads.length === 0) return hexToNum(await rpc("eth_blockNumber", []));
+  return Math.min(...heads);
 }
 
 function hexToNum(hex) {
@@ -422,7 +466,7 @@ function acquisitionsFromMovements(movements, blockTimeFor) {
   return out;
 }
 
-export { getLogsCapped, logChunkSize, readRegistry, updateRegistry, acquisitionsFromMovements, parseTransferSingle, parseTransferBatch, computeNetUsd, fetchTransferLogs, fetchAllShareMovements, fetchBlock, fetchReceipt, rpc, hexToNum, NFL_TOKEN_SET, PAIR_LC, FOOTBALLFUN_LC, LOGS_CHUNK_BLOCKS, ERC1155_TRANSFER_SINGLE, ERC1155_TRANSFER_BATCH };
+export { getLogsCapped, logChunkSize, minHeadBlock, readRegistry, updateRegistry, acquisitionsFromMovements, parseTransferSingle, parseTransferBatch, computeNetUsd, fetchTransferLogs, fetchAllShareMovements, fetchBlock, fetchReceipt, rpc, hexToNum, NFL_TOKEN_SET, PAIR_LC, FOOTBALLFUN_LC, LOGS_CHUNK_BLOCKS, ERC1155_TRANSFER_SINGLE, ERC1155_TRANSFER_BATCH };
 
 async function main() {
   const startWall = Date.now();
@@ -441,8 +485,7 @@ async function main() {
     }
   } catch {}
 
-  const latestHex = await rpc("eth_blockNumber", []);
-  const latestBlock = hexToNum(latestHex);
+  const latestBlock = await minHeadBlock();
   // Block we'll actually scan up to (and later persist as the new
   // lastIndexedBlock). Holding back from the tip avoids missing
   // logs that the RPC hasn't indexed yet.
