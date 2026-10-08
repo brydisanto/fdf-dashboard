@@ -29,7 +29,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  rpc, hexToNum, parseTransferBatch, parseTransferSingle,
+  rpc, hexToNum, parseTransferBatch, parseTransferSingle, getLogsCapped, logChunkSize,
   ERC1155_TRANSFER_SINGLE, ERC1155_TRANSFER_BATCH,
 } from "./index-trades.mjs";
 
@@ -62,7 +62,9 @@ const TRANSFER_BATCH = ERC1155_TRANSFER_BATCH;
 const PLAYER_TRACKING_START = Date.UTC(2026, 8, 1); // 2026-09-01 00:00 UTC
 const PAIR_TRADE_EVENT = "0x687289c2856f43779157318472d0a835253d93a290e03ee79b9e27b0e403493d";
 
-const CHUNK = 2000;
+// Blocks per log query, taken from the shared helper so this follows
+// the RPC's current cap (500 as of Oct 2026) and adapts if it tightens.
+const CHUNK = logChunkSize();
 // The public Base RPC caps eth_getLogs at 2,000 blocks and rate-limits
 // hard, and every alternative endpoint is worse (50-block caps, no
 // archive access, or getLogs unsupported). Keep few requests in flight.
@@ -175,23 +177,22 @@ async function main() {
   };
 
   const ingest = async ([a, b, mode]) => {
-    const range = { fromBlock: "0x" + a.toString(16), toBlock: "0x" + b.toString(16) };
     const full = mode !== "inflow";
     // Sequential, not Promise.all: several parallel getLogs per chunk
     // times the worker count overwhelmed the public RPC and every chunk
     // came back rate-limited.
-    const out = full ? await rpc("eth_getLogs", [{ ...range, address: USDC, topics: [ERC20_TRANSFER, topicAddr(BUYBACK_WALLET), null] }]) : [];
-    const inc = await rpc("eth_getLogs", [{ ...range, address: USDC, topics: [ERC20_TRANSFER, null, topicAddr(BUYBACK_WALLET)] }]);
-    const batch = await rpc("eth_getLogs", [{ ...range, address: PROXY, topics: [TRANSFER_BATCH, null, null, topicAddr(BUYBACK_WALLET)] }]);
-    const single = await rpc("eth_getLogs", [{ ...range, address: PROXY, topics: [TRANSFER_SINGLE, null, null, topicAddr(BUYBACK_WALLET)] }]);
+    const out = full ? await getLogsCapped({ address: USDC, topics: [ERC20_TRANSFER, topicAddr(BUYBACK_WALLET), null] }, a, b) : [];
+    const inc = await getLogsCapped({ address: USDC, topics: [ERC20_TRANSFER, null, topicAddr(BUYBACK_WALLET)] }, a, b);
+    const batch = await getLogsCapped({ address: PROXY, topics: [TRANSFER_BATCH, null, null, topicAddr(BUYBACK_WALLET)] }, a, b);
+    const single = await getLogsCapped({ address: PROXY, topics: [TRANSFER_SINGLE, null, null, topicAddr(BUYBACK_WALLET)] }, a, b);
     // Returns carry no USDC at all, so they can only be found by asking
     // for share movements OUT of the wallet. Outflows need the wallet to
     // sign, so they only occur inside nonce-active ranges.
-    const batchOut = full ? await rpc("eth_getLogs", [{ ...range, address: PROXY, topics: [TRANSFER_BATCH, null, topicAddr(BUYBACK_WALLET), null] }]) : [];
-    const singleOut = full ? await rpc("eth_getLogs", [{ ...range, address: PROXY, topics: [TRANSFER_SINGLE, null, topicAddr(BUYBACK_WALLET), null] }]) : [];
+    const batchOut = full ? await getLogsCapped({ address: PROXY, topics: [TRANSFER_BATCH, null, topicAddr(BUYBACK_WALLET), null] }, a, b) : [];
+    const singleOut = full ? await getLogsCapped({ address: PROXY, topics: [TRANSFER_SINGLE, null, topicAddr(BUYBACK_WALLET), null] }, a, b) : [];
     // Buys are wallet-signed, so the per-player breakdown is only needed
     // inside nonce-active ranges.
-    const trades = full ? await rpc("eth_getLogs", [{ ...range, address: PAIR, topics: [PAIR_TRADE_EVENT, topicAddr(BUYBACK_WALLET)] }]) : [];
+    const trades = full ? await getLogsCapped({ address: PAIR, topics: [PAIR_TRADE_EVENT, topicAddr(BUYBACK_WALLET)] }, a, b) : [];
     for (const l of trades) {
       const t = touch(l.transactionHash, hexToNum(l.blockNumber));
       const per = t.perToken ?? (t.perToken = new Map());
@@ -242,7 +243,14 @@ async function main() {
   };
 
   await mapLimit(chunks, CONCURRENCY, async (c) => {
-    try { await ingest(c); } catch (err) { failed.push(c); }
+    try {
+      await ingest(c);
+    } catch (err) {
+      // Record the reason once: a silent catch here hid an RPC range-cap
+      // change for three days, with every run reporting success.
+      if (failed.length === 0) console.error(`  chunk ${c[0]}..${c[1]} failed: ${err.message}`);
+      failed.push(c);
+    }
     if (++done % 250 === 0) console.error(`  ${done}/${chunks.length} chunks · ${txs.size} txs`);
   });
   let unrecovered = 0;

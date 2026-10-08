@@ -110,13 +110,13 @@ export async function tailNflTrades(lastIndexedBlock: number): Promise<IndexedTr
     // receipt below — that way we're robust to USDC moving through
     // any contract (router, FOOTBALLFUN, or PAIR), not just PAIR.
     //
-    // CHUNKED: the public Base RPC caps eth_getLogs at a 2,000-block
-    // range and rejects anything wider with InvalidParams. MAX_TAIL_BLOCKS
-    // is 2,700, so the previous single call failed on every render —
-    // the tail silently returned nothing and the "live" feed froze at
-    // the last cron write. Chunks run sequentially (at most 2 calls),
-    // so this adds no concurrency pressure on the receipt fetches below.
-    const LOGS_CHUNK_BLOCKS = 2_000n;
+    // CHUNKED: the public Base RPC caps the eth_getLogs range and
+    // rejects anything wider, which makes the tail return nothing and
+    // the "live" feed freeze at the last cron write. The cap keeps
+    // tightening (10k, then 2,000, then 500 in Oct 2026), so keep this
+    // at or below the current limit. Chunks run sequentially, so this
+    // adds no concurrency pressure on the receipt fetches below.
+    const LOGS_CHUNK_BLOCKS = 500n;
     const fetchChunk = (from: bigint, to: bigint) =>
       client.getLogs({
         address: FOOTBALLFUN_CONTRACT as Address,
