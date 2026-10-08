@@ -82,7 +82,53 @@ const BACKFILL_TARGET_MS = HISTORY_LIMIT_MS;
 // of chain time on Base — comfortably under the cap even at peak
 // activity, and we still recursively split if a chunk somehow does
 // hit the threshold (see fetchTransferLogs).
-const LOGS_CHUNK_BLOCKS = 2_000;
+// The cap is set by the RPC and it tightens without warning: it was
+// 10k, then 2,000, and in Oct 2026 it became 500, which silently
+// stalled every log-reading indexer until the chunk size came down.
+// `logRangeCap` adapts at runtime whenever the RPC names a smaller
+// limit, so the next tightening costs one failed request, not days of
+// stale data.
+const LOGS_CHUNK_BLOCKS = 500;
+let logRangeCap = LOGS_CHUNK_BLOCKS;
+
+/** Blocks per log query right now, never above what the RPC allows. */
+function logChunkSize() {
+  return Math.min(LOGS_CHUNK_BLOCKS, logRangeCap);
+}
+
+/**
+ * eth_getLogs with the range cap enforced. If the RPC rejects the range
+ * and names its limit, adopt that limit and split the request.
+ */
+async function getLogsCapped(params, fromBlock, toBlock) {
+  const span = toBlock - fromBlock + 1;
+  if (span > logRangeCap) {
+    const mid = fromBlock + Math.floor(span / 2) - 1;
+    const [a, b] = [
+      await getLogsCapped(params, fromBlock, mid),
+      await getLogsCapped(params, mid + 1, toBlock),
+    ];
+    return [...a, ...b];
+  }
+  try {
+    return await rpc("eth_getLogs", [{
+      ...params,
+      fromBlock: "0x" + fromBlock.toString(16),
+      toBlock: "0x" + toBlock.toString(16),
+    }]);
+  } catch (err) {
+    const named = /limited to a ([\d,]+) range/.exec(err.message);
+    if (named) {
+      const limit = Number(named[1].replace(/,/g, ""));
+      if (limit > 0 && limit < logRangeCap) {
+        console.error(`  RPC now caps eth_getLogs at ${limit} blocks (was ${logRangeCap}) — adapting`);
+        logRangeCap = limit;
+        return getLogsCapped(params, fromBlock, toBlock);
+      }
+    }
+    throw err;
+  }
+}
 
 // Treat any chunk that returns this many logs (or more) as suspicious
 // — the RPC may have truncated. Halve the chunk and re-query the two
@@ -96,6 +142,10 @@ const LOGS_TRUNCATION_THRESHOLD = 9_500;
 // forever. Stop short of the tip and let the NEXT run pick them up.
 // 15 blocks ≈ 30s at 2s/block.
 const SAFETY_LAG_BLOCKS = 15;
+
+// Most blocks a single run will scan forward. One run stays inside the
+// job timeout; a backlog is cleared over consecutive runs.
+const MAX_FORWARD_BLOCKS_PER_RUN = 60_000;
 
 // Roster of NFL token suffixes — must match src/lib/data/roster.ts.
 const TOKEN_ID_SUFFIXES = [
@@ -202,12 +252,11 @@ function computeNetUsd(wallet, logs) {
 // us silently work around the public Base RPC's undocumented response
 // cap without missing events.
 async function fetchTransferLogs(fromBlock, toBlock, topic0 = ERC1155_TRANSFER_SINGLE) {
-  const logs = await rpc("eth_getLogs", [{
-    address: FOOTBALLFUN_CONTRACT,
-    topics: [topic0],
-    fromBlock: "0x" + fromBlock.toString(16),
-    toBlock: "0x" + toBlock.toString(16),
-  }]);
+  const logs = await getLogsCapped(
+    { address: FOOTBALLFUN_CONTRACT, topics: [topic0] },
+    fromBlock,
+    toBlock,
+  );
   if (logs.length >= LOGS_TRUNCATION_THRESHOLD && toBlock > fromBlock) {
     if (process.env.GRIDIRON_VERBOSE) {
       console.error(`  ⚠ chunk ${fromBlock}..${toBlock} returned ${logs.length} logs (possible truncation) — splitting`);
@@ -373,7 +422,7 @@ function acquisitionsFromMovements(movements, blockTimeFor) {
   return out;
 }
 
-export { readRegistry, updateRegistry, acquisitionsFromMovements, parseTransferSingle, parseTransferBatch, computeNetUsd, fetchTransferLogs, fetchAllShareMovements, fetchBlock, fetchReceipt, rpc, hexToNum, NFL_TOKEN_SET, PAIR_LC, FOOTBALLFUN_LC, LOGS_CHUNK_BLOCKS, ERC1155_TRANSFER_SINGLE, ERC1155_TRANSFER_BATCH };
+export { getLogsCapped, logChunkSize, readRegistry, updateRegistry, acquisitionsFromMovements, parseTransferSingle, parseTransferBatch, computeNetUsd, fetchTransferLogs, fetchAllShareMovements, fetchBlock, fetchReceipt, rpc, hexToNum, NFL_TOKEN_SET, PAIR_LC, FOOTBALLFUN_LC, LOGS_CHUNK_BLOCKS, ERC1155_TRANSFER_SINGLE, ERC1155_TRANSFER_BATCH };
 
 async function main() {
   const startWall = Date.now();
@@ -423,7 +472,16 @@ async function main() {
     forwardFrom = existing.lastIndexedBlock + 1;
   }
   if (forwardFrom <= safeLatestBlock) {
-    ranges.push({ kind: "forward", from: forwardFrom, to: safeLatestBlock });
+    // Cap a single run's forward scan. If the index falls far behind,
+    // an uncapped range can exceed the job timeout, and a run that
+    // never finishes never advances the pointer — so it would stay
+    // behind for ever. Catching up across several runs always makes
+    // progress.
+    const forwardTo = Math.min(safeLatestBlock, forwardFrom + MAX_FORWARD_BLOCKS_PER_RUN - 1);
+    if (forwardTo < safeLatestBlock) {
+      console.error(`Catching up: scanning ${forwardFrom} → ${forwardTo}, ${safeLatestBlock - forwardTo} blocks still behind`);
+    }
+    ranges.push({ kind: "forward", from: forwardFrom, to: forwardTo });
   }
 
   // Backfill range (only when the file doesn't yet span the retention window).
@@ -478,8 +536,8 @@ async function main() {
   const allLogs = [];
   const allMovements = [];
   for (const range of ranges) {
-    for (let cursor = range.from; cursor <= range.to; cursor += LOGS_CHUNK_BLOCKS) {
-      const end = Math.min(cursor + LOGS_CHUNK_BLOCKS - 1, range.to);
+    for (let cursor = range.from; cursor <= range.to; cursor += logChunkSize()) {
+      const end = Math.min(cursor + logChunkSize() - 1, range.to);
       const movements = await fetchAllShareMovements(cursor, end);
       allMovements.push(...movements);
       for (const m of movements) {
