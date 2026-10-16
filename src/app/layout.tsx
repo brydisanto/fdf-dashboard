@@ -115,7 +115,7 @@ function SiteHeader() {
           <NavLink href="/wallets">Top Wallets</NavLink>
           <NavLink href="/new-wallets">New Wallets</NavLink>
           <NavLink href="/buyback">Buyback</NavLink>
-          <NavLink href="/tournament-matrix">2025 Data</NavLink>
+          <NavLink href="/tournament-matrix">Matrix</NavLink>
           <NavLink href="/on-fire" icon={<Flame className="h-3.5 w-3.5" strokeWidth={2} />}>
             On Fire
           </NavLink>
