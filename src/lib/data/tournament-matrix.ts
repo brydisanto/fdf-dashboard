@@ -1,9 +1,16 @@
-// Reader for data/tournament-matrix.json — built by
-// scripts/build-tournament-matrix.mjs. The JSON is bundled with the
-// app (imported at build time) rather than fetched at runtime since
-// it only updates weekly during the season.
+// Reader for the per-season tournament matrices. Both files are bundled
+// with the app (imported at build time) rather than fetched at runtime,
+// since they change at most weekly.
+//
+//   2025 — data/tournament-matrix.json, built by
+//          scripts/build-tournament-matrix.mjs from a community page that
+//          stopped updating in April 2026.
+//   2026 — data/tournament-matrix-2026.json, built by
+//          scripts/build-tournament-matrix-2026.mjs from Sport.fun's own
+//          weekly standings. Same schema, so the page renders either.
 
-import matrixData from "../../../data/tournament-matrix.json";
+import matrix2025 from "../../../data/tournament-matrix.json";
+import matrix2026 from "../../../data/tournament-matrix-2026.json";
 
 export type Position = "QB" | "RB" | "WR" | "TE";
 
@@ -41,6 +48,9 @@ export interface PlayerSeason {
 export interface TournamentMatrix {
   season: number;
   weeks: number;
+  weeksOrdered?: number[];
+  // Present for a season captured while it is still being played.
+  capturedAt?: string;
   generatedAt: string;
   scoring: string;
   source: string;
@@ -49,6 +59,17 @@ export interface TournamentMatrix {
   byPosition: Record<Position, PlayerSeason[]>;
 }
 
-export function getTournamentMatrix(): TournamentMatrix {
-  return matrixData as TournamentMatrix;
+const MATRICES: Record<number, TournamentMatrix> = {
+  2025: matrix2025 as TournamentMatrix,
+  2026: matrix2026 as TournamentMatrix,
+};
+
+/** Seasons with a matrix, newest first. */
+export const MATRIX_SEASONS = Object.keys(MATRICES).map(Number).sort((a, b) => b - a);
+
+/** Most recent season, shown when none is requested. */
+export const DEFAULT_MATRIX_SEASON = MATRIX_SEASONS[0];
+
+export function getTournamentMatrix(season: number = DEFAULT_MATRIX_SEASON): TournamentMatrix {
+  return MATRICES[season] ?? MATRICES[DEFAULT_MATRIX_SEASON];
 }

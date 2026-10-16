@@ -2,29 +2,40 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Card, Pill } from "@/components/ui";
 import { TournamentMatrix } from "@/components/TournamentMatrix";
-import { getTournamentMatrix } from "@/lib/data/tournament-matrix";
+import {
+  DEFAULT_MATRIX_SEASON,
+  MATRIX_SEASONS,
+  getTournamentMatrix,
+} from "@/lib/data/tournament-matrix";
 
 export const metadata = {
   title: "Tournament Matrix · FDF Box Score",
   description:
-    "Week-by-week position finishes across the 2025 NFL season for every player on the FDF roster. Avg finish, best, top-12 rate, weekly points, and bracket counts.",
+    "Week-by-week position finishes for every player on the FDF roster, by NFL season. Avg finish, best, TP rate, weekly points, and bracket counts.",
 };
 
-// Static — the JSON is bundled and only changes when the build
-// script refreshes data/tournament-matrix.json.
-export const dynamic = "force-static";
+// Renders per request because the season comes from the query string.
+// Both seasons are bundled JSON, so this is cheap.
 
-export default function TournamentMatrixPage() {
-  const data = getTournamentMatrix();
-  const weeksOrdered = (data as { weeksOrdered?: number[] }).weeksOrdered
+export default async function TournamentMatrixPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const requested = Number((await searchParams).season);
+  const season = MATRIX_SEASONS.includes(requested) ? requested : DEFAULT_MATRIX_SEASON;
+  const data = getTournamentMatrix(season);
+  const weeksOrdered = data.weeksOrdered
     ?? Array.from({ length: data.weeks }, (_, i) => i + 1);
+  // A season still being played is captured partway through; say so.
+  const inProgress = !!data.capturedAt;
 
-  // Season leaders for the stat strip. Require at least 8 games
-  // played for rate-based stats (TP rate, avg points) so a single
-  // hot week from an injured player can't claim the title. Counting
-  // stats (#1 finishes) have no minimum since they're already
-  // accumulation-based and self-limiting.
-  const MIN_GAMES_FOR_RATE = 8;
+  // Season leaders for the stat strip. Rate-based stats (TP rate, avg
+  // points) need a minimum number of games so one hot week from an
+  // injured player can't claim the title: 8 across a full season,
+  // scaled down early in a season so leaders still appear after a few
+  // weeks. Counting stats (#1 finishes) need no minimum.
+  const MIN_GAMES_FOR_RATE = Math.max(1, Math.min(8, Math.ceil(weeksOrdered.length * 0.6)));
   const allPlayers = (["QB","RB","WR","TE"] as const).flatMap((p) => data.byPosition[p]);
   const topTpRate = allPlayers
     .filter((p) => p.stats.tpRate != null && p.stats.played >= MIN_GAMES_FOR_RATE)
@@ -95,8 +106,15 @@ export default function TournamentMatrixPage() {
           style={{ padding: "clamp(20px, 4vw, 32px) clamp(18px, 4vw, 32px) clamp(18px, 4vw, 28px)" }}
         >
           <div className="flex flex-wrap items-center gap-2">
-            <Pill tone="brand">{data.season} Season</Pill>
-            <Pill tone="info">{totalRoster} Players · {data.weeks} Weeks</Pill>
+            <SeasonSwitch current={season} />
+            <Pill tone="info">
+              {totalRoster} Players · {weeksOrdered.length} {weeksOrdered.length === 1 ? "Week" : "Weeks"}
+            </Pill>
+            {inProgress ? (
+              <Pill tone="gain">
+                In progress · through Week {weeksOrdered[weeksOrdered.length - 1]}
+              </Pill>
+            ) : null}
           </div>
           <h1
             className="m-0 text-[var(--color-text)]"
@@ -112,7 +130,8 @@ export default function TournamentMatrixPage() {
             {data.season} FDF Rankings Matrix
           </h1>
           <p className="m-0 max-w-[80ch] text-[var(--color-text-muted)]" style={{ fontSize: "15px" }}>
-            Contains weekly stats and tournament rankings from the {data.season} NFL regular season.
+            Contains weekly stats and tournament rankings from the {data.season} NFL regular season
+            {inProgress ? ", updated as each week's tournament completes" : ""}.
             Each cell shows the player&apos;s rank within their position that week, with fantasy points scored underneath.
             Switch positions or sort by season-long aggregates to compare consistency.
           </p>
@@ -149,6 +168,7 @@ export default function TournamentMatrixPage() {
         <Card variant="press" padded={false}>
           <TournamentMatrix
             byPosition={data.byPosition}
+            key={data.season}
             weeksOrdered={weeksOrdered}
             season={data.season}
           />
@@ -296,6 +316,46 @@ function StatCell({
           {sub}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+// Season tabs. Links rather than client state so each season has a URL
+// that can be shared and bookmarked.
+function SeasonSwitch({ current }: { current: number }) {
+  return (
+    <div
+      className="inline-flex rounded-[var(--r-8)] border border-[var(--color-line)] p-[2px]"
+      style={{ background: "var(--color-stadium)" }}
+      role="tablist"
+      aria-label="Season"
+    >
+      {MATRIX_SEASONS.map((y) => {
+        const active = y === current;
+        return (
+          <Link
+            key={y}
+            href={y === DEFAULT_MATRIX_SEASON ? "/tournament-matrix" : `/tournament-matrix?season=${y}`}
+            role="tab"
+            aria-selected={active}
+            className={
+              active
+                ? "rounded-[6px] px-3 py-1 text-[var(--color-text)] transition-colors"
+                : "rounded-[6px] px-3 py-1 text-[var(--color-text-dim)] transition-colors hover:text-[var(--color-text-muted)]"
+            }
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 10.5,
+              fontWeight: 700,
+              letterSpacing: "0.14em",
+              background: active ? "var(--accent-tint)" : "transparent",
+              border: active ? "1px solid var(--accent-line)" : "1px solid transparent",
+            }}
+          >
+            {y} SEASON
+          </Link>
+        );
+      })}
     </div>
   );
 }
