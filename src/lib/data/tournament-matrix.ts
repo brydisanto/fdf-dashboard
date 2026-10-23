@@ -23,6 +23,9 @@ export interface WeekFinish {
   // Sourced directly from the upstream `earnedTP` field — we
   // never recompute this from rank so we always match FDF.
   earnedTP: boolean;
+  // TP won that week, from the same series as the TP chart on each
+  // Sport.fun player page. Present for seasons captured with it (2026).
+  tp?: number;
 }
 
 export interface PlayerSeason {
@@ -42,6 +45,7 @@ export interface PlayerSeason {
     thirds: number;
     fourths: number;
     fifths: number;
+    tpWon?: number;           // TP won across the season's captured weeks
   };
 }
 

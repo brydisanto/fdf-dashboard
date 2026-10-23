@@ -68,6 +68,9 @@ async function main() {
   );
   const roster = await loadRoster();
   const weeksOrdered = capture.weeks.map((w) => w.week);
+  // TP won per player per week (see the capture's _tpNote). Optional so
+  // a capture without it still builds; the page hides the column then.
+  const tpByWeek = capture.tpByWeek ?? null;
 
   // tokenId → { pos, byWeek: Map(week → {rank, points, earnedTP}) }
   const players = new Map();
@@ -94,13 +97,16 @@ async function main() {
     const weeks = weeksOrdered.map((w) => ({
       week: w,
       ...(p.byWeek.get(w) ?? { rank: null, points: null, earnedTP: false }),
+      ...(tpByWeek ? { tp: tpByWeek[tid]?.[w] ?? 0 } : {}),
     }));
+    const stats = seasonStats(weeks);
+    if (tpByWeek) stats.tpWon = weeks.reduce((a, x) => a + (x.tp ?? 0), 0);
     byPosition[p.pos].push({
       playerId: r.id,
       displayName: r.displayName,
       team: r.team,
       weeks,
-      stats: seasonStats(weeks),
+      stats,
     });
   }
   for (const pos of POSITIONS) {
@@ -119,8 +125,18 @@ async function main() {
     scoring: "fdf",
     matched,
     unmatched: [...unmatched],
+    hasTP: !!tpByWeek,
     byPosition,
   };
+
+  // Sanity: TP is credited to exactly the placements flagged as TP.
+  if (tpByWeek) {
+    let off = 0;
+    for (const pos of POSITIONS) for (const pl of byPosition[pos]) for (const w of pl.weeks) {
+      if ((w.tp > 0) !== w.earnedTP) off++;
+    }
+    if (off) console.error(`  warning: ${off} player-weeks where TP won and the TP flag disagree`);
+  }
 
   // Sanity: every completed week pays exactly 3 + 5 + 5 + 3 placements.
   for (const w of weeksOrdered) {
@@ -135,6 +151,7 @@ async function main() {
       unmatched: snapshot.unmatched,
       counts: Object.fromEntries(POSITIONS.map((p) => [p, byPosition[p].length])),
       topRB: byPosition.RB.slice(0, 2).map((p) => ({ name: p.displayName, ...p.stats })),
+      topTP: POSITIONS.flatMap((p) => byPosition[p]).sort((a, b) => (b.stats.tpWon ?? 0) - (a.stats.tpWon ?? 0)).slice(0, 5).map((p) => `${p.displayName} ${p.stats.tpWon}`),
     }, null, 2));
     return;
   }

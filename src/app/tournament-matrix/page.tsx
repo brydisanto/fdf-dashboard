@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Card, Pill } from "@/components/ui";
 import { TournamentMatrix } from "@/components/TournamentMatrix";
+import { getPlayers } from "@/lib/data";
 import {
   DEFAULT_MATRIX_SEASON,
   MATRIX_SEASONS,
@@ -25,6 +26,14 @@ export default async function TournamentMatrixPage({
   const requested = Number((await searchParams).season);
   const season = MATRIX_SEASONS.includes(requested) ? requested : DEFAULT_MATRIX_SEASON;
   const data = getTournamentMatrix(season);
+  // Current share prices for the TP/$ column. Only needed for a season
+  // with TP captured; skip the fetch otherwise. If prices can't be read,
+  // the column shows dashes rather than failing the page.
+  const hasTP = (["QB", "RB", "WR", "TE"] as const).some((pos) =>
+    data.byPosition[pos].some((x) => x.stats.tpWon != null));
+  const prices: Record<string, number> = hasTP
+    ? Object.fromEntries((await getPlayers().catch(() => [])).map((pl) => [pl.id, pl.priceUsd]))
+    : {};
   const weeksOrdered = data.weeksOrdered
     ?? Array.from({ length: data.weeks }, (_, i) => i + 1);
   // A season still being played is captured partway through; say so.
@@ -171,6 +180,7 @@ export default async function TournamentMatrixPage({
             key={data.season}
             weeksOrdered={weeksOrdered}
             season={data.season}
+            prices={prices}
           />
         </Card>
       </div>
