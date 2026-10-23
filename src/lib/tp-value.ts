@@ -22,6 +22,6 @@ export function tpPer100(
 // below 100, whole numbers to 999, then #.#K so the column stays narrow.
 export function fmtPer100(n: number | null | undefined): string {
   if (n == null || n <= 0) return "—";
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return n >= 100 ? Math.round(n).toString() : n.toFixed(1);
 }
