@@ -301,7 +301,7 @@ export function TournamentMatrix({
                           padding: "6px 8px",
                           fontFamily: "var(--font-mono)",
                           fontSize: "12px",
-                          fontWeight: tone ? 700 : 400,
+                          fontWeight: tone && tone.bg !== "transparent" ? 700 : 400,
                           fontVariantNumeric: "tabular-nums",
                           color: tone?.fg ?? "var(--color-text-dim)",
                           background: tone?.bg ?? "transparent",
@@ -339,18 +339,20 @@ export function TournamentMatrix({
 }
 
 // Green ramp for TP/$100, matching the weekly TP cells: the best value
-// at the position gets the lime #1 treatment, others fade with their
-// share of it. Square root so mid-pack values still show some tint
-// (the distribution is skewed by a few standouts).
+// at the position gets the lime #1 treatment. Values under a third of
+// the best stay plain, and the fill grows faster than linearly above
+// that, so only genuine standouts light up.
 function valueTone(v: number | null, max: number): { fg: string; bg: string; ring: string } | null {
   if (v == null || !(max > 0)) return null;
-  const t = Math.sqrt(Math.min(1, v / max));
-  const hue = 145 - 15 * t;                      // 145 green → 130 lime at the top
-  const pct = (lo: number, hi: number) => (lo + (hi - lo) * t).toFixed(1);
+  const ratio = Math.min(1, v / max);
+  if (ratio < 1 / 3) return { fg: "var(--color-text-muted)", bg: "transparent", ring: "transparent" };
+  const t = Math.pow((ratio - 1 / 3) * 1.5, 1.6);   // 0 at a third of the best, 1 at the best
+  const hue = (145 - 15 * t).toFixed(0);            // 145 green to 130 lime at the top
+  const pct = (lo: number, hi: number) => (lo + (hi - lo) * t).toFixed(2);
   return {
-    fg: `oklch(${pct(0.70, 0.88)} ${pct(0.10, 0.18)} ${hue.toFixed(0)})`,
-    bg: `color-mix(in oklab, oklch(0.78 0.19 ${hue.toFixed(0)}) ${pct(3, 22)}%, transparent)`,
-    ring: `color-mix(in oklab, oklch(0.78 0.19 ${hue.toFixed(0)}) ${pct(12, 55)}%, transparent)`,
+    fg: `oklch(${pct(0.76, 0.90)} ${pct(0.08, 0.19)} ${hue})`,
+    bg: `color-mix(in oklab, oklch(0.80 0.20 ${hue}) ${pct(0, 26)}%, transparent)`,
+    ring: `color-mix(in oklab, oklch(0.80 0.20 ${hue}) ${pct(6, 60)}%, transparent)`,
   };
 }
 
