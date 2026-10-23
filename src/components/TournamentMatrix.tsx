@@ -9,7 +9,7 @@ import { PlayerStatusBadge } from "./PlayerStatusBadge";
 import type { Position, PlayerSeason } from "@/lib/data/tournament-matrix";
 
 type SortKey =
-  | "name" | "avg" | "best" | "tpRate" | "avgPoints" | "tpWon" | "tpPerDollar"
+  | "name" | "avg" | "best" | "tpRate" | "avgPoints" | "tpWon" | "tpPer100"
   | "firsts" | "seconds" | "thirds" | "fourths" | "fifths";
 
 const POSITIONS: Position[] = ["QB", "RB", "WR", "TE"];
@@ -95,21 +95,25 @@ export function TournamentMatrix({
   byPosition,
   weeksOrdered,
   season,
-  prices = {},
+  marketCaps = {},
 }: {
   byPosition: Record<Position, PlayerSeason[]>;
   weeksOrdered: number[];
   season: number;
-  prices?: Record<string, number>;   // current share price by player id
+  marketCaps?: Record<string, number>;   // price × circulating shares, by player id
 }) {
   // TP won is only captured for seasons pulled from Sport.fun (2026);
   // hide the column rather than show a wall of dashes for 2025.
   const showTP = POSITIONS.some((p) => byPosition[p].some((x) => x.stats.tpWon != null));
-  // TP won per dollar of one share at today's price. A value lens, so it
-  // needs both inputs; a player with no TP or no live price gets null.
-  const tpPerDollar = (x: PlayerSeason): number | null => {
-    const price = prices[x.playerId];
-    return x.stats.tpWon && price > 0 ? x.stats.tpWon / price : null;
+  // TP per $100 invested: the TP a $100 stake would have captured this
+  // season if a player's TP is shared across all circulating shares.
+  // $100 buys 100 / marketCap of the supply, so its slice is
+  // tpWon × 100 / marketCap. Dividing by market cap rather than the
+  // share price is what makes players with very different share counts
+  // comparable. Null without both inputs.
+  const tpPer100 = (x: PlayerSeason): number | null => {
+    const cap = marketCaps[x.playerId];
+    return x.stats.tpWon && cap > 0 ? (x.stats.tpWon * 100) / cap : null;
   };
   const [pos, setPos] = useState<Position>("RB");
   const [sortKey, setSortKey] = useState<SortKey>("avg");
@@ -129,9 +133,9 @@ export function TournamentMatrix({
       } else if (sortKey === "tpWon") {
         av = a.stats.tpWon ?? -1;
         bv = b.stats.tpWon ?? -1;
-      } else if (sortKey === "tpPerDollar") {
-        av = tpPerDollar(a) ?? -1;
-        bv = tpPerDollar(b) ?? -1;
+      } else if (sortKey === "tpPer100") {
+        av = tpPer100(a) ?? -1;
+        bv = tpPer100(b) ?? -1;
       } else if (sortKey === "avg" || sortKey === "best" || sortKey === "avgPoints") {
         av = a.stats[sortKey] ?? 9999;
         bv = b.stats[sortKey] ?? 9999;
@@ -145,9 +149,9 @@ export function TournamentMatrix({
       return sortDir === "asc" ? cmp : -cmp;
     });
     return list;
-    // tpPerDollar reads `prices`, which is fixed for the page's lifetime.
+    // tpPer100 reads `marketCaps`, which is fixed for the page's lifetime.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [byPosition, pos, sortKey, sortDir, prices]);
+  }, [byPosition, pos, sortKey, sortDir, marketCaps]);
 
   const onSort = (key: SortKey, defaultDir: "asc" | "desc" = "asc") => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -170,12 +174,12 @@ export function TournamentMatrix({
         <span className="mx-2 text-[var(--color-line-strong)]">·</span>
         <SegLabel>SORT</SegLabel>
         <Seg
-          options={showTP ? ["AVG", "BEST", "TP%", "TP WON", "TP/$", "POINTS", "1STS"] : ["AVG", "BEST", "TP%", "POINTS", "1STS"]}
+          options={showTP ? ["AVG", "BEST", "TP%", "TP WON", "TP/$100", "POINTS", "1STS"] : ["AVG", "BEST", "TP%", "POINTS", "1STS"]}
           value={sortKey === "avg" ? "AVG"
             : sortKey === "best" ? "BEST"
             : sortKey === "tpRate" ? "TP%"
             : sortKey === "tpWon" ? "TP WON"
-            : sortKey === "tpPerDollar" ? "TP/$"
+            : sortKey === "tpPer100" ? "TP/$100"
             : sortKey === "avgPoints" ? "POINTS"
             : sortKey === "firsts" ? "1STS"
             : "AVG"}
@@ -184,7 +188,7 @@ export function TournamentMatrix({
             else if (v === "BEST") onSort("best", "asc");
             else if (v === "TP%") onSort("tpRate", "desc");
             else if (v === "TP WON") onSort("tpWon", "desc");
-            else if (v === "TP/$") onSort("tpPerDollar", "desc");
+            else if (v === "TP/$100") onSort("tpPer100", "desc");
             else if (v === "POINTS") onSort("avgPoints", "desc");
             else if (v === "1STS") onSort("firsts", "desc");
           }}
@@ -223,7 +227,7 @@ export function TournamentMatrix({
                 <Th onClick={() => onSort("tpWon", "desc")} active={sortKey === "tpWon"} dir={sortDir} width={84}>TP WON</Th>
               ) : null}
               {showTP ? (
-                <Th onClick={() => onSort("tpPerDollar", "desc")} active={sortKey === "tpPerDollar"} dir={sortDir} width={84}>TP/$</Th>
+                <Th onClick={() => onSort("tpPer100", "desc")} active={sortKey === "tpPer100"} dir={sortDir} width={84}>TP/$100</Th>
               ) : null}
               <Th onClick={() => onSort("avgPoints", "desc")} active={sortKey === "avgPoints"} dir={sortDir} width={80}>POINTS</Th>
               <ThDivider />
@@ -290,11 +294,11 @@ export function TournamentMatrix({
                     <td
                       className="text-center"
                       style={{ padding: "6px 8px", fontFamily: "var(--font-mono)", fontSize: "12px", fontVariantNumeric: "tabular-nums", color: "var(--color-text)" }}
-                      title={tpPerDollar(p) != null
-                        ? `${Math.round(p.stats.tpWon ?? 0).toLocaleString("en-US")} TP ÷ $${prices[p.playerId].toFixed(5)} per share`
-                        : "Needs TP won and a current share price"}
+                      title={tpPer100(p) != null
+                        ? `${Math.round(p.stats.tpWon ?? 0).toLocaleString("en-US")} TP ÷ $${Math.round(marketCaps[p.playerId]).toLocaleString("en-US")} market cap × 100`
+                        : "Needs TP won and a current market cap"}
                     >
-                      {fmtTP(tpPerDollar(p) ?? undefined)}
+                      {fmtPer100(tpPer100(p))}
                     </td>
                   ) : null}
                   <NumCell>{fmtAvg(p.stats.avgPoints)}</NumCell>
@@ -619,4 +623,10 @@ function fmtTP(n: number | undefined): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2).replace(/\.?0+$/, "")}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
   return Math.round(n).toString();
+}
+
+// TP per $100: whole numbers once large, one decimal below 100.
+function fmtPer100(n: number | null): string {
+  if (n == null || n <= 0) return "—";
+  return n >= 100 ? Math.round(n).toLocaleString("en-US") : n.toFixed(1);
 }
