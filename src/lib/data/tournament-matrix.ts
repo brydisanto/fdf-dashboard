@@ -23,12 +23,18 @@ export interface WeekFinish {
   // Sourced directly from the upstream `earnedTP` field — we
   // never recompute this from rank so we always match FDF.
   earnedTP: boolean;
+  // TP won that week, from the same series as the TP chart on each
+  // Sport.fun player page. Present for seasons captured with it (2026).
+  tp?: number;
 }
 
 export interface PlayerSeason {
   playerId: string;
   displayName: string;
   team: string;
+  // Shares currently active (entered) for this player. TP is split only
+  // among these, so they set the TP-per-$100 denominator. Snapshot.
+  activeShares?: number;
   weeks: WeekFinish[];
   stats: {
     played: number;
@@ -42,6 +48,7 @@ export interface PlayerSeason {
     thirds: number;
     fourths: number;
     fifths: number;
+    tpWon?: number;           // TP won across the season's captured weeks
   };
 }
 
@@ -51,6 +58,7 @@ export interface TournamentMatrix {
   weeksOrdered?: number[];
   // Present for a season captured while it is still being played.
   capturedAt?: string;
+  activeSharesAt?: string | null;
   generatedAt: string;
   scoring: string;
   source: string;
