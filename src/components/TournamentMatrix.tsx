@@ -225,7 +225,10 @@ export function TournamentMatrix({
                 <Th onClick={() => onSort("tpWon", "desc")} active={sortKey === "tpWon"} dir={sortDir} width={84}>TP WON</Th>
               ) : null}
               {showTP ? (
-                <Th onClick={() => onSort("tpPer100", "desc")} active={sortKey === "tpPer100"} dir={sortDir} width={64}>TP/$100</Th>
+                <Th onClick={() => onSort("tpPer100", "desc")} active={sortKey === "tpPer100"} dir={sortDir} width={56} className="!px-1.5">
+                  {/* Tighter tracking than other headers: the label, not the values, set this column's width. */}
+                  <span style={{ letterSpacing: "0.04em" }}>TP/$100</span>
+                </Th>
               ) : null}
               <ThDivider />
               <Th onClick={() => onSort("firsts", "desc")}   active={sortKey === "firsts"}   dir={sortDir} width={48}>1ST</Th>
