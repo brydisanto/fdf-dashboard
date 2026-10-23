@@ -3,7 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import { Card, Pill } from "@/components/ui";
 import { TournamentMatrix } from "@/components/TournamentMatrix";
 import { getPlayers } from "@/lib/data";
-import { tpPer100 } from "@/lib/tp-value";
+import { tpPer100, fmtPer100 } from "@/lib/tp-value";
 import {
   DEFAULT_MATRIX_SEASON,
   MATRIX_SEASONS,
@@ -191,7 +191,7 @@ export default async function TournamentMatrixPage({
         {hasTP ? (
           <LeaderCell
             label="Best Value · TP/$100"
-            value={bestValue ? Math.round(valueOf(bestValue) ?? 0).toLocaleString("en-US") : "—"}
+            value={fmtPer100(bestValue ? valueOf(bestValue) : null)}
             leader={abbreviateName(bestValue?.displayName ?? "")}
           />
         ) : null}

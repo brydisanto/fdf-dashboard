@@ -7,7 +7,7 @@ import { PLAYERS_BY_ID } from "@/lib/data/players";
 import { PlayerAvatar } from "./PlayerAvatar";
 import { PlayerStatusBadge } from "./PlayerStatusBadge";
 import type { Position, PlayerSeason } from "@/lib/data/tournament-matrix";
-import { tpPer100 as tpPer100Of } from "@/lib/tp-value";
+import { tpPer100 as tpPer100Of, fmtPer100 } from "@/lib/tp-value";
 
 type SortKey =
   | "name" | "avg" | "best" | "tpRate" | "avgPoints" | "tpWon" | "tpPer100"
@@ -225,7 +225,7 @@ export function TournamentMatrix({
                 <Th onClick={() => onSort("tpWon", "desc")} active={sortKey === "tpWon"} dir={sortDir} width={84}>TP WON</Th>
               ) : null}
               {showTP ? (
-                <Th onClick={() => onSort("tpPer100", "desc")} active={sortKey === "tpPer100"} dir={sortDir} width={84}>TP/$100</Th>
+                <Th onClick={() => onSort("tpPer100", "desc")} active={sortKey === "tpPer100"} dir={sortDir} width={64}>TP/$100</Th>
               ) : null}
               <ThDivider />
               <Th onClick={() => onSort("firsts", "desc")}   active={sortKey === "firsts"}   dir={sortDir} width={48}>1ST</Th>
@@ -651,8 +651,3 @@ function fmtTP(n: number | undefined): string {
   return Math.round(n).toString();
 }
 
-// TP per $100: whole numbers once large, one decimal below 100.
-function fmtPer100(n: number | null): string {
-  if (n == null || n <= 0) return "—";
-  return n >= 100 ? Math.round(n).toLocaleString("en-US") : n.toFixed(1);
-}

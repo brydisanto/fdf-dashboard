@@ -17,3 +17,11 @@ export function tpPer100(
   if (!tpWon || !price || price <= 0 || !activeShares) return null;
   return (tpWon * 100) / (price * activeShares);
 }
+
+// Compact display shared by the column and the leader card: one decimal
+// below 100, whole numbers to 999, then #.#K so the column stays narrow.
+export function fmtPer100(n: number | null | undefined): string {
+  if (n == null || n <= 0) return "—";
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  return n >= 100 ? Math.round(n).toString() : n.toFixed(1);
+}
