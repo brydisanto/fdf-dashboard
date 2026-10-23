@@ -71,6 +71,9 @@ async function main() {
   // TP won per player per week (see the capture's _tpNote). Optional so
   // a capture without it still builds; the page hides the column then.
   const tpByWeek = capture.tpByWeek ?? null;
+  // Active shares snapshot: TP is split only among active shares, so this
+  // is the denominator for TP per $100 spent (see the capture's _activeNote).
+  const activeShares = capture.activeShares ?? {};
 
   // tokenId → { pos, byWeek: Map(week → {rank, points, earnedTP}) }
   const players = new Map();
@@ -105,6 +108,7 @@ async function main() {
       playerId: r.id,
       displayName: r.displayName,
       team: r.team,
+      ...(activeShares[tid] ? { activeShares: activeShares[tid] } : {}),
       weeks,
       stats,
     });
@@ -126,6 +130,7 @@ async function main() {
     matched,
     unmatched: [...unmatched],
     hasTP: !!tpByWeek,
+    activeSharesAt: capture.activeSharesAt ?? null,
     byPosition,
   };
 

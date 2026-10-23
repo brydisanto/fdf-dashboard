@@ -7,6 +7,7 @@ import { PLAYERS_BY_ID } from "@/lib/data/players";
 import { PlayerAvatar } from "./PlayerAvatar";
 import { PlayerStatusBadge } from "./PlayerStatusBadge";
 import type { Position, PlayerSeason } from "@/lib/data/tournament-matrix";
+import { tpPer100 as tpPer100Of } from "@/lib/tp-value";
 
 type SortKey =
   | "name" | "avg" | "best" | "tpRate" | "avgPoints" | "tpWon" | "tpPer100"
@@ -95,27 +96,23 @@ export function TournamentMatrix({
   byPosition,
   weeksOrdered,
   season,
-  marketCaps = {},
+  prices = {},
 }: {
   byPosition: Record<Position, PlayerSeason[]>;
   weeksOrdered: number[];
   season: number;
-  marketCaps?: Record<string, number>;   // price × circulating shares, by player id
+  prices?: Record<string, number>;   // current share price by player id
 }) {
   // TP won is only captured for seasons pulled from Sport.fun (2026);
   // hide the column rather than show a wall of dashes for 2025.
   const showTP = POSITIONS.some((p) => byPosition[p].some((x) => x.stats.tpWon != null));
-  // TP per $100 invested: the TP a $100 stake would have captured this
-  // season if a player's TP is shared across all circulating shares.
-  // $100 buys 100 / marketCap of the supply, so its slice is
-  // tpWon × 100 / marketCap. Dividing by market cap rather than the
-  // share price is what makes players with very different share counts
-  // comparable. Null without both inputs.
-  const tpPer100 = (x: PlayerSeason): number | null => {
-    const cap = marketCaps[x.playerId];
-    return x.stats.tpWon && cap > 0 ? (x.stats.tpWon * 100) / cap : null;
-  };
+  // TP per $100 spent (see lib/tp-value): split among active shares.
+  const tpPer100 = (x: PlayerSeason): number | null =>
+    tpPer100Of(x.stats.tpWon, prices[x.playerId], x.activeShares);
   const [pos, setPos] = useState<Position>("RB");
+  // Gradient on TP/$100 is relative to the best value at this position,
+  // so the shading reads the same whichever position is selected.
+  const maxPer100 = Math.max(0, ...byPosition[pos].map((x) => tpPer100(x) ?? 0));
   const [sortKey, setSortKey] = useState<SortKey>("avg");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -149,9 +146,9 @@ export function TournamentMatrix({
       return sortDir === "asc" ? cmp : -cmp;
     });
     return list;
-    // tpPer100 reads `marketCaps`, which is fixed for the page's lifetime.
+    // tpPer100 reads `prices`, which is fixed for the page's lifetime.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [byPosition, pos, sortKey, sortDir, marketCaps]);
+  }, [byPosition, pos, sortKey, sortDir, prices]);
 
   const onSort = (key: SortKey, defaultDir: "asc" | "desc" = "asc") => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -174,7 +171,7 @@ export function TournamentMatrix({
         <span className="mx-2 text-[var(--color-line-strong)]">·</span>
         <SegLabel>SORT</SegLabel>
         <Seg
-          options={showTP ? ["AVG", "BEST", "TP%", "TP WON", "TP/$100", "POINTS", "1STS"] : ["AVG", "BEST", "TP%", "POINTS", "1STS"]}
+          options={showTP ? ["AVG", "BEST", "POINTS", "TP%", "TP WON", "TP/$100", "1STS"] : ["AVG", "BEST", "POINTS", "TP%", "1STS"]}
           value={sortKey === "avg" ? "AVG"
             : sortKey === "best" ? "BEST"
             : sortKey === "tpRate" ? "TP%"
@@ -222,6 +219,7 @@ export function TournamentMatrix({
               <ThDivider />
               <Th onClick={() => onSort("avg", "asc")}       active={sortKey === "avg"}       dir={sortDir} width={64}>AVG</Th>
               <Th onClick={() => onSort("best", "asc")}      active={sortKey === "best"}      dir={sortDir} width={64}>BEST</Th>
+              <Th onClick={() => onSort("avgPoints", "desc")} active={sortKey === "avgPoints"} dir={sortDir} width={80}>POINTS</Th>
               <Th onClick={() => onSort("tpRate", "desc")}   active={sortKey === "tpRate"}    dir={sortDir} width={70}>TP%</Th>
               {showTP ? (
                 <Th onClick={() => onSort("tpWon", "desc")} active={sortKey === "tpWon"} dir={sortDir} width={84}>TP WON</Th>
@@ -229,7 +227,6 @@ export function TournamentMatrix({
               {showTP ? (
                 <Th onClick={() => onSort("tpPer100", "desc")} active={sortKey === "tpPer100"} dir={sortDir} width={84}>TP/$100</Th>
               ) : null}
-              <Th onClick={() => onSort("avgPoints", "desc")} active={sortKey === "avgPoints"} dir={sortDir} width={80}>POINTS</Th>
               <ThDivider />
               <Th onClick={() => onSort("firsts", "desc")}   active={sortKey === "firsts"}   dir={sortDir} width={48}>1ST</Th>
               <Th onClick={() => onSort("seconds", "desc")}  active={sortKey === "seconds"}  dir={sortDir} width={48}>2ND</Th>
@@ -288,20 +285,33 @@ export function TournamentMatrix({
                   {/* Rollups */}
                   <NumCell><strong>{fmtAvg(p.stats.avg)}</strong></NumCell>
                   <NumCell>{p.stats.best ?? "—"}</NumCell>
+                  <NumCell>{fmtAvg(p.stats.avgPoints)}</NumCell>
                   <NumCell>{fmtPct(p.stats.tpRate)}</NumCell>
                   {showTP ? <NumCell>{fmtTP(p.stats.tpWon)}</NumCell> : null}
-                  {showTP ? (
-                    <td
-                      className="text-center"
-                      style={{ padding: "6px 8px", fontFamily: "var(--font-mono)", fontSize: "12px", fontVariantNumeric: "tabular-nums", color: "var(--color-text)" }}
-                      title={tpPer100(p) != null
-                        ? `${Math.round(p.stats.tpWon ?? 0).toLocaleString("en-US")} TP ÷ $${Math.round(marketCaps[p.playerId]).toLocaleString("en-US")} market cap × 100`
-                        : "Needs TP won and a current market cap"}
-                    >
-                      {fmtPer100(tpPer100(p))}
-                    </td>
-                  ) : null}
-                  <NumCell>{fmtAvg(p.stats.avgPoints)}</NumCell>
+                  {showTP ? (() => {
+                    const v = tpPer100(p);
+                    const tone = valueTone(v, maxPer100);
+                    return (
+                      <td
+                        className="text-center"
+                        style={{
+                          padding: "6px 8px",
+                          fontFamily: "var(--font-mono)",
+                          fontSize: "12px",
+                          fontWeight: tone ? 700 : 400,
+                          fontVariantNumeric: "tabular-nums",
+                          color: tone?.fg ?? "var(--color-text-dim)",
+                          background: tone?.bg ?? "transparent",
+                          boxShadow: tone ? `inset 0 0 0 1px ${tone.ring}` : undefined,
+                        }}
+                        title={v != null
+                          ? `$100 buys ${Math.round(100 / prices[p.playerId]).toLocaleString("en-US")} shares of ${Math.round(p.activeShares ?? 0).toLocaleString("en-US")} active, earning that slice of ${Math.round(p.stats.tpWon ?? 0).toLocaleString("en-US")} TP`
+                          : "Needs TP won, a current price and active shares"}
+                      >
+                        {fmtPer100(v)}
+                      </td>
+                    );
+                  })() : null}
                   <TdDivider />
                   <CountCell n={p.stats.firsts} tier="gold" />
                   <CountCell n={p.stats.seconds} tier="silver" />
@@ -323,6 +333,22 @@ export function TournamentMatrix({
       </div>
     </div>
   );
+}
+
+// Green ramp for TP/$100, matching the weekly TP cells: the best value
+// at the position gets the lime #1 treatment, others fade with their
+// share of it. Square root so mid-pack values still show some tint
+// (the distribution is skewed by a few standouts).
+function valueTone(v: number | null, max: number): { fg: string; bg: string; ring: string } | null {
+  if (v == null || !(max > 0)) return null;
+  const t = Math.sqrt(Math.min(1, v / max));
+  const hue = 145 - 15 * t;                      // 145 green → 130 lime at the top
+  const pct = (lo: number, hi: number) => (lo + (hi - lo) * t).toFixed(1);
+  return {
+    fg: `oklch(${pct(0.70, 0.88)} ${pct(0.10, 0.18)} ${hue.toFixed(0)})`,
+    bg: `color-mix(in oklab, oklch(0.78 0.19 ${hue.toFixed(0)}) ${pct(3, 22)}%, transparent)`,
+    ring: `color-mix(in oklab, oklch(0.78 0.19 ${hue.toFixed(0)}) ${pct(12, 55)}%, transparent)`,
+  };
 }
 
 // ── Cell components ─────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import { Card, Pill } from "@/components/ui";
 import { TournamentMatrix } from "@/components/TournamentMatrix";
 import { getPlayers } from "@/lib/data";
+import { tpPer100 } from "@/lib/tp-value";
 import {
   DEFAULT_MATRIX_SEASON,
   MATRIX_SEASONS,
@@ -26,16 +27,13 @@ export default async function TournamentMatrixPage({
   const requested = Number((await searchParams).season);
   const season = MATRIX_SEASONS.includes(requested) ? requested : DEFAULT_MATRIX_SEASON;
   const data = getTournamentMatrix(season);
-  // Current market caps (price × circulating shares) for the TP per $100
-  // column. Only needed for a season with TP captured; skip the fetch
-  // otherwise. If they can't be read, the column shows dashes rather
-  // than failing the page.
+  // Current share prices for the TP per $100 spent column. Only needed
+  // for a season with TP captured; skip the fetch otherwise. If prices
+  // can't be read, the column shows dashes rather than failing the page.
   const hasTP = (["QB", "RB", "WR", "TE"] as const).some((pos) =>
     data.byPosition[pos].some((x) => x.stats.tpWon != null));
-  const marketCaps: Record<string, number> = hasTP
-    ? Object.fromEntries(
-        (await getPlayers().catch(() => [])).map((pl) => [pl.id, pl.priceUsd * pl.circulatingSupply]),
-      )
+  const prices: Record<string, number> = hasTP
+    ? Object.fromEntries((await getPlayers().catch(() => [])).map((pl) => [pl.id, pl.priceUsd]))
     : {};
   const weeksOrdered = data.weeksOrdered
     ?? Array.from({ length: data.weeks }, (_, i) => i + 1);
@@ -58,6 +56,15 @@ export default async function TournamentMatrixPage({
   const topAvgPoints = allPlayers
     .filter((p) => p.stats.avgPoints != null && p.stats.played >= MIN_GAMES_FOR_RATE)
     .sort((a, b) => (b.stats.avgPoints ?? 0) - (a.stats.avgPoints ?? 0))[0];
+  // TP leaders, for seasons with TP captured. No games minimum: both are
+  // season totals, so a single big week is a real result, not noise.
+  const topTpWon = hasTP
+    ? allPlayers.filter((p) => (p.stats.tpWon ?? 0) > 0).sort((a, b) => (b.stats.tpWon ?? 0) - (a.stats.tpWon ?? 0))[0]
+    : undefined;
+  const valueOf = (p: (typeof allPlayers)[number]) => tpPer100(p.stats.tpWon, prices[p.playerId], p.activeShares);
+  const bestValue = hasTP
+    ? allPlayers.filter((p) => valueOf(p) != null).sort((a, b) => (valueOf(b) ?? 0) - (valueOf(a) ?? 0))[0]
+    : undefined;
 
   // "Christian McCaffrey" -> "C. McCaffrey". Strips Jr/Sr/II/III
   // suffixes since they don't add information in this compact form.
@@ -150,10 +157,11 @@ export default async function TournamentMatrixPage({
         </div>
       </div>
 
-      {/* Stat strip: roster size + 3 season-leader cells.
-          Collapses to 1 col on mobile (cells are content-rich, so
-          even 2-col gets crowded), 2 on sm, 4 on lg+. */}
-      <div className="stat-strip mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Stat strip: roster size + season-leader cells. Seasons with TP
+          captured add Most TP Won and Best Value, which makes six cells,
+          so they lay out 3 + 3 rather than squeezing into one row.
+          Collapses to 1 col on mobile (cells are content-rich). */}
+      <div className={`stat-strip mt-4 grid grid-cols-1 sm:grid-cols-2 ${hasTP ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
         <StatCell
           label="Players Ranked"
           value={totalRoster.toString()}
@@ -173,6 +181,20 @@ export default async function TournamentMatrixPage({
           value={topAvgPoints?.stats.avgPoints != null ? `${topAvgPoints.stats.avgPoints.toFixed(1)}pts` : "—"}
           leader={abbreviateName(topAvgPoints?.displayName ?? "")}
         />
+        {hasTP ? (
+          <LeaderCell
+            label="Most TP Won"
+            value={topTpWon ? fmtCompactTP(topTpWon.stats.tpWon ?? 0) : "—"}
+            leader={abbreviateName(topTpWon?.displayName ?? "")}
+          />
+        ) : null}
+        {hasTP ? (
+          <LeaderCell
+            label="Best Value · TP/$100"
+            value={bestValue ? Math.round(valueOf(bestValue) ?? 0).toLocaleString("en-US") : "—"}
+            leader={abbreviateName(bestValue?.displayName ?? "")}
+          />
+        ) : null}
       </div>
 
       {/* Matrix */}
@@ -183,7 +205,7 @@ export default async function TournamentMatrixPage({
             key={data.season}
             weeksOrdered={weeksOrdered}
             season={data.season}
-            marketCaps={marketCaps}
+            prices={prices}
           />
         </Card>
       </div>
@@ -371,4 +393,11 @@ function SeasonSwitch({ current }: { current: number }) {
       })}
     </div>
   );
+}
+
+// "746500" -> "746.5K", matching the TP Won column.
+function fmtCompactTP(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2).replace(/\.?0+$/, "")}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  return Math.round(n).toString();
 }

@@ -32,6 +32,9 @@ export interface PlayerSeason {
   playerId: string;
   displayName: string;
   team: string;
+  // Shares currently active (entered) for this player. TP is split only
+  // among these, so they set the TP-per-$100 denominator. Snapshot.
+  activeShares?: number;
   weeks: WeekFinish[];
   stats: {
     played: number;
@@ -55,6 +58,7 @@ export interface TournamentMatrix {
   weeksOrdered?: number[];
   // Present for a season captured while it is still being played.
   capturedAt?: string;
+  activeSharesAt?: string | null;
   generatedAt: string;
   scoring: string;
   source: string;
