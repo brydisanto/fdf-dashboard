@@ -106,7 +106,7 @@ function SiteHeader() {
             </div>
           </div>
         </Link>
-        {/* Desktop nav — md+ */}
+        {/* Desktop nav, lg+ (10 links crowd the logo below that) */}
         <nav className="hidden lg:flex items-center gap-1 text-sm">
           <NavLink href="/">Overview</NavLink>
           <NavLink href="/#players">Players</NavLink>
