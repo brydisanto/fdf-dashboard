@@ -9,6 +9,7 @@ import { type CompositionSlice } from "@/components/CompositionPie";
 import { WalletHoldingsTable } from "@/components/WalletHoldingsTable";
 import { WalletTradesTable } from "@/components/WalletTradesTable";
 import { getWalletLabel } from "@/lib/data/wallet-labels";
+import { readWalletRegistry } from "@/lib/data/wallet-registry";
 import { fmtNum, fmtTimeAgo, fmtUsd, shortAddr } from "@/lib/format";
 
 export const revalidate = 30;
@@ -24,14 +25,22 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
   // 404 depending on which case the user pasted in. Internal
   // caches and the trade-feed map already key off lowercase.
   const address = rawAddress.toLowerCase();
-  const [profile, flow, fun, allTrades] = await Promise.all([
+  const [profile, flow, fun, allTrades, registry] = await Promise.all([
     getWalletPortfolio(address),
     getWalletFlow(address, 7),
     getWalletFunPosition(address),
     // Fetch a wider window so the NFL-only filter below still produces
     // a useful 30-row table for wallets that trade a lot of Soccer too.
     getWalletTrades(address, 100),
+    readWalletRegistry(),
   ]);
+  // Our own records first: the registry has every wallet's first NFL
+  // trade, and the newest trade is the real last activity. The profile's
+  // timestamps come from the upstream holdings call, which is often down
+  // (on-chain rows then stamp "now", which would read as active 1s ago).
+  const firstSeenAt = registry?.wallets[address]?.firstSeenAt || profile.firstSeenAt;
+  const lastTradeAt = allTrades.reduce((m, t) => Math.max(m, t.timestamp), 0);
+  const lastActiveAt = lastTradeAt || profile.lastActiveAt;
   // Hide Soccer activity from this table — wallet pages show NFL-only
   // trades to match the NFL-focused framing of the rest of the dashboard.
   const trades = allTrades.filter((t) => t.isNfl).slice(0, 30);
@@ -185,9 +194,9 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
                 color: "var(--color-text-dim)",
               }}
             >
-              <span>FIRST SEEN {profile.firstSeenAt ? fmtTimeAgo(profile.firstSeenAt) : "—"}</span>
+              <span>FIRST SEEN {firstSeenAt ? fmtTimeAgo(firstSeenAt) : "—"}</span>
               <span>·</span>
-              <span>LAST ACTIVE {profile.lastActiveAt ? fmtTimeAgo(profile.lastActiveAt) : "—"}</span>
+              <span>LAST ACTIVE {lastActiveAt ? fmtTimeAgo(lastActiveAt) : "—"}</span>
               {firstNflHoldAt > 0 ? (
                 <>
                   <span>·</span>
@@ -250,7 +259,7 @@ export default async function WalletPage(props: PageProps<"/wallet/[address]">) 
         />
         <StatCell
           label="Wallet Age"
-          value={profile.firstSeenAt ? fmtTimeAgo(profile.firstSeenAt).replace(" ago", "").toUpperCase() : "—"}
+          value={firstSeenAt ? fmtTimeAgo(firstSeenAt).replace(" ago", "").toUpperCase() : "—"}
           sub="FIRST SEEN"
         />
       </div>
