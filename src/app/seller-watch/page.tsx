@@ -6,6 +6,7 @@ import {
   FAST_EXIT_RATE,
   LARGE_HOLDER_USD,
   MIN_NET_SELL_USD,
+  SMALL_PLAYER_USD,
   type HeavySeller,
   type SellerWatchPlayer,
 } from "@/lib/data/seller-watch";
@@ -135,10 +136,12 @@ async function Body() {
   const fast = r.sellers.filter((s) => s.kind === "fast");
   const large = r.sellers.filter((s) => s.kind === "large");
   const atRisk = r.players.filter((p) => !p.tier).slice(0, AT_RISK_SHOWN);
-  const safe = [
-    ...r.players.filter((p) => p.tier === "safest").sort((a, b) => a.fastPct + a.largePct - (b.fastPct + b.largePct)),
-    ...r.players.filter((p) => p.tier === "steady").sort((a, b) => a.fastPct + a.largePct - (b.fastPct + b.largePct)),
-  ].slice(0, SAFE_SHOWN);
+  // Safest first, then steady; within a tier, least seller stock, best
+  // buying and price lead, and small players (one trade moves them) sink.
+  const safetyRank = (p: SellerWatchPlayer) =>
+    (p.tier === "safest" ? 0 : 100) + p.fastPct + p.largePct - p.netFlowPct * 0.5 - p.change7d * 0.2
+    + (p.marketCapUsd < SMALL_PLAYER_USD ? 30 : 0);
+  const safe = r.players.filter((p) => p.tier).sort((a, b) => safetyRank(a) - safetyRank(b)).slice(0, SAFE_SHOWN);
   const snapshot = r.activeSharesAt
     ? new Date(r.activeSharesAt).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
     : null;

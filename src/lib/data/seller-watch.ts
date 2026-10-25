@@ -29,6 +29,7 @@ const RECENT_MS = 3 * DAY;
 export const MIN_NET_SELL_USD = 500;
 export const FAST_EXIT_RATE = 0.08;          // ≥ 8% of the position sold in a week
 export const LARGE_HOLDER_USD = 50_000;      // slow sellers this big count as large holders
+export const SMALL_PLAYER_USD = 10_000;      // below this active market cap, one trade moves the price
 const HISTORY_WEEKS = 4;
 
 const SYSTEM_WALLETS = new Set([
@@ -257,6 +258,6 @@ function safeReasons(p: SellerWatchPlayer): string[] {
   if (p.netFlowPct > 0.5) r.push(`Net buying of ${round1(p.netFlowPct)}% of active shares this week`);
   if (p.change7d >= 3) r.push(`Up ${Math.round(p.change7d)}% this week`);
   if (p.buybackPct > 0) r.push(`Buyback wallet bought ${round1(p.buybackPct)}% of active shares this week`);
-  if (p.marketCapUsd > 0 && p.marketCapUsd < 10_000) r.push("Small player: a single trade can move it");
+  if (p.marketCapUsd > 0 && p.marketCapUsd < SMALL_PLAYER_USD) r.push("Small player: a single trade can move it");
   return r;
 }
