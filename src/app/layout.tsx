@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Big_Shoulders, JetBrains_Mono } from "next/font/google";
 import { GoogleAnalytics } from "@next/third-parties/google";
 import Link from "next/link";
-import { Flame } from "lucide-react";
 import { Suspense } from "react";
+import { DesktopNav } from "@/components/DesktopNav";
 import { MobileNav } from "@/components/MobileNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { TickerStrip } from "@/components/TickerStrip";
@@ -87,7 +87,7 @@ function SiteHeader() {
   return (
     <header className="sticky top-0 z-30 border-b border-[var(--color-line)] bg-[color-mix(in_oklab,var(--color-stadium)_85%,transparent)] backdrop-blur">
       <div className="relative mx-auto flex h-16 max-w-[var(--max-w)] items-center justify-between px-5 sm:px-8">
-        <Link href="/" className="flex items-center gap-3 group">
+        <Link href="/" className="flex shrink-0 items-center gap-3 group">
           <BrandMark />
           <div className="leading-none">
             <div
@@ -106,19 +106,9 @@ function SiteHeader() {
             </div>
           </div>
         </Link>
-        {/* Desktop nav — md+ */}
-        <nav className="hidden md:flex items-center gap-1 text-sm">
-          <NavLink href="/">Overview</NavLink>
-          <NavLink href="/#players">Players</NavLink>
-          <NavLink href="/#trades">Live Feed</NavLink>
-          <NavLink href="/scoring">Scoring</NavLink>
-          <NavLink href="/wallets">Top Wallets</NavLink>
-          <NavLink href="/new-wallets">New Wallets</NavLink>
-          <NavLink href="/buyback">Buyback</NavLink>
-          <NavLink href="/tournament-matrix">Matrix</NavLink>
-          <NavLink href="/on-fire" icon={<Flame className="h-3.5 w-3.5" strokeWidth={2} />}>
-            On Fire
-          </NavLink>
+        {/* Desktop nav, lg+ */}
+        <nav className="hidden lg:flex items-center gap-1 text-sm">
+          <DesktopNav />
           <span className="mx-1 h-5 w-px bg-[var(--color-line)]" aria-hidden />
           <ThemeToggle />
         </nav>
@@ -126,26 +116,6 @@ function SiteHeader() {
         <MobileNav />
       </div>
     </header>
-  );
-}
-
-function NavLink({
-  href,
-  icon,
-  children,
-}: {
-  href: string;
-  icon?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      className="inline-flex items-center gap-1.5 rounded-[var(--r-8)] px-3 py-1.5 text-[13px] font-bold text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bench)] transition-colors"
-    >
-      {icon}
-      <span>{children}</span>
-    </Link>
   );
 }
 

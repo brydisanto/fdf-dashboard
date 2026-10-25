@@ -2409,6 +2409,10 @@ export async function getWalletPortfolio(
   } catch {
     queryAddress = address;
   }
+  // The upstream call is optional: when it fails (it 500s for long
+  // stretches) we keep going with no upstream rows, because balances
+  // come from the chain below. Only the hold/active timestamps and any
+  // Soccer rows the chain read misses are lost.
   try {
     // Upstream rejects limit > 50 with `Request validation failed`. Page
     // through with cursors if a wallet holds more than 50 positions.
@@ -2454,6 +2458,11 @@ export async function getWalletPortfolio(
       if (!advanced) break; // 3 attempts on this cursor all failed — give up
       safety++;
     }
+  } catch {
+    rows = [];
+  }
+
+  try {
     if (opts.nflOnly) {
       const wanted = new Set(ROSTER.map((p) => p.tokenAddress));
       rows = rows.filter((r) => wanted.has(r.token_address));
@@ -2494,7 +2503,7 @@ export async function getWalletPortfolio(
     // first enumerate it via Tenero's /tokens list (cached 1h), then
     // hand the list to readWalletSoccerBalances for a single batched
     // eth_call against SOCCERFUN_CONTRACT.
-    const soccerUniverse = await getSoccerTokenUniverse();
+    const soccerUniverse = await getSoccerTokenUniverse().catch(() => []);
     const [onchainNfl, onchainSoccer] = await Promise.all([
       readWalletNflBalances(address, priceByToken),
       readWalletSoccerBalances(address, soccerUniverse),
@@ -2570,7 +2579,8 @@ export async function getWalletPortfolio(
       holdings,
     };
   } catch {
-    // Upstream error: return an empty profile so the page can still render.
+    // Price or chain reads failed too: return an empty profile so the
+    // page can still render.
     return {
       address,
       totalValueUsd: 0,
