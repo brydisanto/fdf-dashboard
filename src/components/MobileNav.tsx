@@ -19,6 +19,7 @@ const LINKS: Array<{ href: string; label: string; highlight?: boolean; icon?: Re
   { href: "/wallets", label: "Top Wallets" },
   { href: "/new-wallets", label: "New Wallets" },
   { href: "/buyback", label: "Buyback" },
+  { href: "/seller-watch", label: "Seller Watch" },
   { href: "/tournament-matrix", label: "Tournament Matrix" },
   { href: "/on-fire", label: "On Fire", icon: <Flame className="h-3.5 w-3.5" strokeWidth={2} /> },
 ];
