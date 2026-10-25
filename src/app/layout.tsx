@@ -87,7 +87,7 @@ function SiteHeader() {
   return (
     <header className="sticky top-0 z-30 border-b border-[var(--color-line)] bg-[color-mix(in_oklab,var(--color-stadium)_85%,transparent)] backdrop-blur">
       <div className="relative mx-auto flex h-16 max-w-[var(--max-w)] items-center justify-between px-5 sm:px-8">
-        <Link href="/" className="flex items-center gap-3 group">
+        <Link href="/" className="flex shrink-0 items-center gap-3 group">
           <BrandMark />
           <div className="leading-none">
             <div
@@ -106,8 +106,8 @@ function SiteHeader() {
             </div>
           </div>
         </Link>
-        {/* Desktop nav, lg+ (10 links crowd the logo below that) */}
-        <nav className="hidden lg:flex items-center gap-1 text-sm">
+        {/* Desktop nav, xl+ (10 links crowd the logo below that) */}
+        <nav className="hidden xl:flex items-center gap-1 text-sm">
           <NavLink href="/">Overview</NavLink>
           <NavLink href="/#players">Players</NavLink>
           <NavLink href="/#trades">Live Feed</NavLink>
