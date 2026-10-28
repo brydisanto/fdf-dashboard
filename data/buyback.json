@@ -1,9 +1,9 @@
 {
   "wallet": "0xd9dd74e1109fa6fb8772706594bcabfbedfb706d",
   "seededFromBlock": 38610049,
-  "lastIndexedBlock": 53202158,
-  "updatedAt": 1793193716710,
-  "usdcBalance": 1.92,
+  "lastIndexedBlock": 53212283,
+  "updatedAt": 1793213951199,
+  "usdcBalance": 0.92,
   "holdings": [],
   "players": {
     "33526712": {
@@ -287,11 +287,11 @@
       "lastTs": 1793191023000
     },
     "1257875488": {
-      "shares": 402847.4078,
-      "usd": 1302.6262,
-      "baskets": 928,
+      "shares": 403246.27,
+      "usd": 1303.6262,
+      "baskets": 929,
       "firstTs": 1789652703000,
-      "lastTs": 1793192103000
+      "lastTs": 1793193903000
     },
     "1339944146": {
       "shares": 826131.8782,
@@ -122835,6 +122835,25 @@
       "tx": "0xf961e5a39a05adfbe66819fdb86d691cdb0f6d39dd5386ac82a9ef406d360778",
       "shares": 221574.3929,
       "tokens": 24
+    },
+    {
+      "kind": "buy",
+      "block": 53202278,
+      "ts": 1793193903000,
+      "tx": "0x342883f81e1a70768b0d462314d607e8123f81c13dfd93a4b8e4d24bbeaf53cc",
+      "usdcSpent": 1.01,
+      "usdcRefund": 0.01,
+      "netUsd": 1,
+      "shares": 398.8622,
+      "tokens": 1
+    },
+    {
+      "kind": "return",
+      "block": 53203331,
+      "ts": 1793196009000,
+      "tx": "0x274c16a383d7ac17521e42823203123fe0308996a2a26336b1b5cf48a0f0fee0",
+      "shares": 398.8622,
+      "tokens": 1
     }
   ]
 }
