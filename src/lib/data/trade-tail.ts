@@ -28,31 +28,43 @@ const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
 
 const NFL_TOKEN_SET = new Set(ROSTER.map((p) => p.tokenIdSuffix));
 
-// Base block time is ~2s. Used to derive timestamps without a per-block
-// eth_getBlockByNumber call (which would dominate the cost on long
-// tail scans). Off by at most a few seconds vs the actual block time
-// — fine for "X minutes ago" relative display.
-const BASE_BLOCK_TIME_MS = 2000;
+// Block time is measured per scan (head vs a block BLOCK_TIME_SAMPLE
+// back) instead of assumed: Base went from 2s to ~0.2s blocks in early
+// Nov 2026, and a hard-coded 2s put every tail trade's time 10x too far
+// in the past and shrank the window to a tenth of what it claimed.
+// Timestamps are derived from it rather than fetched per block, which
+// would dominate the cost of a scan; error is a few seconds at most.
+const BLOCK_TIME_SAMPLE = 10_000n;
+const FALLBACK_BLOCK_TIME_MS = 200;
 
 // Bound how far back we'll tail-scan when the indexer file is missing
 // or extremely stale (e.g. cold start, indexer broken for days). The
 // snapshot covers history; this is just for fresh tail catchup.
 //
-// Sized to the real indexer lag, not a worst case. The cron runs every
-// 5 min and lands reliably (observed gaps: 8-50 min), so 90 min is
-// generous headroom. The old value was 5h, which pulled 500+ txs and
-// therefore 500+ receipt RPCs per scan — enough to get ~half of them
-// rate-limited by the public Base RPC, which surfaced as "$0.00000/$0"
-// rows in the live feed. Keeping the window tight is what actually
-// fixes that; the throttle below is the safety net.
-const MAX_TAIL_BLOCKS = 90 * 30; // ~90 min of blocks on Base (2s blocks)
+// Sized to the real indexer lag, not a worst case. A 5h window once
+// pulled 500+ txs and therefore 500+ receipt RPCs per scan — enough to
+// get ~half of them rate-limited by the public Base RPC, which surfaced
+// as "$0.00000/$0" rows in the live feed. Keeping the window tight is
+// what actually fixes that; the throttle below is the safety net.
+const TAIL_WINDOW_MS = 90 * 60_000;
+
+// publicnode answers wide eth_getLogs ranges for recent blocks (30k
+// tested), so the tail tries it first in WIDE_LOGS_BLOCKS chunks: a
+// 90-minute window is ~27k blocks now, which would be 54 sequential
+// queries at the 500-block cap the other endpoints enforce.
+const WIDE_LOGS_URL = "https://base-rpc.publicnode.com";
+const WIDE_LOGS_BLOCKS = 10_000n;
+const wideClient = createPublicClient({
+  chain: base,
+  transport: http(WIDE_LOGS_URL, { retryCount: 1, timeout: 20_000 }),
+});
 
 // Only RPCs that serve eth_getLogs anonymously belong here. publicnode
 // has no archive: older than a few thousand blocks it answers "Archive
 // requests require a personal token" (InvalidParams), which viem's
 // fallback treats as final rather than moving on. So it sits LAST, where
 // it is only reached after both others fail, and the tail's window
-// (MAX_TAIL_BLOCKS) stays inside the range it can serve.
+// (TAIL_WINDOW_MS) stays inside the range it can serve.
 const BASE_RPCS = [
   "https://mainnet.base.org",
   // Full history, 500-block logs; bursty rate limit, so second.
@@ -103,12 +115,22 @@ export async function tailNflTrades(lastIndexedBlock: number): Promise<IndexedTr
     const head = await client.getBlockNumber();
     if (head < fromBlock) return [];
 
+    // Measure the current block time from two block timestamps.
+    const [headBlock, refBlock] = await Promise.all([
+      client.getBlock({ blockNumber: head }),
+      client.getBlock({ blockNumber: head - BLOCK_TIME_SAMPLE }).catch(() => null),
+    ]);
+    const headTimeMs = Number(headBlock.timestamp) * 1000;
+    const measured = refBlock
+      ? (headTimeMs - Number(refBlock.timestamp) * 1000) / Number(BLOCK_TIME_SAMPLE)
+      : 0;
+    const blockTimeMsEach = measured > 0 ? measured : FALLBACK_BLOCK_TIME_MS;
+
     // Clamp the scan window — if the indexer is way behind, don't try
     // to backfill days here; the snapshot covers older history.
+    const maxTailBlocks = BigInt(Math.ceil(TAIL_WINDOW_MS / blockTimeMsEach));
     const span = head - fromBlock + 1n;
-    const scanFrom = span > BigInt(MAX_TAIL_BLOCKS)
-      ? head - BigInt(MAX_TAIL_BLOCKS) + 1n
-      : fromBlock;
+    const scanFrom = span > maxTailBlocks ? head - maxTailBlocks + 1n : fromBlock;
 
     // Just NFL share transfers. USD attribution comes from each tx's
     // receipt below — that way we're robust to USDC moving through
@@ -121,17 +143,28 @@ export async function tailNflTrades(lastIndexedBlock: number): Promise<IndexedTr
     // at or below the current limit. Chunks run sequentially, so this
     // adds no concurrency pressure on the receipt fetches below.
     const LOGS_CHUNK_BLOCKS = 500n;
-    const fetchChunk = (from: bigint, to: bigint) =>
-      client.getLogs({
-        address: FOOTBALLFUN_CONTRACT as Address,
-        event: TRANSFER_SINGLE_EVENT,
-        fromBlock: from,
-        toBlock: to,
-      });
-    const shareLogs: Awaited<ReturnType<typeof fetchChunk>> = [];
-    for (let from = scanFrom; from <= head; from += LOGS_CHUNK_BLOCKS) {
-      const to = from + LOGS_CHUNK_BLOCKS - 1n < head ? from + LOGS_CHUNK_BLOCKS - 1n : head;
-      shareLogs.push(...(await fetchChunk(from, to)));
+    const logFilter = (from: bigint, to: bigint) => ({
+      address: FOOTBALLFUN_CONTRACT as Address,
+      event: TRANSFER_SINGLE_EVENT,
+      fromBlock: from,
+      toBlock: to,
+    });
+    const fetchNarrow = (from: bigint, to: bigint) => client.getLogs(logFilter(from, to));
+    const fetchWide = (from: bigint, to: bigint) => wideClient.getLogs(logFilter(from, to));
+    type ShareLog = Awaited<ReturnType<typeof fetchNarrow>>[number];
+    const scanAll = async (fetch: (from: bigint, to: bigint) => Promise<ShareLog[]>, chunk: bigint) => {
+      const out: ShareLog[] = [];
+      for (let from = scanFrom; from <= head; from += chunk) {
+        const to = from + chunk - 1n < head ? from + chunk - 1n : head;
+        out.push(...(await fetch(from, to)));
+      }
+      return out;
+    };
+    let shareLogs: ShareLog[];
+    try {
+      shareLogs = await scanAll(fetchWide, WIDE_LOGS_BLOCKS);
+    } catch {
+      shareLogs = await scanAll(fetchNarrow, LOGS_CHUNK_BLOCKS);
     }
 
     // Filter NFL share movements that involve a user wallet (skip
@@ -177,17 +210,12 @@ export async function tailNflTrades(lastIndexedBlock: number): Promise<IndexedTr
       return [];
     }
 
-    // Head timestamp anchors block-time derivation. Every other block's
-    // timestamp is computed as (head - blockGap × 2s) — saves a getBlock
-    // call per tx.
-    const headBlock = await client.getBlock({ blockNumber: head });
-    const headTimeMs = Number(headBlock.timestamp) * 1000;
 
     // Pull a receipt per tx so USDC attribution can sum every USDC
     // Transfer the user is involved in, regardless of counterparty.
     //
     // THROTTLED, with retry. This used to be a single Promise.all over
-    // every tx in the window. MAX_TAIL_BLOCKS was ~5h of blocks, which
+    // every tx in the window. The window was once ~5h of blocks, which
     // in practice is 500+ txs, so the tail fired 500+ concurrent
     // eth_getTransactionReceipt calls at the public Base RPC. It
     // rate-limited roughly half of them, each rejection was swallowed
@@ -314,7 +342,7 @@ export async function tailNflTrades(lastIndexedBlock: number): Promise<IndexedTr
       const txUsdAmount = isSwap ? 0 : Number(absUsdRaw) / 1e6;
 
       const blockNumber = Number(legs[0].blockNumber);
-      const blockTimeMs = headTimeMs - (Number(head) - blockNumber) * BASE_BLOCK_TIME_MS;
+      const blockTimeMs = headTimeMs - (Number(head) - blockNumber) * blockTimeMsEach;
 
       for (const leg of legs) {
         let side: IndexedTrade["side"];
