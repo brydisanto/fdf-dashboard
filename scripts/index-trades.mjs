@@ -9,7 +9,7 @@
  * and persists to data/trade-history.json on the data branch.
  *
  * Runs from GitHub Actions cron every ~5 minutes. Cold-start scans
- * back ~7 days (~302k blocks at 2s/block on Base). Incremental updates
+ * back ~7 days (~3M blocks at Base's ~0.2s blocks). Incremental updates
  * scan only blocks since lastIndexedBlock — usually 150-200 blocks per
  * run, so the steady-state cost is tiny.
  *
@@ -74,10 +74,10 @@ const RPC_URLS = (process.env.BASE_RPC_URLS || process.env.BASE_RPC_URL ||
   .split(",").map((u) => u.trim()).filter(Boolean);
 let rpcCursor = 0;
 
-// Cold-start: 30 days × 24h × 1800 blocks/h (2s/block) = 1,296,000 blocks.
-// Matches HISTORY_LIMIT_MS so the cold-start fills the full retention
-// window. Big initial scan but only runs once.
-const COLD_START_LOOKBACK_BLOCKS = 30 * 24 * 1800;
+// Cold-start: 30 days × 24h × 18,000 blocks/h (~0.2s/block since Nov
+// 2026; it was 1,800/h at 2s). Matches HISTORY_LIMIT_MS so the
+// cold-start fills the full retention window. Only runs once.
+const COLD_START_LOOKBACK_BLOCKS = 30 * 24 * 18_000;
 const HISTORY_LIMIT_MS = 30 * 24 * 3600 * 1000; // keep last 30 days
 
 // If the existing file's earliest trade isn't 30 days old yet, treat
@@ -110,12 +110,43 @@ function logChunkSize() {
   return Math.min(LOGS_CHUNK_BLOCKS, logRangeCap);
 }
 
+// Base went to ~0.2s blocks in early Nov 2026 (10x the old 2s), so a
+// 500-block query now covers under two minutes of chain and a day takes
+// ~900 of them. publicnode answers far wider ranges (30k blocks tested,
+// back past the Nov backlog), so log queries go there first in
+// WIDE_LOGS_BLOCKS chunks. If it refuses, `wideLogsOk` flips off for the
+// rest of the run and everything falls back to the capped, rotated path.
+const WIDE_LOGS_URL = process.env.BASE_WIDE_LOGS_URL ?? "https://base-rpc.publicnode.com";
+const WIDE_LOGS_BLOCKS = 10_000;
+let wideLogsOk = !!WIDE_LOGS_URL;
+
+/** Blocks per outer scan step: wide while the wide endpoint works. */
+function scanChunkSize() {
+  return wideLogsOk ? WIDE_LOGS_BLOCKS : logChunkSize();
+}
+
 /**
- * eth_getLogs with the range cap enforced. If the RPC rejects the range
- * and names its limit, adopt that limit and split the request.
+ * eth_getLogs with the range cap enforced. Wide ranges go to the wide
+ * endpoint; otherwise, if the RPC rejects the range and names its
+ * limit, adopt that limit and split the request.
  */
 async function getLogsCapped(params, fromBlock, toBlock) {
   const span = toBlock - fromBlock + 1;
+  if (span > logRangeCap && wideLogsOk && span <= WIDE_LOGS_BLOCKS) {
+    const range = { ...params, fromBlock: "0x" + fromBlock.toString(16), toBlock: "0x" + toBlock.toString(16) };
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await rpcOnce(WIDE_LOGS_URL, "eth_getLogs", [range]);
+      } catch (err) {
+        if (attempt === 2) {
+          console.error(`  wide eth_getLogs failed (${err.message}); falling back to ${logChunkSize()}-block queries`);
+          wideLogsOk = false;
+        } else {
+          await sleep(1000 * (attempt + 1));
+        }
+      }
+    }
+  }
   if (span > logRangeCap) {
     const mid = fromBlock + Math.floor(span / 2) - 1;
     const [a, b] = [
@@ -154,12 +185,16 @@ const LOGS_TRUNCATION_THRESHOLD = 9_500;
 // RPC hasn't indexed the most-recent logs yet, we silently miss
 // trades AND advance `lastIndexedBlock` past them, losing them
 // forever. Stop short of the tip and let the NEXT run pick them up.
-// 15 blocks ≈ 30s at 2s/block.
-const SAFETY_LAG_BLOCKS = 15;
+// 150 blocks ≈ 30s at Base's ~0.2s blocks.
+const SAFETY_LAG_BLOCKS = 150;
 
 // Most blocks a single run will scan forward. One run stays inside the
-// job timeout; a backlog is cleared over consecutive runs.
-const MAX_FORWARD_BLOCKS_PER_RUN = 60_000;
+// job timeout; a backlog is cleared over consecutive runs. With wide log
+// queries 2M blocks (~4.6 days of chain) is ~200 calls per event type;
+// on the 500-block fallback it would be 8,000, so that path keeps the
+// old small budget.
+const MAX_FORWARD_BLOCKS_WIDE = 2_000_000;
+const MAX_FORWARD_BLOCKS_NARROW = 60_000;
 
 // Roster of NFL token suffixes — must match src/lib/data/roster.ts.
 const TOKEN_ID_SUFFIXES = [
@@ -520,7 +555,21 @@ async function main() {
     // never finishes never advances the pointer — so it would stay
     // behind for ever. Catching up across several runs always makes
     // progress.
-    const forwardTo = Math.min(safeLatestBlock, forwardFrom + MAX_FORWARD_BLOCKS_PER_RUN - 1);
+    // Probe the wide endpoint once so the budget matches the path we'll use.
+    if (wideLogsOk) {
+      try {
+        const probeTo = Math.min(safeLatestBlock, forwardFrom + WIDE_LOGS_BLOCKS - 1);
+        await rpcOnce(WIDE_LOGS_URL, "eth_getLogs", [{
+          address: FOOTBALLFUN_CONTRACT, topics: [ERC1155_TRANSFER_SINGLE],
+          fromBlock: "0x" + forwardFrom.toString(16), toBlock: "0x" + probeTo.toString(16),
+        }]);
+      } catch (err) {
+        console.error(`  wide log endpoint unavailable (${err.message}); using ${logChunkSize()}-block queries`);
+        wideLogsOk = false;
+      }
+    }
+    const budget = wideLogsOk ? MAX_FORWARD_BLOCKS_WIDE : MAX_FORWARD_BLOCKS_NARROW;
+    const forwardTo = Math.min(safeLatestBlock, forwardFrom + budget - 1);
     if (forwardTo < safeLatestBlock) {
       console.error(`Catching up: scanning ${forwardFrom} → ${forwardTo}, ${safeLatestBlock - forwardTo} blocks still behind`);
     }
@@ -579,8 +628,8 @@ async function main() {
   const allLogs = [];
   const allMovements = [];
   for (const range of ranges) {
-    for (let cursor = range.from; cursor <= range.to; cursor += logChunkSize()) {
-      const end = Math.min(cursor + logChunkSize() - 1, range.to);
+    for (let cursor = range.from, step = scanChunkSize(); cursor <= range.to; cursor += step, step = scanChunkSize()) {
+      const end = Math.min(cursor + step - 1, range.to);
       const movements = await fetchAllShareMovements(cursor, end);
       allMovements.push(...movements);
       for (const m of movements) {
