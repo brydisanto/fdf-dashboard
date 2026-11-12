@@ -1,9 +1,9 @@
 name: Index NFL Top Wallets
 
 # Every 10 minutes + manual trigger. Precomputes the wallet
-# leaderboard (Tenero holder aggregation + on-chain Multicall
-# balance refinement) so the deployed app doesn't pay that cost
-# on every cold worker.
+# leaderboard (every wallet in the registry, balances read on-chain,
+# ranked by value) so the deployed app doesn't pay that cost on every
+# cold worker.
 
 on:
   schedule:
